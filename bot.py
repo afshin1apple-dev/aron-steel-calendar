@@ -7,11 +7,11 @@ from zoneinfo import ZoneInfo
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
 
-# Tehran time
+# ساعت ایران
 now = datetime.now(ZoneInfo("Asia/Tehran"))
 g = now.date()
 
-# Gregorian -> Jalali
+# تاریخ شمسی
 j = jdatetime.date.fromgregorian(
     year=g.year,
     month=g.month,
@@ -43,44 +43,82 @@ months = [
     "اسفند"
 ]
 
-# Correct weekday
 weekday = weekdays[g.weekday()]
 
-# Get today's events
+# مناسبت‌های امروز
 events = []
 
 try:
     url = f"https://holidayapi.ir/jalali/{j.year}/{j.month:02d}/{j.day:02d}"
-    result = requests.get(url, timeout=20)
-    data = result.json()
+    response = requests.get(url, timeout=20)
+    data = response.json()
 
     for event in data.get("events", []):
-        description = event.get("description", "")
-        is_religious = event.get("is_religious", False)
+        title = (
+            event.get("description")
+            or event.get("title")
+            or event.get("name")
+            or ""
+        )
 
-        # Only non-religious events
-        if description and not is_religious:
-            events.append(description)
+        if title:
+            events.append(title)
 
 except Exception as e:
     print("Calendar API error:", e)
 
-# Remove duplicates
+# حذف موارد تکراری
 events = list(dict.fromkeys(events))
 
-if not events:
-    events_text = "• مناسبت عمومی برای امروز ثبت نشده است."
-else:
+# حذف مناسبت‌های مذهبی رایج
+religious_words = [
+    "شهادت",
+    "ولادت",
+    "عزاداری",
+    "عاشورا",
+    "تاسوعا",
+    "اربعین",
+    "محرم",
+    "صفر",
+    "رمضان",
+    "فطر",
+    "غدیر",
+    "مبعث",
+    "فاطمیه",
+    "امام",
+    "پیامبر",
+    "حضرت"
+]
+
+filtered_events = []
+
+for event in events:
+    if not any(word in event for word in religious_words):
+        filtered_events.append(event)
+
+events = filtered_events
+
+# اگر منبع مناسبت‌ها را نداد، مناسبت‌های ثابت ایرانی را بررسی کن
+# ۳۰ مرداد = شهریورگان
+if j.month == 5 and j.day == 30:
+    if not any("شهریورگان" in e for e in events):
+        events.append("جشن شهریورگان؛ از جشن‌های باستانی ایران")
+
+if events:
     events_text = "\n".join(f"• {event}" for event in events)
+else:
+    events_text = "• مناسبت عمومی ثبت نشده است."
 
 message = (
     f"📅 <b>{weekday} {j.day} {months[j.month - 1]} {j.year}</b>\n"
     f"🌍 {g.day:02d}/{g.month:02d}/{g.year}\n\n"
     f"🎉 <b>مناسبت‌های امروز:</b>\n"
-    f"{events_text}"
+    f"{events_text}\n\n"
+    f"🆔 @Arvand_Aron_Steel\n"
+    f"☎️ 021-22122239"
 )
 
-response = requests.post(
+telegram = requests.post(
     f"https://api.telegram.org/bot{TOKEN}/sendMessage",
     json={
         "chat_id": CHANNEL,
@@ -92,9 +130,9 @@ response = requests.post(
 )
 
 print("Telegram response:")
-print(response.text)
+print(telegram.text)
 
-if not response.ok:
-    raise RuntimeError(response.text)
+if not telegram.ok:
+    raise RuntimeError(telegram.text)
 
 print("Message sent successfully.")
