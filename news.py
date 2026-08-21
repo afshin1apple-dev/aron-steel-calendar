@@ -32,7 +32,6 @@ TEHRAN = ZoneInfo("Asia/Tehran")
 # =========================
 
 FEEDS = [
-
     {
         "name": "فولادبان",
         "url": "https://fouladban.com/feed/",
@@ -50,7 +49,6 @@ FEEDS = [
         "url": "https://www.ft.com/?format=rss",
         "foreign": True,
     },
-
 ]
 
 
@@ -59,8 +57,6 @@ FEEDS = [
 # =========================
 
 KEYWORDS = [
-
-    # فارسی
     "اقتصاد",
     "اقتصادی",
     "فولاد",
@@ -87,7 +83,6 @@ KEYWORDS = [
     "تعرفه",
     "تجارت",
 
-    # English
     "economy",
     "economic",
     "market",
@@ -110,6 +105,8 @@ KEYWORDS = [
     "bank",
     "energy",
     "fuel",
+    "finance",
+    "financial",
 ]
 
 
@@ -130,11 +127,14 @@ def load_history():
             encoding="utf-8"
         ) as file:
 
-            return set(
-                json.load(file)
-            )
+            return set(json.load(file))
 
-    except Exception:
+    except Exception as error:
+
+        print(
+            "History read error:",
+            error
+        )
 
         return set()
 
@@ -165,7 +165,7 @@ def save_history(history):
 
 
 # =========================
-# TEXT CLEANING
+# CLEAN TEXT
 # =========================
 
 def clean_text(text):
@@ -187,37 +187,35 @@ def clean_text(text):
         text
     )
 
-    # حذف عبارت‌های اضافه RSS
-    bad_parts = [
-
+    garbage = [
         "اولین بار در فولادبان",
         "پدیدار شد",
         "This article first appeared",
         "appeared first on",
-
     ]
 
-    for part in bad_parts:
+    for phrase in garbage:
 
-        index = text.lower().find(
-            part.lower()
+        position = text.lower().find(
+            phrase.lower()
         )
 
-        if index != -1:
+        if position != -1:
 
-            text = text[:index]
+            text = text[:position]
 
     return text.strip()
 
 
 # =========================
-# NEWS ID
+# ID
 # =========================
 
 def make_id(title, link):
 
     value = (
         title.strip()
+        + "|"
         + link.strip()
     )
 
@@ -289,7 +287,7 @@ def get_item_date(item):
 
 def get_news():
 
-    result = []
+    news = []
 
     today = datetime.now(
         TEHRAN
@@ -316,13 +314,13 @@ def get_news():
                 timeout=20
             )
 
-            if not response.ok:
+            print(
+                source["name"],
+                "status:",
+                response.status_code
+            )
 
-                print(
-                    "Feed unavailable:",
-                    source["name"],
-                    response.status_code
-                )
+            if not response.ok:
 
                 continue
 
@@ -336,7 +334,7 @@ def get_news():
                 len(feed.entries)
             )
 
-            for item in feed.entries[:30]:
+            for item in feed.entries[:50]:
 
                 title = clean_text(
                     item.get(
@@ -364,27 +362,18 @@ def get_news():
                     item
                 )
 
-                # تاریخ نامشخص
                 if item_date is None:
-
-                    print(
-                        "No date:",
-                        title
-                    )
-
                     continue
 
-                # فقط اخبار امروز
+                # فقط خبر امروز
                 if item_date.date() != today:
-
                     continue
 
-                # فقط اخبار اقتصادی
+                # فقط خبر اقتصادی
                 if not is_relevant(
                     title,
                     summary
                 ):
-
                     continue
 
                 news_id = make_id(
@@ -392,7 +381,7 @@ def get_news():
                     link
                 )
 
-                result.append({
+                news.append({
 
                     "id": news_id,
 
@@ -410,7 +399,6 @@ def get_news():
 
                     "date":
                         item_date
-
                 })
 
         except Exception as error:
@@ -421,13 +409,12 @@ def get_news():
                 error
             )
 
-    # جدیدترین خبرها اول
-    result.sort(
+    news.sort(
         key=lambda x: x["date"],
         reverse=True
     )
 
-    return result
+    return news
 
 
 # =========================
@@ -439,7 +426,7 @@ def translate_text(text):
     if not text:
         return ""
 
-    # متن فارسی نیاز به ترجمه ندارد
+    # اگر فارسی است
     if not re.search(
         r"[A-Za-z]",
         text
@@ -447,60 +434,63 @@ def translate_text(text):
 
         return text
 
-    services = [
+    try:
 
-        "https://translate.astian.org/translate",
+        response = requests.get(
 
-        "https://libretranslate.com/translate",
+            "https://api.mymemory.translated.net/get",
 
-    ]
+            params={
+                "q": text,
+                "langpair": "en|fa"
+            },
 
-    for url in services:
+            timeout=20
+        )
 
-        try:
+        print(
+            "Translation status:",
+            response.status_code
+        )
 
-            response = requests.post(
+        if response.status_code != 200:
 
-                url,
+            return text
 
-                json={
-                    "q": text,
-                    "source": "en",
-                    "target": "fa",
-                    "format": "text"
-                },
+        data = response.json()
 
-                timeout=15
+        translated = (
+            data
+            .get(
+                "responseData",
+                {}
             )
-
-            if not response.ok:
-                continue
-
-            data = response.json()
-
-            translated = data.get(
+            .get(
                 "translatedText",
                 ""
             )
+        )
 
-            if translated:
+        if translated:
 
-                return translated.strip()
-
-        except Exception as error:
-
-            print(
-                "Translation error:",
-                error
+            translated = html.unescape(
+                translated
             )
 
-    # اگر ترجمه در دسترس نبود
-    # متن اصلی را برمی‌گردانیم
+            return translated.strip()
+
+    except Exception as error:
+
+        print(
+            "Translation error:",
+            error
+        )
+
     return text
 
 
 # =========================
-# PEXELS IMAGE
+# PEXELS
 # =========================
 
 def get_image(query):
@@ -521,7 +511,7 @@ def get_image(query):
 
             headers={
                 "Authorization":
-                    PEXELS_API_KEY
+                PEXELS_API_KEY
             },
 
             params={
@@ -533,11 +523,15 @@ def get_image(query):
             timeout=20
         )
 
-        if not response.ok:
+        print(
+            "Pexels status:",
+            response.status_code
+        )
+
+        if response.status_code != 200:
 
             print(
-                "Pexels error:",
-                response.status_code
+                response.text[:500]
             )
 
             return None
@@ -555,22 +549,21 @@ def get_image(query):
 
         photo = photos[0]
 
-        return photo.get(
+        sources = photo.get(
             "src",
             {}
-        ).get(
-            "large2x"
-        ) or photo.get(
-            "src",
-            {}
-        ).get(
-            "large"
+        )
+
+        return (
+            sources.get("large2x")
+            or sources.get("large")
+            or sources.get("original")
         )
 
     except Exception as error:
 
         print(
-            "Image error:",
+            "Pexels error:",
             error
         )
 
@@ -578,57 +571,82 @@ def get_image(query):
 
 
 # =========================
-# IMAGE QUERY
+# IMAGE SEARCH QUERY
 # =========================
 
-def image_query(news):
+def make_image_query(news):
 
-    title = news["title"]
+    title = news["title"].lower()
 
-    # برای خبرهای فارسی
-    if not news["foreign"]:
+    if any(
+        word in title
+        for word in [
+            "steel",
+            "iron",
+            "rebar",
+            "billet",
+            "فولاد",
+            "آهن",
+            "میلگرد",
+            "شمش"
+        ]
+    ):
 
-        if any(
-            word in title
-            for word in [
-                "فولاد",
-                "آهن",
-                "میلگرد",
-                "تیرآهن",
-                "شمش"
-            ]
-        ):
+        return "steel factory industry"
 
-            return "steel iron factory"
+    if any(
+        word in title
+        for word in [
+            "oil",
+            "energy",
+            "fuel",
+            "نفت",
+            "سوخت",
+            "بنزین"
+        ]
+    ):
 
-        if any(
-            word in title
-            for word in [
-                "طلا",
-                "سکه"
-            ]
-        ):
+        return "oil energy industry"
 
-            return "gold market"
+    if any(
+        word in title
+        for word in [
+            "gold",
+            "طلا",
+            "سکه"
+        ]
+    ):
 
-        if any(
-            word in title
-            for word in [
-                "دلار",
-                "ارز"
-            ]
-        ):
+        return "gold financial market"
 
-            return "currency market"
+    if any(
+        word in title
+        for word in [
+            "bank",
+            "banking",
+            "بانک"
+        ]
+    ):
 
-        return "economy market"
+        return "banking finance"
 
-    # خارجی
-    return title
+    if any(
+        word in title
+        for word in [
+            "dollar",
+            "currency",
+            "ارز",
+            "دلار"
+        ]
+    ):
+
+        return "currency financial market"
+
+    return "global economy finance"
 
 
 # =========================
-# SEND TELEGRAM
+# TELEGRAM
 # =========================
 
 def send_news(news):
@@ -637,22 +655,29 @@ def send_news(news):
         news["title"]
     )
 
-    summary = clean_text(
+    original_summary = clean_text(
         news["summary"]
     )
 
-    # ترجمه خبر خارجی
+    # -------------------------
+    # ترجمه خارجی
+    # -------------------------
+
     if news["foreign"]:
 
         title = translate_text(
             original_title
         )
 
-        if summary:
+        if original_summary:
 
             summary = translate_text(
-                summary[:500]
+                original_summary[:450]
             )
+
+        else:
+
+            summary = ""
 
         header = (
             "🌍 <b>خبر اقتصادی جهان</b>"
@@ -662,16 +687,12 @@ def send_news(news):
 
         title = original_title
 
+        summary = original_summary
+
         header = (
             "🇮🇷 <b>خبر اقتصادی ایران</b>"
         )
 
-    # اگر ترجمه خالی شد
-    if not title:
-
-        title = original_title
-
-    # خلاصه کوتاه
     if len(summary) > 500:
 
         summary = (
@@ -679,10 +700,21 @@ def send_news(news):
             + "..."
         )
 
-    # عکس مرتبط
-    image_url = get_image(
-        image_query(news)
+    # -------------------------
+    # عکس
+    # -------------------------
+
+    image_query = make_image_query(
+        news
     )
+
+    image_url = get_image(
+        image_query
+    )
+
+    # -------------------------
+    # متن
+    # -------------------------
 
     message = (
         f"{header}\n\n"
@@ -703,7 +735,7 @@ def send_news(news):
     )
 
     # -------------------------
-    # اگر عکس پیدا شد
+    # ارسال عکس
     # -------------------------
 
     if image_url:
@@ -715,22 +747,22 @@ def send_news(news):
 
             data={
 
-                "chat_id": CHANNEL,
+                "chat_id":
+                    CHANNEL,
 
-                "photo": image_url,
+                "photo":
+                    image_url,
 
-                "caption": message,
+                "caption":
+                    message,
 
-                "parse_mode": "HTML"
+                "parse_mode":
+                    "HTML"
 
             },
 
             timeout=30
         )
-
-    # -------------------------
-    # اگر عکس پیدا نشد
-    # -------------------------
 
     else:
 
@@ -741,15 +773,17 @@ def send_news(news):
 
             data={
 
-                "chat_id": CHANNEL,
+                "chat_id":
+                    CHANNEL,
 
-                "text": message,
+                "text":
+                    message,
 
-                "parse_mode": "HTML",
+                "parse_mode":
+                    "HTML",
 
                 "disable_web_page_preview":
                     False
-
             },
 
             timeout=30
@@ -771,7 +805,7 @@ def send_news(news):
 
 
 # =========================
-# TIME CONTROL
+# TIME
 # =========================
 
 now = datetime.now(
@@ -799,7 +833,7 @@ if not (
 ):
 
     print(
-        "Outside schedule."
+        "Outside news schedule."
     )
 
     exit()
@@ -843,7 +877,7 @@ for item in news:
             error
         )
 
-    # حداکثر 2 خبر در هر اجرا
+    # حداکثر دو خبر در هر اجرا
     if sent >= 2:
 
         break
