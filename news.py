@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import re
 import requests
 import feedparser
 from datetime import datetime
@@ -40,31 +41,18 @@ KEYWORDS = [
 
 
 def load_history():
-
     if not os.path.exists(HISTORY_FILE):
         return set()
 
     try:
-        with open(
-            HISTORY_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             return set(json.load(f))
-
-    except:
+    except Exception:
         return set()
 
 
 def save_history(history):
-
-    with open(
-        HISTORY_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(
             list(history)[-500:],
             f,
@@ -74,19 +62,13 @@ def save_history(history):
 
 
 def make_id(title, link):
-
-    text = title + link
-
     return hashlib.sha256(
-        text.encode("utf-8")
+        (title + link).encode("utf-8")
     ).hexdigest()
 
 
 def is_relevant(title, summary):
-
-    text = (
-        title + " " + summary
-    ).lower()
+    text = (title + " " + summary).lower()
 
     return any(
         keyword.lower() in text
@@ -94,14 +76,25 @@ def is_relevant(title, summary):
     )
 
 
-def get_news():
+def clean_text(text):
+    if not text:
+        return ""
 
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&quot;", '"', text)
+    text = re.sub(r"&#39;", "'", text)
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+def get_news():
     news = []
 
     for feed_url in FEEDS:
-
         try:
-
             response = requests.get(
                 feed_url,
                 headers={
@@ -118,20 +111,18 @@ def get_news():
 
             for item in feed.entries[:20]:
 
-                title = item.get(
-                    "title",
-                    ""
-                ).strip()
+                title = clean_text(
+                    item.get("title", "")
+                )
 
                 link = item.get(
                     "link",
                     ""
                 ).strip()
 
-                summary = item.get(
-                    "summary",
-                    ""
-                ).strip()
+                summary = clean_text(
+                    item.get("summary", "")
+                )
 
                 if not title or not link:
                     continue
@@ -155,7 +146,6 @@ def get_news():
                 })
 
         except Exception as e:
-
             print(
                 "Feed error:",
                 feed_url,
@@ -165,31 +155,13 @@ def get_news():
     return news
 
 
-def clean_summary(text):
-
-    text = text.replace(
-        "<p>",
-        ""
-    )
-
-    text = text.replace(
-        "</p>",
-        ""
-    )
-
-    text = text.replace(
-        "<br>",
-        "\n"
-    )
-
-    return text.strip()
-
-
 def send_news(news):
 
-    title = news["title"]
+    title = clean_text(
+        news["title"]
+    )
 
-    summary = clean_summary(
+    summary = clean_text(
         news["summary"]
     )
 
@@ -197,8 +169,8 @@ def send_news(news):
         summary = summary[:500] + "..."
 
     message = (
-        "🚨 <b>خبر فوری اقتصادی</b>\n\n"
-        f"📌 <b>{title}</b>\n\n"
+        "🚨 خبر فوری اقتصادی\n\n"
+        f"📌 {title}\n\n"
     )
 
     if summary:
@@ -207,7 +179,7 @@ def send_news(news):
         )
 
     message += (
-        f"📰 منبع: فولادبان\n"
+        "📰 منبع: فولادبان\n"
         f"🔗 {news['link']}\n\n"
         "🆔 @Arvand_Aron_Steel\n"
         "☎️ 021-22122239"
@@ -218,11 +190,16 @@ def send_news(news):
         data={
             "chat_id": CHANNEL,
             "text": message,
-            "parse_mode": "HTML",
             "disable_web_page_preview": False
         },
         timeout=30
     )
+
+    if not response.ok:
+        print(
+            "Telegram error:",
+            response.text
+        )
 
     response.raise_for_status()
 
@@ -232,12 +209,43 @@ def send_news(news):
     )
 
 
+# -------------------------------
+# محدودیت ساعت انتشار
+# -------------------------------
+
+now = datetime.now(TEHRAN)
+
+start_time = now.replace(
+    hour=8,
+    minute=30,
+    second=0,
+    microsecond=0
+)
+
+end_time = now.replace(
+    hour=17,
+    minute=0,
+    second=0,
+    microsecond=0
+)
+
+if not (start_time <= now <= end_time):
+    print(
+        "Outside news schedule. Nothing will be sent."
+    )
+    exit()
+
+
+# -------------------------------
+# اجرای ربات
+# -------------------------------
+
 history = load_history()
 
 news = get_news()
 
-news.sort(
-    key=lambda x: x["id"]
+print(
+    f"Relevant news found: {len(news)}"
 )
 
 sent = 0
@@ -255,7 +263,6 @@ for item in news:
 
     sent += 1
 
-    # در هر اجرا حداکثر 2 خبر
     if sent >= 2:
         break
 
