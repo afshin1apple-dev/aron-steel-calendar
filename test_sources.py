@@ -1,0 +1,43 @@
+name: Economic News
+
+on:
+  schedule:
+    # هر 10 دقیقه، از 08:30 تا 17:00 به وقت تهران
+    - cron: '0,10,20,30,40,50 5-13 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Get files
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packages
+        run: |
+          pip install requests feedparser
+
+      - name: Run source test
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: python test_sources.py
+
+      - name: Save changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Source test" || echo "No changes"
+          git push
