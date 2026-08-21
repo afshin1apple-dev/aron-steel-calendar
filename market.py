@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -9,6 +10,7 @@ CHANNEL = os.environ["CHANNEL_ID"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 
 TEHRAN = ZoneInfo("Asia/Tehran")
+HISTORY_FILE = "market_history.json"
 
 
 def number(text):
@@ -41,7 +43,6 @@ def get_tgju_price(url):
         values = []
 
         for cell in row.find_all(["td", "th"]):
-
             n = number(cell.get_text(" ", strip=True))
 
             if n is not None:
@@ -63,6 +64,10 @@ def get_tgju_price(url):
 
     return current, change
 
+
+# --------------------------------------------------
+# تتر
+# --------------------------------------------------
 
 def get_tether():
 
@@ -98,7 +103,6 @@ def get_tether():
             if n is not None:
                 values.append(n)
 
-        # قیمت تتر
         for value in values:
 
             if value > 1000000:
@@ -111,61 +115,63 @@ def get_tether():
     if current is None:
         raise RuntimeError("Tether price not found")
 
-    # دریافت قیمت روز قبل از صفحه اصلی تتر
-    main_url = "https://www.tgju.org/profile/crypto-tether"
+    return current
 
-    r = requests.get(
-        main_url,
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=30
-    )
 
-    r.raise_for_status()
+# --------------------------------------------------
+# تاریخچه
+# --------------------------------------------------
 
-    soup = BeautifulSoup(r.text, "html.parser")
+def load_history():
 
-    previous = None
+    if not os.path.exists(HISTORY_FILE):
+        return {}
 
-    for row in soup.find_all("tr"):
+    try:
 
-        text = row.get_text(" ", strip=True)
+        with open(
+            HISTORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
 
-        if "نرخ روز گذشته" not in text:
-            continue
+            return json.load(f)
 
-        values = []
+    except:
 
-        for cell in row.find_all(["td", "th"]):
+        return {}
 
-            n = number(
-                cell.get_text(" ", strip=True)
-            )
 
-            if n is not None:
-                values.append(n)
+def save_history(history):
 
-        for value in values:
+    with open(
+        HISTORY_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-            if value > 1000000:
-                previous = value
-                break
+        json.dump(
+            history,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
 
-        if previous is not None:
-            break
 
-    if previous and previous != 0:
+def calculate_change(current, previous):
 
-        change = (
-            (current - previous)
-            / previous
-        ) * 100
+    if previous is None or previous == 0:
+        return None
 
-    else:
+    return (
+        (current - previous)
+        / previous
+    ) * 100
 
-        change = None
 
-    return current, change
-
+# --------------------------------------------------
+# بیت کوین
+# --------------------------------------------------
 
 def get_bitcoin():
 
@@ -189,6 +195,10 @@ def get_bitcoin():
     )
 
 
+# --------------------------------------------------
+# فرمت
+# --------------------------------------------------
+
 def price(value, decimals=0):
 
     if value is None:
@@ -211,7 +221,9 @@ def change(value):
     return "⚪ 0.00%"
 
 
-# قیمت‌ها
+# --------------------------------------------------
+# دریافت قیمت‌ها
+# --------------------------------------------------
 
 gold_world, gold_world_change = get_tgju_price(
     "https://www.tgju.org/profile/ons"
@@ -225,12 +237,33 @@ coin, coin_change = get_tgju_price(
     "https://www.tgju.org/profile/sekee"
 )
 
-tether, tether_change = get_tether()
+tether = get_tether()
 
 bitcoin, bitcoin_change = get_bitcoin()
 
 
+# --------------------------------------------------
+# محاسبه تغییر تتر
+# --------------------------------------------------
+
+history = load_history()
+
+previous_tether = history.get("tether")
+
+tether_change = calculate_change(
+    tether,
+    previous_tether
+)
+
+# قیمت امروز را برای فردا ذخیره کن
+history["tether"] = tether
+
+save_history(history)
+
+
+# --------------------------------------------------
 # عکس
+# --------------------------------------------------
 
 now = datetime.now(TEHRAN)
 
@@ -261,9 +294,12 @@ photo = photos[
 image_url = photo["src"]["large2x"]
 
 
-# کپشن
+# --------------------------------------------------
+# متن پست
+# --------------------------------------------------
 
 message = (
+
     "📊 <b>گزارش بازار امروز</b>\n\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
@@ -291,16 +327,21 @@ message = (
 )
 
 
-# ارسال
+# --------------------------------------------------
+# ارسال تلگرام
+# --------------------------------------------------
 
 r = requests.post(
+
     f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
+
     data={
         "chat_id": CHANNEL,
         "photo": image_url,
         "caption": message,
         "parse_mode": "HTML"
     },
+
     timeout=30
 )
 
