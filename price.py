@@ -1,5 +1,4 @@
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import re
 
 URLS = {
@@ -7,84 +6,137 @@ URLS = {
     "میلگرد نیشابور": "https://khorasan-steel.com/product.php?prd=3",
 }
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0 Safari/537.36",
-    "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
-}
+with sync_playwright() as p:
 
-for title, url in URLS.items():
+    browser = p.chromium.launch(
+        headless=True
+    )
 
-    print("\n" + "=" * 90)
-    print(title)
-    print(url)
-    print("=" * 90)
+    page = browser.new_page(
+        locale="fa-IR"
+    )
 
-    r = requests.get(url, headers=HEADERS, timeout=30)
+    for title, url in URLS.items():
 
-    print("HTTP:", r.status_code)
-    print("LENGTH:", len(r.text))
+        print("\n" + "=" * 90)
+        print(title)
+        print(url)
+        print("=" * 90)
 
-    soup = BeautifulSoup(r.text, "html.parser")
+        try:
 
-    # تمام tr ها
-    rows = soup.find_all("tr")
+            page.goto(
+                url,
+                wait_until="networkidle",
+                timeout=60000
+            )
 
-    print("\nTR COUNT:", len(rows))
+            page.wait_for_timeout(5000)
 
-    print("\n" + "-" * 90)
-    print("PRICE ROWS")
-    print("-" * 90)
+            print("PAGE TITLE:", page.title())
+            print("FINAL URL:", page.url)
 
-    found = 0
+            html = page.content()
 
-    for row in rows:
+            print("DOM LENGTH:", len(html))
 
-        text = row.get_text(" ", strip=True)
+            print("\n--- TEXT CONTAINING PRICE ---")
 
-        if not text:
-            continue
+            text = page.locator("body").inner_text()
 
-        # فقط ردیف‌هایی که احتمالاً قیمت دارند
-        if (
-            "قیمت" in text
-            or "ریال" in text
-            or re.search(r"\d{5,}", text)
-        ):
+            lines = text.splitlines()
 
-            print(text[:2000])
+            found = 0
 
-            found += 1
+            for line in lines:
 
-            if found >= 150:
-                break
+                line = re.sub(
+                    r"\s+",
+                    " ",
+                    line
+                ).strip()
 
-    print("\nFOUND ROWS:", found)
+                if not line:
+                    continue
 
-    print("\n" + "-" * 90)
-    print("TABLE-LIKE ELEMENTS")
-    print("-" * 90)
+                if (
+                    "قیمت" in line
+                    or "ریال" in line
+                    or re.search(r"\d{5,}", line)
+                ):
 
-    # هر چیزی که نقش جدول دارد
-    for tag in soup.find_all(["div", "ul", "li", "section"]):
+                    print(line[:1000])
 
-        text = tag.get_text(" ", strip=True)
+                    found += 1
 
-        if not text:
-            continue
+                    if found >= 150:
+                        break
 
-        if (
-            "قیمت امروز" in text
-            or "قیمت دیروز" in text
-        ):
+            print("\nFOUND:", found)
 
-            print("\nELEMENT:", tag.name)
-            print(text[:3000])
+            print("\n--- INPUTS ---")
 
-            found += 1
+            inputs = page.locator("input")
 
-            if found >= 180:
-                break
+            print(
+                "INPUT COUNT:",
+                inputs.count()
+            )
 
-    print("\n" + "=" * 90)
+            for i in range(inputs.count()):
 
-print("EXTRACTION TEST FINISHED")
+                el = inputs.nth(i)
+
+                print(
+                    i,
+                    el.get_attribute("name"),
+                    el.get_attribute("value"),
+                    el.get_attribute("type")
+                )
+
+            print("\n--- TABLE COUNT ---")
+
+            print(
+                "TABLES:",
+                page.locator("table").count()
+            )
+
+            print(
+                "ROWS:",
+                page.locator("tr").count()
+            )
+
+            print("\n--- PRICE KEYWORDS ---")
+
+            for keyword in [
+                "قیمت امروز",
+                "قیمت دیروز",
+                "میلگرد",
+                "نیشابور",
+                "اصفهان",
+                "شاهین بناب",
+                "ظفر بناب"
+            ]:
+
+                count = text.count(keyword)
+
+                if count:
+                    print(
+                        keyword,
+                        "=>",
+                        count
+                    )
+
+        except Exception as e:
+
+            print(
+                "ERROR:",
+                type(e).__name__,
+                str(e)
+            )
+
+    browser.close()
+
+print("\n" + "=" * 90)
+print("BROWSER PRICE TEST FINISHED")
+print("=" * 90)
