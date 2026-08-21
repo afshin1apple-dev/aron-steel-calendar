@@ -11,10 +11,6 @@ PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 
-# -------------------------
-# TGJU
-# -------------------------
-
 def get_tgju(url):
     response = requests.get(
         url,
@@ -31,40 +27,29 @@ def get_tgju(url):
     for row in soup.find_all("tr"):
         text = row.get_text(" ", strip=True)
 
-        if "نرخ فعلی" in text:
-            numbers = []
+        cells = row.find_all(["td", "th"])
 
-            for cell in row.find_all(["td", "th"]):
-                value = cell.get_text(" ", strip=True)
-                value = value.replace(",", "").replace("٬", "")
+        numbers = []
 
-                try:
-                    numbers.append(float(value))
-                except:
-                    pass
+        for cell in cells:
+            value = cell.get_text(" ", strip=True)
+            value = value.replace(",", "").replace("٬", "")
 
-            if numbers:
-                current = numbers[0]
+            try:
+                numbers.append(float(value))
+            except:
+                pass
 
-        if "نرخ روز گذشته" in text:
-            numbers = []
+        if "نرخ فعلی" in text and numbers:
+            current = numbers[0]
 
-            for cell in row.find_all(["td", "th"]):
-                value = cell.get_text(" ", strip=True)
-                value = value.replace(",", "").replace("٬", "")
-
-                try:
-                    numbers.append(float(value))
-                except:
-                    pass
-
-            if numbers:
-                previous = numbers[0]
+        if "نرخ روز گذشته" in text and numbers:
+            previous = numbers[0]
 
     if current is None:
-        raise RuntimeError(f"TGJU price not found: {url}")
+        raise RuntimeError(f"Price not found: {url}")
 
-    if previous is not None and previous != 0:
+    if previous:
         change = ((current - previous) / previous) * 100
     else:
         change = None
@@ -72,43 +57,66 @@ def get_tgju(url):
     return current, change
 
 
-# -------------------------
-# تتر - نوبیتکس
-# -------------------------
+def get_tether():
 
-def get_usdt_nobitex():
-
-    url = "https://api.nobitex.ir/market/stats"
-
-    params = {
-        "srcCurrency": "usdt",
-        "dstCurrency": "rls"
-    }
+    url = "https://www.tgju.org/profile/crypto-tether"
 
     response = requests.get(
         url,
-        params=params,
+        headers={"User-Agent": "Mozilla/5.0"},
         timeout=30
     )
 
     response.raise_for_status()
 
-    data = response.json()
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    if data.get("status") != "ok":
-        raise RuntimeError("Nobitex API error")
+    current = None
+    previous = None
 
-    stats = data["stats"]["usdt-rls"]
+    # پیدا کردن جدول بازار ریالی تتر
+    for row in soup.find_all("tr"):
 
-    price = float(stats["latest"])
-    change = float(stats["dayChange"])
+        text = row.get_text(" ", strip=True)
 
-    return price, change
+        if "تتر / ریال" not in text and "USDT/IRR" not in text:
+            continue
 
+        numbers = []
 
-# -------------------------
-# بیت‌کوین
-# -------------------------
+        for cell in row.find_all(["td", "th"]):
+
+            value = cell.get_text(" ", strip=True)
+            value = value.replace(",", "").replace("٬", "")
+
+            try:
+                number = float(value)
+
+                # قیمت تتر ریالی باید بزرگ باشد
+                if number > 1000:
+                    numbers.append(number)
+
+            except:
+                pass
+
+        if numbers:
+            current = numbers[0]
+
+            if len(numbers) > 1:
+                previous = numbers[1]
+
+            break
+
+    if current is None:
+        raise RuntimeError("Tether IRR price not found")
+
+    if previous and previous != 0:
+        change = ((current - previous) / previous) * 100
+    else:
+        change = None
+
+    return current, change
+
 
 def get_bitcoin():
 
@@ -136,10 +144,6 @@ def get_bitcoin():
     )
 
 
-# -------------------------
-# فرمت قیمت
-# -------------------------
-
 def format_price(value, decimals=0):
 
     if value is None:
@@ -162,9 +166,7 @@ def format_change(change):
     return "⚪ 0.00%"
 
 
-# -------------------------
-# دریافت قیمت‌ها
-# -------------------------
+# قیمت‌ها
 
 gold_world, gold_world_change = get_tgju(
     "https://www.tgju.org/profile/ons"
@@ -178,14 +180,12 @@ coin, coin_change = get_tgju(
     "https://www.tgju.org/profile/sekee"
 )
 
-tether, tether_change = get_usdt_nobitex()
+tether, tether_change = get_tether()
 
 bitcoin, bitcoin_change = get_bitcoin()
 
 
-# -------------------------
-# عکس مالی
-# -------------------------
+# عکس مرتبط با بازار مالی
 
 now = datetime.now(TEHRAN)
 
@@ -195,7 +195,7 @@ photo_response = requests.get(
         "Authorization": PEXELS_KEY
     },
     params={
-        "query": "gold bitcoin finance trading stock market",
+        "query": "gold bitcoin finance trading",
         "orientation": "landscape",
         "per_page": 30
     },
@@ -214,9 +214,7 @@ photo = photos[now.date().toordinal() % len(photos)]
 image_url = photo["src"]["large2x"]
 
 
-# -------------------------
-# ساخت کپشن
-# -------------------------
+# کپشن
 
 message = (
     "📊 <b>گزارش بازار امروز</b>\n\n"
@@ -246,9 +244,7 @@ message = (
 )
 
 
-# -------------------------
 # ارسال به تلگرام
-# -------------------------
 
 response = requests.post(
     f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
