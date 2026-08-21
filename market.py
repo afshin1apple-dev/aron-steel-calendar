@@ -11,6 +11,10 @@ PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 
+# -------------------------
+# TGJU
+# -------------------------
+
 def get_tgju(url):
     response = requests.get(
         url,
@@ -21,22 +25,16 @@ def get_tgju(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # پیدا کردن قیمت فعلی
     current = None
     previous = None
 
-    # جدول اطلاعات صفحه
-    rows = soup.find_all("tr")
-
-    for row in rows:
+    for row in soup.find_all("tr"):
         text = row.get_text(" ", strip=True)
 
-        if "نرخ فعلی" in text or "قیمت" in text:
-            cells = row.find_all(["td", "th"])
-
+        if "نرخ فعلی" in text:
             numbers = []
 
-            for cell in cells:
+            for cell in row.find_all(["td", "th"]):
                 value = cell.get_text(" ", strip=True)
                 value = value.replace(",", "").replace("٬", "")
 
@@ -49,11 +47,9 @@ def get_tgju(url):
                 current = numbers[0]
 
         if "نرخ روز گذشته" in text:
-            cells = row.find_all(["td", "th"])
-
             numbers = []
 
-            for cell in cells:
+            for cell in row.find_all(["td", "th"]):
                 value = cell.get_text(" ", strip=True)
                 value = value.replace(",", "").replace("٬", "")
 
@@ -66,7 +62,7 @@ def get_tgju(url):
                 previous = numbers[0]
 
     if current is None:
-        raise RuntimeError(f"Could not find price: {url}")
+        raise RuntimeError(f"TGJU price not found: {url}")
 
     if previous is not None and previous != 0:
         change = ((current - previous) / previous) * 100
@@ -76,7 +72,46 @@ def get_tgju(url):
     return current, change
 
 
+# -------------------------
+# تتر - نوبیتکس
+# -------------------------
+
+def get_usdt_nobitex():
+
+    url = "https://api.nobitex.ir/market/stats"
+
+    params = {
+        "srcCurrency": "usdt",
+        "dstCurrency": "rls"
+    }
+
+    response = requests.get(
+        url,
+        params=params,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    if data.get("status") != "ok":
+        raise RuntimeError("Nobitex API error")
+
+    stats = data["stats"]["usdt-rls"]
+
+    price = float(stats["latest"])
+    change = float(stats["dayChange"])
+
+    return price, change
+
+
+# -------------------------
+# بیت‌کوین
+# -------------------------
+
 def get_bitcoin():
+
     url = "https://api.coingecko.com/api/v3/simple/price"
 
     params = {
@@ -95,10 +130,18 @@ def get_bitcoin():
 
     data = response.json()["bitcoin"]
 
-    return data["usd"], data.get("usd_24h_change")
+    return (
+        data["usd"],
+        data.get("usd_24h_change")
+    )
 
+
+# -------------------------
+# فرمت قیمت
+# -------------------------
 
 def format_price(value, decimals=0):
+
     if value is None:
         return "نامشخص"
 
@@ -106,8 +149,9 @@ def format_price(value, decimals=0):
 
 
 def format_change(change):
+
     if change is None:
-        return "⚪ اطلاعات تغییر موجود نیست"
+        return "⚪ نامشخص"
 
     if change > 0:
         return f"🟢 +{change:.2f}%"
@@ -119,7 +163,7 @@ def format_change(change):
 
 
 # -------------------------
-# قیمت‌ها
+# دریافت قیمت‌ها
 # -------------------------
 
 gold_world, gold_world_change = get_tgju(
@@ -134,9 +178,7 @@ coin, coin_change = get_tgju(
     "https://www.tgju.org/profile/sekee"
 )
 
-tether, tether_change = get_tgju(
-    "https://www.tgju.org/profile/crypto-tether"
-)
+tether, tether_change = get_usdt_nobitex()
 
 bitcoin, bitcoin_change = get_bitcoin()
 
@@ -173,7 +215,7 @@ image_url = photo["src"]["large2x"]
 
 
 # -------------------------
-# کپشن
+# ساخت کپشن
 # -------------------------
 
 message = (
@@ -205,7 +247,7 @@ message = (
 
 
 # -------------------------
-# ارسال تلگرام
+# ارسال به تلگرام
 # -------------------------
 
 response = requests.post(
