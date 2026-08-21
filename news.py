@@ -1,264 +1,222 @@
-import requests
-from bs4 import BeautifulSoup
+import os
 import re
-from urllib.parse import urljoin
+import json
+import hashlib
+import requests
+import feedparser
+from datetime import datetime, timezone
 
-URLS = [
-    "https://khorasan-steel.com/product.php?prd=5",
-    "https://khorasan-steel.com/product.php?prd=3",
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+
+HISTORY_FILE = "news_history.json"
+
+RSS_FEEDS = [
+    ("Reuters Business", "https://feeds.reuters.com/reuters/businessNews"),
+    ("Google Finance", "https://news.google.com/rss/search?q=economy+steel+iron+market&hl=en-US&gl=US&ceid=US:en"),
+    ("Google Iran Economy", "https://news.google.com/rss/search?q=Iran+economy+currency+steel&hl=en-US&gl=US&ceid=US:en"),
 ]
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/139.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
-}
-
 KEYWORDS = [
-    "price",
-    "price2",
-    "today",
-    "yesterday",
-    "ajax",
-    "product",
-    "prd",
-    "قیمت",
-    "امروز",
-    "دیروز",
-    "میلگرد",
+    "steel", "iron", "metal", "ore", "copper",
+    "oil", "energy", "tariff", "sanction",
+    "inflation", "interest rate", "fed",
+    "dollar", "currency", "china",
+    "iran", "ایران", "فولاد", "آهن", "میلگرد",
+    "دلار", "ارز", "تحریم", "بورس", "تورم"
 ]
 
 def clean(text):
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"<[^>]+>", " ", text or "")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
-def show_matches(label, text):
-    print("\n---", label, "---")
 
-    lines = text.splitlines()
-    found = 0
-
-    for i, line in enumerate(lines):
-        line_clean = clean(line)
-
-        if not line_clean:
-            continue
-
-        lower = line_clean.lower()
-
-        if any(keyword.lower() in lower for keyword in KEYWORDS):
-            print(line_clean[:1000])
-            found += 1
-
-            if found >= 80:
-                print("... more matches omitted ...")
-                break
-
-    print("MATCHES:", found)
-
-for url in URLS:
-
-    print("\n" + "=" * 80)
-    print("CHECKING:", url)
-    print("=" * 80)
-
+def load_history():
     try:
-        session = requests.Session()
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
 
-        response = session.get(
-            url,
-            headers=HEADERS,
-            timeout=30
+
+def save_history(history):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(history)[-500:], f, ensure_ascii=False, indent=2)
+
+
+def make_id(title, link):
+    return hashlib.sha256(
+        (title + link).encode("utf-8")
+    ).hexdigest()
+
+
+def relevance(title, summary):
+    text = (title + " " + summary).lower()
+
+    score = 0
+
+    for keyword in KEYWORDS:
+        if keyword.lower() in text:
+            score += 1
+
+    return score
+
+
+def impact_analysis(title, summary):
+    text = (title + " " + summary).lower()
+
+    bullish_words = [
+        "tariff", "sanction", "shortage", "supply cut",
+        "oil rises", "inflation rises", "dollar rises",
+        "yuan weakens", "stimulus", "demand rises",
+        "قیمت دلار", "افزایش دلار", "تحریم",
+        "کاهش عرضه", "افزایش تقاضا", "تورم"
+    ]
+
+    bearish_words = [
+        "demand falls", "recession", "oversupply",
+        "production rises", "steel demand drops",
+        "oil falls", "interest rate hike",
+        "دلار کاهش", "کاهش تقاضا", "رکود",
+        "افزایش عرضه", "کاهش قیمت"
+    ]
+
+    bullish = sum(word.lower() in text for word in bullish_words)
+    bearish = sum(word.lower() in text for word in bearish_words)
+
+    if bullish > bearish:
+        return (
+            "🟢 صعودی",
+            "این خبر می‌تواند در کوتاه‌مدت از افزایش قیمت آهن و فولاد حمایت کند.",
+            "متوسط"
         )
 
-        print("HTTP STATUS:", response.status_code)
-        print("FINAL URL:", response.url)
-        print("CONTENT TYPE:", response.headers.get("content-type"))
-        print("HTML LENGTH:", len(response.text))
-
-        if response.status_code != 200:
-            print("❌ PAGE FAILED")
-            continue
-
-        html = response.text
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # -------------------------------------------------
-        # 1. لینک‌ها
-        # -------------------------------------------------
-
-        print("\n" + "-" * 60)
-        print("LINKS")
-        print("-" * 60)
-
-        links_found = set()
-
-        for a in soup.find_all("a", href=True):
-
-            href = a.get("href", "").strip()
-
-            if not href:
-                continue
-
-            full_url = urljoin(response.url, href)
-
-            text = clean(a.get_text(" ", strip=True))
-
-            combined = (text + " " + href).lower()
-
-            if any(k.lower() in combined for k in KEYWORDS):
-
-                item = f"{text} => {full_url}"
-
-                if item not in links_found:
-                    links_found.add(item)
-                    print(item)
-
-        # -------------------------------------------------
-        # 2. فرم‌ها
-        # -------------------------------------------------
-
-        print("\n" + "-" * 60)
-        print("FORMS")
-        print("-" * 60)
-
-        for form in soup.find_all("form"):
-
-            print(
-                "FORM:",
-                clean(str(form))[:2000]
-            )
-
-        # -------------------------------------------------
-        # 3. Script ها
-        # -------------------------------------------------
-
-        print("\n" + "-" * 60)
-        print("SCRIPTS")
-        print("-" * 60)
-
-        scripts = soup.find_all("script")
-
-        print("SCRIPT COUNT:", len(scripts))
-
-        for index, script in enumerate(scripts):
-
-            src = script.get("src")
-
-            if src:
-                full_src = urljoin(response.url, src)
-
-                print(
-                    f"SCRIPT {index + 1}:",
-                    full_src
-                )
-
-            else:
-
-                content = script.get_text()
-
-                lower = content.lower()
-
-                if any(k.lower() in lower for k in KEYWORDS):
-
-                    print(
-                        f"\nINLINE SCRIPT {index + 1}:"
-                    )
-
-                    print(
-                        clean(content)[:5000]
-                    )
-
-        # -------------------------------------------------
-        # 4. درخواست‌های AJAX داخل HTML
-        # -------------------------------------------------
-
-        print("\n" + "-" * 60)
-        print("AJAX / API CANDIDATES")
-        print("-" * 60)
-
-        patterns = [
-            r"""url\s*:\s*["']([^"']+)["']""",
-            r"""href\s*=\s*["']([^"']+)["']""",
-            r"""fetch\s*\(\s*["']([^"']+)["']""",
-            r"""ajax\s*\([^)]*url\s*:\s*["']([^"']+)["']""",
-            r"""["']([^"']*(?:ajax|api|price|product)[^"']*)["']""",
-        ]
-
-        candidates = set()
-
-        for pattern in patterns:
-
-            matches = re.findall(
-                pattern,
-                html,
-                flags=re.IGNORECASE
-            )
-
-            for match in matches:
-
-                full = urljoin(response.url, match)
-
-                candidates.add(full)
-
-        if candidates:
-
-            for candidate in sorted(candidates):
-                print(candidate)
-
-        else:
-
-            print("No obvious AJAX/API URL found.")
-
-        # -------------------------------------------------
-        # 5. کلمات مرتبط با قیمت
-        # -------------------------------------------------
-
-        show_matches(
-            "PRICE RELATED HTML",
-            html
+    if bearish > bullish:
+        return (
+            "🔴 کاهشی",
+            "این خبر می‌تواند در کوتاه‌مدت فشار کاهشی روی قیمت آهن و فولاد ایجاد کند.",
+            "متوسط"
         )
 
-        # -------------------------------------------------
-        # 6. اعداد بزرگ موجود در HTML
-        # -------------------------------------------------
+    return (
+        "🟡 خنثی / نامشخص",
+        "اثر مستقیم این خبر بر بازار آهن و فولاد قطعی نیست و باید واکنش بازار بررسی شود.",
+        "کم"
+    )
 
-        print("\n" + "-" * 60)
-        print("NUMERIC DATA CANDIDATES")
-        print("-" * 60)
 
-        numbers = re.findall(
-            r"(?<!\d)\d{4,8}(?!\d)",
-            html
+def telegram_send(message):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    response = requests.post(
+        url,
+        data={
+            "chat_id": CHANNEL_ID,
+            "text": message,
+            "disable_web_page_preview": False
+        },
+        timeout=30
+    )
+
+    if response.status_code != 200:
+        print("Telegram error:", response.text)
+
+    return response.status_code == 200
+
+
+def main():
+
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is missing")
+
+    if not CHANNEL_ID:
+        raise RuntimeError("CHANNEL_ID is missing")
+
+    history = load_history()
+
+    candidates = []
+
+    for source_name, feed_url in RSS_FEEDS:
+
+        try:
+            print("Reading:", source_name)
+
+            feed = feedparser.parse(feed_url)
+
+            for entry in feed.entries[:15]:
+
+                title = clean(entry.get("title", ""))
+                summary = clean(entry.get("summary", ""))
+                link = entry.get("link", "")
+
+                if not title or not link:
+                    continue
+
+                news_id = make_id(title, link)
+
+                if news_id in history:
+                    continue
+
+                score = relevance(title, summary)
+
+                if score <= 0:
+                    continue
+
+                candidates.append({
+                    "id": news_id,
+                    "source": source_name,
+                    "title": title,
+                    "summary": summary,
+                    "link": link,
+                    "score": score
+                })
+
+        except Exception as e:
+            print("Feed error:", source_name, e)
+
+    candidates.sort(
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    if not candidates:
+        print("No new relevant news.")
+        save_history(history)
+        return
+
+    # حداکثر 3 خبر در هر اجرا
+    selected = candidates[:3]
+
+    for item in selected:
+
+        direction, explanation, strength = impact_analysis(
+            item["title"],
+            item["summary"]
         )
 
-        unique_numbers = []
-
-        for number in numbers:
-
-            if number not in unique_numbers:
-                unique_numbers.append(number)
-
-        for number in unique_numbers[:150]:
-
-            print(number)
-
-        print(
-            "\nTOTAL UNIQUE NUMBERS:",
-            len(unique_numbers)
+        message = (
+            "📰 خبر مهم اقتصادی\n\n"
+            f"🔹 {item['title']}\n\n"
+            f"📌 منبع: {item['source']}\n\n"
+            "━━━━━━━━━━━━━━\n"
+            "📊 تأثیر احتمالی بر بازار آهن و فولاد\n\n"
+            f"جهت اثر: {direction}\n"
+            f"شدت اثر: {strength}\n\n"
+            f"💡 تحلیل: {explanation}\n\n"
+            f"🔗 منبع خبر:\n{item['link']}\n\n"
+            "━━━━━━━━━━━━━━\n"
+            "⚠️ این تحلیل برآورد احتمالی بازار است و توصیه خرید یا فروش نیست."
         )
 
-        print("\nDONE:", url)
+        print("\nSending:", item["title"])
 
-    except Exception as e:
+        if telegram_send(message):
+            print("SENT OK")
+            history.add(item["id"])
 
-        print("\n❌ ERROR:")
-        print(type(e).__name__, str(e))
+    save_history(history)
 
-print("\n" + "=" * 80)
-print("PRICE SOURCE INVESTIGATION FINISHED")
-print("=" * 80)
+
+if __name__ == "__main__":
+    main()
