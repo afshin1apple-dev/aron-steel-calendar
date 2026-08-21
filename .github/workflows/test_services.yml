@@ -56,75 +56,47 @@ jobs:
           print("Photo:", data["photos"][0]["src"]["large"])
           PY
 
-      - name: Test Translation
+            - name: Test Translation
         run: |
           python - <<'PY'
           import requests
 
           text = "Gold prices rise as investors watch the global economy."
 
-          urls = [
-              "https://translate.astian.org/translate",
-              "https://libretranslate.com/translate"
-          ]
+          url = "https://api.mymemory.translated.net/get"
 
-          success = False
-
-          for url in urls:
-
-              try:
-
-                  r = requests.post(
-                      url,
-                      json={
-                          "q": text,
-                          "source": "en",
-                          "target": "fa",
-                          "format": "text"
-                      },
-                      timeout=20
-                  )
-
-                  print(
-                      "Translation status:",
-                      url,
-                      r.status_code
-                  )
-
-                  if r.ok:
-
-                      data = r.json()
-
-                      translated = data.get(
-                          "translatedText"
-                      )
-
-                      if translated:
-
-                          print(
-                              "✅ Translation OK"
-                          )
-
-                          print(
-                              "Result:",
-                              translated
-                          )
-
-                          success = True
-                          break
-
-              except Exception as e:
-
-                  print(
-                      "Translation error:",
-                      e
-                  )
-
-          if not success:
-
-              print(
-                  "❌ Translation service unavailable"
+          try:
+              r = requests.get(
+                  url,
+                  params={
+                      "q": text,
+                      "langpair": "en|fa"
+                  },
+                  timeout=20
               )
 
+              print("MyMemory status:", r.status_code)
+              print("Response:", r.text[:1000])
+
+              if r.status_code != 200:
+                  raise SystemExit(1)
+
+              data = r.json()
+
+              translated = (
+                  data
+                  .get("responseData", {})
+                  .get("translatedText", "")
+              )
+
+              if not translated:
+                  print("❌ Translation result empty")
+                  raise SystemExit(1)
+
+              print("✅ Translation OK")
+              print("Result:", translated)
+
+          except Exception as e:
+              print("Translation error:", e)
               raise SystemExit(1)
           PY
