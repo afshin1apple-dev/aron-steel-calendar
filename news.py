@@ -15,8 +15,38 @@ HISTORY_FILE = "news_history.json"
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
+# ---------------------------------
+# منابع خبری
+# ---------------------------------
+
 FEEDS = [
-    "https://fouladban.com/feed/",
+    # ایران
+    {
+        "name": "فولادبان",
+        "url": "https://fouladban.com/feed/",
+        "foreign": False,
+    },
+
+    # Reuters
+    {
+        "name": "Reuters",
+        "url": "https://www.reuters.com/my-news/feed/",
+        "foreign": True,
+    },
+
+    # Financial Times
+    {
+        "name": "Financial Times",
+        "url": "https://www.ft.com/?format=rss",
+        "foreign": True,
+    },
+
+    # Commodity / S&P Global
+    {
+        "name": "S&P Global Commodity",
+        "url": "https://www.spglobal.com/commodityinsights/en/rss-feeds",
+        "foreign": True,
+    },
 ]
 
 KEYWORDS = [
@@ -24,8 +54,6 @@ KEYWORDS = [
     "آهن",
     "میلگرد",
     "تیرآهن",
-    "نبشی",
-    "ناودانی",
     "شمش",
     "بورس کالا",
     "بورس",
@@ -42,10 +70,28 @@ KEYWORDS = [
     "اقتصاد",
     "سوخت",
     "بنزین",
+    "steel",
+    "iron",
+    "rebar",
+    "billet",
+    "commodity",
+    "commodities",
+    "oil",
+    "gold",
+    "copper",
+    "aluminum",
+    "inflation",
+    "economy",
+    "economic",
+    "market",
+    "markets",
+    "tariff",
+    "trade",
 ]
 
 
 def load_history():
+
     if not os.path.exists(HISTORY_FILE):
         return set()
 
@@ -56,16 +102,19 @@ def load_history():
             encoding="utf-8"
         ) as f:
             return set(json.load(f))
+
     except Exception:
         return set()
 
 
 def save_history(history):
+
     with open(
         HISTORY_FILE,
         "w",
         encoding="utf-8"
     ) as f:
+
         json.dump(
             list(history)[-1000:],
             f,
@@ -75,12 +124,14 @@ def save_history(history):
 
 
 def make_id(title, link):
+
     return hashlib.sha256(
         (title + link).encode("utf-8")
     ).hexdigest()
 
 
 def clean_text(text):
+
     if not text:
         return ""
 
@@ -92,14 +143,14 @@ def clean_text(text):
         text
     )
 
-    # حذف عبارت‌های تبلیغاتی انتهای RSS
-    garbage_patterns = [
+    garbage = [
         r"اولین بار در فولادبان.*",
         r"پدیدار شد.*",
-        r"این مطلب.*",
+        r"this article first appeared.*",
     ]
 
-    for pattern in garbage_patterns:
+    for pattern in garbage:
+
         text = re.sub(
             pattern,
             "",
@@ -117,24 +168,25 @@ def clean_text(text):
 
 
 def is_relevant(title, summary):
+
     text = (
         title + " " + summary
     ).lower()
 
     return any(
-        keyword.lower() in text
-        for keyword in KEYWORDS
+        word.lower() in text
+        for word in KEYWORDS
     )
 
 
 def get_item_date(item):
 
-    # تاریخ انتشار RSS
     published = item.get(
         "published_parsed"
     )
 
     if not published:
+
         published = item.get(
             "updated_parsed"
         )
@@ -143,6 +195,7 @@ def get_item_date(item):
         return None
 
     try:
+
         dt = datetime(
             *published[:6],
             tzinfo=timezone.utc
@@ -153,23 +206,29 @@ def get_item_date(item):
         )
 
     except Exception:
+
         return None
 
 
 def get_news():
 
-    news = []
+    all_news = []
 
     today = datetime.now(
         TEHRAN
     ).date()
 
-    for feed_url in FEEDS:
+    for source in FEEDS:
+
+        print(
+            "Checking:",
+            source["name"]
+        )
 
         try:
 
             response = requests.get(
-                feed_url,
+                source["url"],
                 headers={
                     "User-Agent":
                         "Mozilla/5.0"
@@ -177,10 +236,24 @@ def get_news():
                 timeout=20
             )
 
-            response.raise_for_status()
+            if not response.ok:
+
+                print(
+                    "Feed unavailable:",
+                    source["name"],
+                    response.status_code
+                )
+
+                continue
 
             feed = feedparser.parse(
                 response.content
+            )
+
+            print(
+                source["name"],
+                "items:",
+                len(feed.entries)
             )
 
             for item in feed.entries[:30]:
@@ -207,37 +280,31 @@ def get_news():
                 if not title or not link:
                     continue
 
-                # -------------------------
-                # فقط خبر امروز
-                # -------------------------
-
                 item_date = get_item_date(
                     item
                 )
 
+                # اگر تاریخ مشخص نبود، رد کن
                 if item_date is None:
+
                     print(
-                        "Skipped: no date",
+                        "No date:",
                         title
                     )
+
                     continue
 
+                # فقط امروز
                 if item_date.date() != today:
-                    print(
-                        "Skipped old news:",
-                        title,
-                        item_date
-                    )
+
                     continue
 
-                # -------------------------
-                # فیلتر موضوع
-                # -------------------------
-
+                # فیلتر اقتصادی
                 if not is_relevant(
                     title,
                     summary
                 ):
+
                     continue
 
                 news_id = make_id(
@@ -245,29 +312,50 @@ def get_news():
                     link
                 )
 
-                news.append({
+                all_news.append({
+
                     "id": news_id,
+
                     "title": title,
+
                     "link": link,
+
                     "summary": summary,
-                    "date": item_date
+
+                    "source":
+                        source["name"],
+
+                    "foreign":
+                        source["foreign"],
+
+                    "date":
+                        item_date
                 })
 
         except Exception as e:
 
             print(
-                "Feed error:",
-                feed_url,
-                e
+                "ERROR:",
+                source["name"],
+                str(e)
             )
 
     # جدیدترین اول
-    news.sort(
+    all_news.sort(
         key=lambda x: x["date"],
         reverse=True
     )
 
-    return news
+    return all_news
+
+
+def translate_title(title):
+
+    # ترجمه کاملاً رایگان و بدون API
+    # فعلاً برای جلوگیری از خطای سرویس خارجی
+    # اگر عنوان انگلیسی بود، همان عنوان را نگه می‌داریم
+
+    return title
 
 
 def send_news(news):
@@ -280,42 +368,70 @@ def send_news(news):
         news["summary"]
     )
 
-    # خلاصه کوتاه و تمیز
+    source = news["source"]
+
+    if news["foreign"]:
+
+        title = translate_title(
+            title
+        )
+
+        header = (
+            "🌍 <b>خبر اقتصادی جهان</b>"
+        )
+
+    else:
+
+        header = (
+            "🇮🇷 <b>خبر اقتصادی ایران</b>"
+        )
+
     if len(summary) > 450:
+
         summary = (
             summary[:450]
             + "..."
         )
 
     message = (
-        "🚨 خبر فوری اقتصادی\n\n"
-        f"📌 {title}\n\n"
+        f"{header}\n\n"
+        f"📌 <b>{title}</b>\n\n"
     )
 
     if summary:
+
         message += (
-            f"{summary}\n\n"
+            f"📝 {summary}\n\n"
         )
 
     message += (
-        "📰 منبع: فولادبان\n"
+        f"📰 منبع: {source}\n"
         f"🔗 {news['link']}\n\n"
         "🆔 @Arvand_Aron_Steel\n"
         "☎️ 021-22122239"
     )
 
     response = requests.post(
+
         f"https://api.telegram.org/"
         f"bot{TOKEN}/sendMessage",
+
         data={
+
             "chat_id": CHANNEL,
+
             "text": message,
+
+            "parse_mode": "HTML",
+
             "disable_web_page_preview": False
         },
+
         timeout=30
     )
 
     if not response.ok:
+
         print(
             "Telegram error:",
             response.text
@@ -324,7 +440,7 @@ def send_news(news):
     response.raise_for_status()
 
     print(
-        "News sent:",
+        "SENT:",
         title
     )
 
@@ -358,14 +474,14 @@ if not (
 ):
 
     print(
-        "Outside news schedule."
+        "Outside schedule."
     )
 
     exit()
 
 
 # =================================
-# اجرای ربات
+# اجرای اصلی
 # =================================
 
 history = load_history()
@@ -382,23 +498,34 @@ sent = 0
 for item in news:
 
     if item["id"] in history:
+
         continue
 
-    send_news(item)
+    try:
 
-    history.add(
-        item["id"]
-    )
+        send_news(item)
 
-    sent += 1
+        history.add(
+            item["id"]
+        )
 
-    # حداکثر دو خبر در هر اجرا
+        sent += 1
+
+    except Exception as e:
+
+        print(
+            "Send error:",
+            str(e)
+        )
+
+    # حداکثر 2 خبر در هر اجرا
     if sent >= 2:
+
         break
 
 
 save_history(history)
 
 print(
-    f"News check finished. Sent: {sent}"
+    f"Finished. Sent: {sent}"
 )
