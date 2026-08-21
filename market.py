@@ -1,6 +1,6 @@
 import os
-import re
 import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -8,36 +8,72 @@ TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 
-TGJU_URL = "https://www.tgju.org/"
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 
-def clean_number(text):
-    text = text.replace(",", "").replace("٬", "").replace("٫", ".")
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
-    return float(match.group()) if match else None
-
-
-def get_tgju_prices():
-    response = requests.get(TGJU_URL, timeout=30)
+def get_tgju(url):
+    response = requests.get(
+        url,
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=30
+    )
     response.raise_for_status()
-    html = response.text
 
-    prices = {}
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    patterns = {
-        "gold_world": r"انس طلا.*?([\d,]+\.\d+)",
-        "gold18": r"طلا ۱۸.*?([\d,]+)",
-        "coin": r"سکه امامی.*?([\d,]+)",
-        "tether": r"تتر.*?([\d,]+)",
-    }
+    # پیدا کردن قیمت فعلی
+    current = None
+    previous = None
 
-    for key, pattern in patterns.items():
-        match = re.search(pattern, html, re.S)
-        if match:
-            prices[key] = clean_number(match.group(1))
+    # جدول اطلاعات صفحه
+    rows = soup.find_all("tr")
 
-    return prices
+    for row in rows:
+        text = row.get_text(" ", strip=True)
+
+        if "نرخ فعلی" in text or "قیمت" in text:
+            cells = row.find_all(["td", "th"])
+
+            numbers = []
+
+            for cell in cells:
+                value = cell.get_text(" ", strip=True)
+                value = value.replace(",", "").replace("٬", "")
+
+                try:
+                    numbers.append(float(value))
+                except:
+                    pass
+
+            if numbers:
+                current = numbers[0]
+
+        if "نرخ روز گذشته" in text:
+            cells = row.find_all(["td", "th"])
+
+            numbers = []
+
+            for cell in cells:
+                value = cell.get_text(" ", strip=True)
+                value = value.replace(",", "").replace("٬", "")
+
+                try:
+                    numbers.append(float(value))
+                except:
+                    pass
+
+            if numbers:
+                previous = numbers[0]
+
+    if current is None:
+        raise RuntimeError(f"Could not find price: {url}")
+
+    if previous is not None and previous != 0:
+        change = ((current - previous) / previous) * 100
+    else:
+        change = None
+
+    return current, change
 
 
 def get_bitcoin():
@@ -49,27 +85,29 @@ def get_bitcoin():
         "include_24hr_change": "true"
     }
 
-    response = requests.get(url, params=params, timeout=30)
+    response = requests.get(
+        url,
+        params=params,
+        timeout=30
+    )
+
     response.raise_for_status()
 
     data = response.json()["bitcoin"]
 
-    return data["usd"], data.get("usd_24h_change", 0)
+    return data["usd"], data.get("usd_24h_change")
 
 
-def format_price(value):
+def format_price(value, decimals=0):
     if value is None:
         return "نامشخص"
 
-    if value >= 100:
-        return f"{value:,.0f}"
-
-    return f"{value:,.2f}"
+    return f"{value:,.{decimals}f}"
 
 
-def change_text(change):
+def format_change(change):
     if change is None:
-        return "⚪ نامشخص"
+        return "⚪ اطلاعات تغییر موجود نیست"
 
     if change > 0:
         return f"🟢 +{change:.2f}%"
@@ -80,23 +118,44 @@ def change_text(change):
     return "⚪ 0.00%"
 
 
-# دریافت قیمت‌های بازار ایران
-prices = get_tgju_prices()
+# -------------------------
+# قیمت‌ها
+# -------------------------
 
-# بیت‌کوین
-bitcoin_price, bitcoin_change = get_bitcoin()
+gold_world, gold_world_change = get_tgju(
+    "https://www.tgju.org/profile/ons"
+)
 
-# تاریخ ایران
+gold18, gold18_change = get_tgju(
+    "https://www.tgju.org/profile/geram18"
+)
+
+coin, coin_change = get_tgju(
+    "https://www.tgju.org/profile/sekee"
+)
+
+tether, tether_change = get_tgju(
+    "https://www.tgju.org/profile/crypto-tether"
+)
+
+bitcoin, bitcoin_change = get_bitcoin()
+
+
+# -------------------------
+# عکس مالی
+# -------------------------
+
 now = datetime.now(TEHRAN)
 
-# عکس مرتبط با بازار مالی
 photo_response = requests.get(
     "https://api.pexels.com/v1/search",
-    headers={"Authorization": PEXELS_KEY},
+    headers={
+        "Authorization": PEXELS_KEY
+    },
     params={
-        "query": "gold bitcoin financial market trading",
+        "query": "gold bitcoin finance trading stock market",
         "orientation": "landscape",
-        "per_page": 20
+        "per_page": 30
     },
     timeout=30
 )
@@ -106,40 +165,48 @@ photo_response.raise_for_status()
 photos = photo_response.json().get("photos", [])
 
 if not photos:
-    raise RuntimeError("No financial photo found.")
+    raise RuntimeError("No financial photo found")
 
-# هر روز یک عکس متفاوت
 photo = photos[now.date().toordinal() % len(photos)]
+
 image_url = photo["src"]["large2x"]
 
+
+# -------------------------
+# کپشن
+# -------------------------
 
 message = (
     "📊 <b>گزارش بازار امروز</b>\n\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
-    f"💰 {format_price(prices.get('gold_world'))} دلار\n"
-    f"📈 تغییر: {change_text(None)}\n\n"
+    f"💰 {format_price(gold_world, 2)} دلار\n"
+    f"📈 تغییر: {format_change(gold_world_change)}\n\n"
 
     f"🪙 <b>طلای ۱۸ عیار</b>\n"
-    f"💰 {format_price(prices.get('gold18'))} ریال\n"
-    f"📈 تغییر: {change_text(None)}\n\n"
+    f"💰 {format_price(gold18)} ریال\n"
+    f"📈 تغییر: {format_change(gold18_change)}\n\n"
 
     f"🪙 <b>سکه امامی</b>\n"
-    f"💰 {format_price(prices.get('coin'))} ریال\n"
-    f"📈 تغییر: {change_text(None)}\n\n"
+    f"💰 {format_price(coin)} ریال\n"
+    f"📈 تغییر: {format_change(coin_change)}\n\n"
 
     f"₿ <b>بیت‌کوین</b>\n"
-    f"💰 {format_price(bitcoin_price)} دلار\n"
-    f"📈 تغییر: {change_text(bitcoin_change)}\n\n"
+    f"💰 {format_price(bitcoin, 2)} دلار\n"
+    f"📈 تغییر: {format_change(bitcoin_change)}\n\n"
 
     f"💵 <b>تتر</b>\n"
-    f"💰 {format_price(prices.get('tether'))} ریال\n"
-    f"📈 تغییر: {change_text(None)}\n\n"
+    f"💰 {format_price(tether)} ریال\n"
+    f"📈 تغییر: {format_change(tether_change)}\n\n"
 
-    f"🆔 @Arvand_Aron_Steel\n"
-    f"☎️ 021-22122239"
+    "🆔 @Arvand_Aron_Steel\n"
+    "☎️ 021-22122239"
 )
 
+
+# -------------------------
+# ارسال تلگرام
+# -------------------------
 
 response = requests.post(
     f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
@@ -152,7 +219,6 @@ response = requests.post(
     timeout=30
 )
 
-print("Telegram response:")
 print(response.text)
 
 if not response.ok:
