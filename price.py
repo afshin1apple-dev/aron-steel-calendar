@@ -1,6 +1,6 @@
 import requests
-from bs4 import BeautifulSoup
 import re
+from html import unescape
 
 URLS = {
     "میلگرد سایر کارخانجات": "https://khorasan-steel.com/product.php?prd=5",
@@ -8,117 +8,109 @@ URLS = {
 }
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0 Safari/537.36"
 }
 
 
 def clean(text):
-    return " ".join(text.replace("\xa0", " ").split())
+    text = unescape(text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.replace("\xa0", " ")
+    return " ".join(text.split()).strip()
 
 
-def normalize_number(text):
+def price_value(text):
     text = clean(text)
 
-    if text in ("-", "—", ""):
+    if text in ("", "-", "—"):
         return None
 
+    # فقط عدد
     digits = re.sub(r"[^\d]", "", text)
 
-    return int(digits) if digits else None
+    if not digits:
+        return None
+
+    return int(digits)
 
 
-def extract_prices(html):
-    soup = BeautifulSoup(html, "html.parser")
+def extract_rows(html):
+
+    # فقط tbodyها را بررسی می‌کنیم
+    tbodies = re.findall(
+        r"<tbody[^>]*>(.*?)</tbody>",
+        html,
+        flags=re.I | re.S
+    )
+
+    print("TBODY COUNT:", len(tbodies))
 
     products = []
-    current_factory = None
 
-    # تمام ردیف‌های جدول
-    for tr in soup.find_all("tr"):
+    for tbody in tbodies:
 
-        cells = tr.find_all("td")
+        rows = re.findall(
+            r"<tr[^>]*>(.*?)</tr>",
+            tbody,
+            flags=re.I | re.S
+        )
 
-        if not cells:
-            continue
+        for row in rows:
 
-        values = [clean(td.get_text(" ", strip=True)) for td in cells]
-
-        # ------------------------------------------
-        # تشخیص عنوان کارخانه
-        # مثال:
-        # (میلگرد اصفهان) ESCO قیمت ها ...
-        # ------------------------------------------
-        full_text = " ".join(values)
-
-        if len(values) == 1 or any("میلگرد" in v for v in values):
-
-            m = re.search(
-                r"\(میلگرد\s*([^)]+)\)",
-                full_text
+            cells = re.findall(
+                r"<td[^>]*>(.*?)</td>",
+                row,
+                flags=re.I | re.S
             )
 
-            if m:
-                current_factory = clean(m.group(1))
+            values = [clean(x) for x in cells]
+
+            # باید دقیقاً 5 ستون قیمت داشته باشیم
+            if len(values) < 5:
                 continue
 
-        # ------------------------------------------
-        # ردیف واقعی قیمت
-        # ------------------------------------------
-        if len(values) < 5:
-            continue
+            # header
+            if (
+                "قیمت دیروز" in values[2]
+                or "قیمت امروز" in values[3]
+                or values[0] == "میلگرد"
+            ):
+                continue
 
-        # رد کردن header
-        if "قیمت دیروز" in full_text or "قیمت امروز" in full_text:
-            continue
+            factory = values[0]
+            size = values[1]
+            yesterday = values[2]
+            today = values[3]
+            description = values[4]
 
-        factory = values[0]
-        size = values[1]
-        yesterday = values[2]
-        today = values[3]
-        description = values[4]
+            # قیمت‌ها
+            yesterday_price = price_value(yesterday)
+            today_price = price_value(today)
 
-        # ردیف‌های خالی
-        if not factory or not size:
-            continue
+            # اگر ردیف محصول نیست
+            if not factory or not size:
+                continue
 
-        # اگر کارخانه از خود ردیف معتبر بود استفاده کن
-        if factory in ("میلگرد", "سایز", "سایزa"):
-            continue
-
-        # قیمت‌ها
-        yesterday_price = normalize_number(yesterday)
-        today_price = normalize_number(today)
-
-        # اگر هیچ قیمتی ندارد، هنوز محصول است
-        if (
-            yesterday_price is None
-            and today_price is None
-            and description == ""
-        ):
-            continue
-
-        # اگر عنوان کارخانه پیدا نشده، از ستون کارخانه استفاده کن
-        if not current_factory:
-            current_factory = factory
-
-        products.append({
-            "factory": factory,
-            "section": current_factory,
-            "size": size,
-            "yesterday": yesterday_price,
-            "today": today_price,
-            "description": description,
-        })
+            # اگر هر دو قیمت خالی هستند، باز هم محصول را نگه می‌داریم
+            # چون ممکن است "-" باشد
+            products.append({
+                "factory": factory,
+                "size": size,
+                "yesterday": yesterday_price,
+                "today": today_price,
+                "description": description
+            })
 
     return products
 
 
-def test_url(title, url):
+def test(title, url):
 
-    print("\n" + "=" * 90)
+    print("\n")
+    print("=" * 100)
     print(title)
     print(url)
-    print("=" * 90)
+    print("=" * 100)
 
     response = requests.get(
         url,
@@ -130,31 +122,35 @@ def test_url(title, url):
     print("LENGTH:", len(response.text))
 
     if response.status_code != 200:
+        print("ERROR: HTTP STATUS")
         return
 
-    products = extract_prices(response.text)
+    products = extract_rows(response.text)
 
-    print("\n" + "-" * 90)
+    print("\n")
+    print("-" * 100)
     print("EXTRACTED PRODUCTS")
-    print("-" * 90)
+    print("-" * 100)
 
-    for i, p in enumerate(products, 1):
+    for i, product in enumerate(products, 1):
 
         print(
             f"{i:03d} | "
-            f"FACTORY={p['factory']} | "
-            f"SIZE={p['size']} | "
-            f"YESTERDAY={p['yesterday']} | "
-            f"TODAY={p['today']} | "
-            f"DESC={p['description']}"
+            f"FACTORY={product['factory']} | "
+            f"SIZE={product['size']} | "
+            f"YESTERDAY={product['yesterday']} | "
+            f"TODAY={product['today']} | "
+            f"DESC={product['description']}"
         )
 
     print("\nFOUND:", len(products))
 
 
 for title, url in URLS.items():
-    test_url(title, url)
+    test(title, url)
 
-print("\n" + "=" * 90)
+
+print("\n")
+print("=" * 100)
 print("TEST FINISHED")
-print("=" * 90)
+print("=" * 100)
