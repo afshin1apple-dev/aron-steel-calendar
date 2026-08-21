@@ -19,7 +19,7 @@ COMPANY_FOOTER = """
 🏭 آروند استیل
 👤 مدیریت: افشین آورزمانی
 📞 021-22122239
-📱 @arvand_aron_steel
+🆔 @arvand_aron_steel
 """
 
 # =========================================================
@@ -54,11 +54,10 @@ FEEDS = [
 ]
 
 # =========================================================
-# موضوعات مورد نظر
+# کلمات مرتبط
 # =========================================================
 
 KEYWORDS = [
-    # فولاد
     "steel",
     "iron",
     "iron ore",
@@ -77,7 +76,6 @@ KEYWORDS = [
     "cold rolled",
     "stainless steel",
 
-    # اقتصاد
     "economy",
     "economic",
     "inflation",
@@ -90,7 +88,6 @@ KEYWORDS = [
     "industry",
     "industrial",
 
-    # دلار و ارز
     "dollar",
     "usd",
     "currency",
@@ -99,7 +96,6 @@ KEYWORDS = [
     "rial",
     "yuan",
 
-    # تحریم و سیاست تجاری
     "sanction",
     "sanctions",
     "tariff",
@@ -109,14 +105,12 @@ KEYWORDS = [
     "import ban",
     "embargo",
 
-    # چین
     "china",
     "chinese",
     "beijing",
     "property market",
     "real estate",
 
-    # انرژی و کامودیتی
     "oil",
     "crude",
     "energy",
@@ -125,7 +119,6 @@ KEYWORDS = [
     "gold",
     "copper",
 
-    # فارسی
     "فولاد",
     "آهن",
     "میلگرد",
@@ -165,17 +158,14 @@ def load_history():
         return []
 
     try:
-
         with open(
             HISTORY_FILE,
             "r",
             encoding="utf-8"
         ) as f:
-
             return json.load(f)
 
     except Exception:
-
         return []
 
 
@@ -323,7 +313,6 @@ def get_news():
 
                     "id":
                         news_id
-
                 })
 
         except Exception as e:
@@ -336,7 +325,7 @@ def get_news():
 
 
 # =========================================================
-# ترجمه کامل تیتر
+# ترجمه تیتر
 # =========================================================
 
 def translate_title(title):
@@ -348,10 +337,10 @@ def translate_title(title):
         url = (
             "https://translate.googleapis.com/"
             "translate_a/single"
-            f"?client=gtx"
-            f"&sl=auto"
-            f"&tl=fa"
-            f"&dt=t"
+            "?client=gtx"
+            "&sl=auto"
+            "&tl=fa"
+            "&dt=t"
             f"&q={encoded}"
         )
 
@@ -398,7 +387,7 @@ def translate_title(title):
 
 
 # =========================================================
-# تحلیل اثر روی بازار فولاد
+# تحلیل اثر بازار
 # =========================================================
 
 def impact_analysis(
@@ -431,8 +420,13 @@ def impact_analysis(
         "weaker dollar",
         "weak dollar",
         "china stimulus",
-        "export restriction"
+        "export restriction",
 
+        "افزایش قیمت",
+        "افزایش تقاضا",
+        "کاهش تولید",
+        "کاهش عرضه",
+        "محرک اقتصادی"
     ]
 
     negative_words = [
@@ -450,8 +444,13 @@ def impact_analysis(
         "dollar rises",
         "strong dollar",
         "china property slump",
-        "construction slowdown"
+        "construction slowdown",
 
+        "کاهش قیمت",
+        "کاهش تقاضا",
+        "افزایش تولید",
+        "مازاد عرضه",
+        "رکود"
     ]
 
     positive = any(
@@ -464,64 +463,28 @@ def impact_analysis(
         for word in negative_words
     )
 
-    # تحریم معمولا برای بازار ایران
-    # اثر افزایشی روی هزینه واردات و نرخ ارز دارد
-    if (
-        "sanction" in text
-        or "تحریم" in text
-    ):
-
-        return (
-            "⚠️ اثر احتمالی بر بازار فولاد ایران: "
-            "ریسک افزایشی؛ تشدید تحریم‌ها می‌تواند "
-            "هزینه تجارت، حمل‌ونقل و نرخ ارز را افزایش دهد."
-        )
-
     if positive and not negative:
 
         return (
-            "📈 اثر احتمالی بر بازار فولاد: "
-            "مثبت و متمایل به افزایش قیمت‌ها."
+            "🟢 اثر احتمالی بر بازار فولاد: "
+            "افزایشی"
         )
 
     if negative and not positive:
 
         return (
-            "📉 اثر احتمالی بر بازار فولاد: "
-            "منفی و متمایل به کاهش قیمت‌ها."
-        )
-
-    if (
-        "dollar" in text
-        or "usd" in text
-        or "دلار" in text
-    ):
-
-        return (
-            "💵 اثر احتمالی بر بازار فولاد: "
-            "وابسته به مسیر نرخ ارز؛ تغییرات دلار "
-            "می‌تواند مستقیماً بر هزینه و قیمت فولاد اثر بگذارد."
-        )
-
-    if (
-        "china" in text
-        or "چین" in text
-    ):
-
-        return (
-            "🇨🇳 اثر احتمالی بر بازار فولاد: "
-            "مهم؛ تغییرات تقاضا و تولید چین "
-            "می‌تواند بر بازار جهانی فولاد و سنگ‌آهن اثرگذار باشد."
+            "🔴 اثر احتمالی بر بازار فولاد: "
+            "کاهشی"
         )
 
     return (
-        "⚖️ اثر احتمالی بر بازار فولاد: "
-        "خنثی تا وابسته به واکنش عرضه، تقاضا و نرخ ارز."
+        "🟡 اثر احتمالی بر بازار فولاد: "
+        "خنثی"
     )
 
 
 # =========================================================
-# عکس مرتبط
+# عکس
 # =========================================================
 
 def get_image(query):
@@ -738,7 +701,6 @@ def main():
             news
         )
 
-        # عکس بر اساس موضوع خبر
         image_query = (
             "steel industry "
             "iron ore "
