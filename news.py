@@ -1,730 +1,574 @@
 import os
 import re
 import json
-import hashlib
+import html
 import requests
 import feedparser
 from bs4 import BeautifulSoup
 from urllib.parse import quote
-from datetime import datetime
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+CHANNEL_ID = os.environ["CHANNEL_ID"]
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
+
+TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 HISTORY_FILE = "news_history.json"
 
-# =========================================================
-# منابع خبر
-# =========================================================
+COMPANY_FOOTER = """
+━━━━━━━━━━━━━━
+🏭 آروند استیل
+👤 مدیریت: افشین آورزمانی
+📞 021-22122239
+📱 @arvand_aron_steel
+"""
 
-RSS_FEEDS = [
-    (
-        "Reuters",
-        "https://news.google.com/rss/search?q=site%3Areuters.com+steel+OR+%22iron+ore%22+OR+steel+market&hl=en-US&gl=US&ceid=US:en"
-    ),
-    (
-        "Bloomberg",
-        "https://news.google.com/rss/search?q=site%3Abloomberg.com+steel+OR+%22iron+ore%22+OR+steel+market&hl=en-US&gl=US&ceid=US:en"
-    ),
-    (
-        "SteelOrbis",
-        "https://www.steelorbis.com/steel-news/latest-news/"
-    ),
+# ---------------------------------------------------------
+# منابع خبری
+# ---------------------------------------------------------
+
+FEEDS = [
+    {
+        "name": "Reuters",
+        "url": "https://feeds.reuters.com/reuters/businessNews"
+    },
+    {
+        "name": "Bloomberg",
+        "url": "https://feeds.bloomberg.com/markets/news.rss"
+    },
+    {
+        "name": "Steel.com",
+        "url": "https://www.steel.com/feed/"
+    }
 ]
 
-# =========================================================
-# کلمات مرتبط با بازار فولاد
-# =========================================================
+# ---------------------------------------------------------
+# کلمات مرتبط با فولاد و بازار
+# ---------------------------------------------------------
 
 KEYWORDS = [
     "steel",
-    "iron ore",
+    "iron",
     "rebar",
     "billet",
+    "slab",
     "scrap",
-    "hot rolled",
-    "cold rolled",
-    "steel mill",
-    "steel price",
-    "iron ore price",
+    "iron ore",
     "coking coal",
-    "metallurgy",
-    "steel demand",
-    "steel production",
-    "steel exports",
-    "steel imports",
+    "metals",
+    "commodity",
+    "construction",
+    "china",
     "tariff",
     "sanction",
-    "china steel",
-    "china",
-    "iran",
-    "dollar",
-    "oil",
-    "inflation",
-    "interest rate",
-    "fed",
+    "steel price",
+    "iron ore price",
     "فولاد",
     "آهن",
     "میلگرد",
     "شمش",
     "سنگ آهن",
     "قراضه",
-    "صادرات",
-    "واردات",
+    "بازار",
+    "تعرفه",
     "تحریم",
-    "دلار",
-    "ارز",
-    "بورس",
-    "تورم",
+    "چین"
 ]
 
-# =========================================================
-# ابزارها
-# =========================================================
-
-def clean(text):
-    text = re.sub(r"<[^>]+>", " ", text or "")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
+# ---------------------------------------------------------
+# خواندن تاریخچه
+# ---------------------------------------------------------
 
 def load_history():
+
+    if not os.path.exists(HISTORY_FILE):
+        return []
+
     try:
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
+            return json.load(f)
+
     except Exception:
-        return set()
+        return []
 
 
 def save_history(history):
-    try:
-        data = list(history)[-500:]
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print("History save error:", e)
 
-
-def make_id(title, link):
-    return hashlib.sha256(
-        (title + link).encode("utf-8")
-    ).hexdigest()
-
-
-# =========================================================
-# ترجمه تیتر
-# =========================================================
-
-def translate_to_persian(text):
-
-    if not text:
-        return ""
-
-    try:
-        url = "https://translate.googleapis.com/translate_a/single"
-
-        params = {
-            "client": "gtx",
-            "sl": "auto",
-            "tl": "fa",
-            "dt": "t",
-            "q": text
-        }
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=15
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            history[-500:],
+            f,
+            ensure_ascii=False,
+            indent=2
         )
 
-        if response.status_code == 200:
-            data = response.json()
 
-            result = ""
+history = load_history()
 
-            for item in data[0]:
-                if item and item[0]:
-                    result += item[0]
+# ---------------------------------------------------------
+# تمیز کردن متن
+# ---------------------------------------------------------
 
-            if result:
-                return result.strip()
+def clean_text(text):
 
-    except Exception as e:
-        print("Translation error:", e)
+    text = BeautifulSoup(
+        html.unescape(text or ""),
+        "html.parser"
+    ).get_text(" ", strip=True)
 
-    return text
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
 
 
-# =========================================================
-# تشخیص ارتباط خبر با فولاد
-# =========================================================
+# ---------------------------------------------------------
+# بررسی ارتباط خبر با فولاد
+# ---------------------------------------------------------
 
-def relevance(title, summary):
+def is_relevant(title, description):
 
     text = (
-        title + " " + summary
+        title + " " + description
     ).lower()
-
-    score = 0
 
     for keyword in KEYWORDS:
 
         if keyword.lower() in text:
-            score += 1
+            return True
 
-    return score
+    return False
 
 
-# =========================================================
-# تحلیل اثر خبر روی قیمت فولاد
-# =========================================================
+# ---------------------------------------------------------
+# گرفتن اخبار
+# ---------------------------------------------------------
 
-def analyze_impact(title, summary):
+def get_news():
 
-    text = (
-        title + " " + summary
-    ).lower()
+    results = []
 
-    bullish = [
-        "steel prices rise",
-        "steel price rises",
-        "iron ore rises",
-        "iron ore price rises",
-        "demand rises",
-        "demand increases",
-        "production cuts",
-        "production cut",
-        "supply cut",
-        "shortage",
-        "tariff",
-        "sanction",
-        "export restriction",
-        "stimulus",
-        "construction rises",
-        "dollar rises",
-        "oil rises",
-        "inflation rises",
-        "فولاد افزایش",
-        "افزایش قیمت",
-        "افزایش تقاضا",
-        "کاهش عرضه",
-        "تحریم",
-        "محدودیت صادرات",
-        "افزایش دلار",
-        "افزایش تورم",
-        "افزایش هزینه",
-    ]
+    for feed_info in FEEDS:
 
-    bearish = [
-        "steel prices fall",
-        "steel price falls",
-        "iron ore falls",
-        "iron ore price falls",
-        "demand falls",
-        "demand decreases",
-        "oversupply",
-        "production increases",
-        "steel production rises",
-        "recession",
-        "construction falls",
-        "dollar falls",
-        "oil falls",
-        "interest rate hike",
-        "کاهش قیمت",
-        "کاهش تقاضا",
-        "افزایش عرضه",
-        "رکود",
-        "کاهش تولید",
-        "کاهش دلار",
-        "کاهش تورم",
-    ]
+        try:
 
-    bullish_score = 0
-    bearish_score = 0
+            feed = feedparser.parse(
+                feed_info["url"]
+            )
 
-    for word in bullish:
-        if word.lower() in text:
-            bullish_score += 1
+            for item in feed.entries[:20]:
 
-    for word in bearish:
-        if word.lower() in text:
-            bearish_score += 1
+                title = clean_text(
+                    item.get("title", "")
+                )
 
-    if bullish_score > bearish_score:
+                description = clean_text(
+                    item.get("summary", "")
+                )
 
-        if bullish_score >= 3:
-            strength = "زیاد"
-        else:
-            strength = "متوسط"
+                link = item.get(
+                    "link",
+                    ""
+                )
 
-        return (
-            "🟢 صعودی",
-            strength,
-            "این خبر می‌تواند از افزایش قیمت آهن و فولاد حمایت کند."
+                if not title:
+                    continue
+
+                if not is_relevant(
+                    title,
+                    description
+                ):
+                    continue
+
+                news_id = (
+                    title.lower().strip()
+                )
+
+                if news_id in history:
+                    continue
+
+                results.append({
+                    "source": feed_info["name"],
+                    "title": title,
+                    "description": description,
+                    "link": link,
+                    "id": news_id
+                })
+
+        except Exception as e:
+
+            print(
+                f"Feed error {feed_info['name']}: {e}"
+            )
+
+    return results
+
+
+# ---------------------------------------------------------
+# ترجمه ساده تیتر
+# ---------------------------------------------------------
+
+def translate_title(title):
+
+    # ترجمه برای تیترهای رایج اقتصادی
+    replacements = {
+
+        "steel": "فولاد",
+        "iron ore": "سنگ‌آهن",
+        "iron": "آهن",
+        "rebar": "میلگرد",
+        "billet": "شمش",
+        "scrap": "قراضه",
+        "China": "چین",
+        "Chinese": "چینی",
+        "prices": "قیمت‌ها",
+        "price": "قیمت",
+        "market": "بازار",
+        "markets": "بازارها",
+        "demand": "تقاضا",
+        "supply": "عرضه",
+        "exports": "صادرات",
+        "imports": "واردات",
+        "tariff": "تعرفه",
+        "sanctions": "تحریم‌ها",
+        "sanction": "تحریم",
+        "rise": "افزایش",
+        "rises": "افزایش یافت",
+        "fall": "کاهش",
+        "falls": "کاهش یافت",
+        "higher": "بالاتر",
+        "lower": "پایین‌تر",
+        "surge": "جهش",
+        "drop": "افت",
+        "increase": "افزایش",
+        "decrease": "کاهش",
+        "demand rises": "تقاضا افزایش یافت",
+        "demand falls": "تقاضا کاهش یافت"
+    }
+
+    result = title
+
+    for en, fa in sorted(
+        replacements.items(),
+        key=lambda x: len(x[0]),
+        reverse=True
+    ):
+
+        result = re.sub(
+            re.escape(en),
+            fa,
+            result,
+            flags=re.IGNORECASE
         )
 
-    if bearish_score > bullish_score:
+    return result
 
-        if bearish_score >= 3:
-            strength = "زیاد"
-        else:
-            strength = "متوسط"
+
+# ---------------------------------------------------------
+# تحلیل اثر خبر روی فولاد
+# ---------------------------------------------------------
+
+def impact_analysis(title, description):
+
+    text = (
+        title + " " + description
+    ).lower()
+
+    positive_words = [
+        "rise",
+        "rises",
+        "increase",
+        "increased",
+        "surge",
+        "higher",
+        "strong demand",
+        "stimulus",
+        "production cut",
+        "supply cut",
+        "tariff"
+    ]
+
+    negative_words = [
+        "fall",
+        "falls",
+        "drop",
+        "decrease",
+        "lower",
+        "weak demand",
+        "oversupply",
+        "recession",
+        "production increase"
+    ]
+
+    positive = any(
+        word in text
+        for word in positive_words
+    )
+
+    negative = any(
+        word in text
+        for word in negative_words
+    )
+
+    if positive and not negative:
 
         return (
-            "🔴 نزولی",
-            strength,
-            "این خبر می‌تواند روی قیمت آهن و فولاد فشار کاهشی ایجاد کند."
+            "📈 اثر احتمالی بر بازار فولاد: "
+            "مثبت و متمایل به افزایش قیمت‌ها."
+        )
+
+    if negative and not positive:
+
+        return (
+            "📉 اثر احتمالی بر بازار فولاد: "
+            "منفی و متمایل به کاهش قیمت‌ها."
         )
 
     return (
-        "🟡 خنثی",
-        "کم",
-        "فعلاً اثر مستقیم و مشخصی روی قیمت آهن و فولاد دیده نمی‌شود."
+        "⚖️ اثر احتمالی بر بازار فولاد: "
+        "خنثی تا وابسته به واکنش عرضه و تقاضا."
     )
 
 
-# =========================================================
-# عکس مرتبط از Pexels
-# =========================================================
+# ---------------------------------------------------------
+# دریافت عکس مرتبط از Pexels
+# ---------------------------------------------------------
 
-def get_pexels_image(title):
+def get_image(query):
 
     if not PEXELS_API_KEY:
         return None
 
     try:
 
-        search_terms = [
-            "steel factory",
-            "steel industry",
-            "iron ore",
-            "steel mill"
-        ]
-
-        query = "steel industry"
-
-        text = title.lower()
-
-        if "iron ore" in text or "سنگ آهن" in text:
-            query = "iron ore"
-
-        elif "rebar" in text or "میلگرد" in text:
-            query = "steel construction"
-
-        elif "steel mill" in text:
-            query = "steel mill"
-
-        url = "https://api.pexels.com/v1/search"
-
         headers = {
             "Authorization": PEXELS_API_KEY
         }
 
-        params = {
-            "query": query,
-            "per_page": 10,
-            "orientation": "landscape"
-        }
-
         response = requests.get(
-            url,
+            "https://api.pexels.com/v1/search",
             headers=headers,
-            params=params,
+            params={
+                "query": query,
+                "per_page": 5,
+                "orientation": "landscape"
+            },
             timeout=20
         )
 
         if response.status_code != 200:
-            print("Pexels error:", response.text)
             return None
 
         data = response.json()
 
-        photos = data.get("photos", [])
+        photos = data.get(
+            "photos",
+            []
+        )
 
         if not photos:
             return None
 
-        photo = photos[0]
-
-        return photo["src"]["large2x"]
+        return photos[0]["src"]["large"]
 
     except Exception as e:
 
-        print("Pexels error:", e)
+        print(
+            "Pexels error:",
+            e
+        )
+
         return None
 
 
-# =========================================================
+# ---------------------------------------------------------
 # ارسال متن به تلگرام
-# =========================================================
+# ---------------------------------------------------------
 
-def telegram_message(text):
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    response = requests.post(
-        url,
-        data={
-            "chat_id": CHANNEL_ID,
-            "text": text,
-            "disable_web_page_preview": False
-        },
-        timeout=30
-    )
-
-    print(
-        "Telegram message:",
-        response.status_code
-    )
-
-    return response.status_code == 200
-
-
-# =========================================================
-# ارسال عکس + کپشن
-# =========================================================
-
-def telegram_photo(photo_url, caption):
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-
-    response = requests.post(
-        url,
-        data={
-            "chat_id": CHANNEL_ID,
-            "photo": photo_url,
-            "caption": caption
-        },
-        timeout=40
-    )
-
-    print(
-        "Telegram photo:",
-        response.status_code
-    )
-
-    if response.status_code != 200:
-        print(response.text)
-
-    return response.status_code == 200
-
-
-# =========================================================
-# دریافت خبر از SteelOrbis
-# =========================================================
-
-def get_steelorbis():
-
-    results = []
+def send_message(text):
 
     try:
 
-        url = "https://www.steelorbis.com/steel-news/latest-news/"
-
-        headers = {
-            "User-Agent":
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"
-        }
-
-        response = requests.get(
-            url,
-            headers=headers,
+        response = requests.post(
+            f"{TELEGRAM_URL}/sendMessage",
+            data={
+                "chat_id": CHANNEL_ID,
+                "text": text,
+                "disable_web_page_preview": False
+            },
             timeout=30
         )
 
-        if response.status_code != 200:
-            print("SteelOrbis status:", response.status_code)
-            return results
-
-        soup = BeautifulSoup(
-            response.text,
-            "html.parser"
+        print(
+            "Telegram:",
+            response.status_code,
+            response.text[:500]
         )
 
-        for a in soup.find_all("a", href=True):
-
-            title = clean(a.get_text(" ", strip=True))
-
-            href = a.get("href")
-
-            if not title or not href:
-                continue
-
-            if len(title) < 25:
-                continue
-
-            score = relevance(
-                title,
-                ""
-            )
-
-            if score <= 0:
-                continue
-
-            if href.startswith("/"):
-                href = "https://www.steelorbis.com" + href
-
-            results.append({
-                "source": "SteelOrbis",
-                "title": title,
-                "summary": "",
-                "link": href,
-                "score": score
-            })
+        return response.ok
 
     except Exception as e:
 
-        print("SteelOrbis error:", e)
+        print(
+            "Telegram error:",
+            e
+        )
 
-    return results
-
-
-# =========================================================
-# دریافت اخبار Reuters و Bloomberg
-# =========================================================
-
-def get_rss_news():
-
-    results = []
-
-    for source, rss_url in RSS_FEEDS[:2]:
-
-        try:
-
-            print(
-                "Reading:",
-                source
-            )
-
-            feed = feedparser.parse(
-                rss_url
-            )
-
-            for entry in feed.entries[:20]:
-
-                title = clean(
-                    entry.get("title", "")
-                )
-
-                summary = clean(
-                    entry.get("summary", "")
-                )
-
-                link = entry.get(
-                    "link",
-                    ""
-                )
-
-                if not title or not link:
-                    continue
-
-                # Google News گاهی نام منبع را به تیتر اضافه می‌کند
-                title = re.sub(
-                    r"\s+-\s+(Reuters|Bloomberg)$",
-                    "",
-                    title,
-                    flags=re.IGNORECASE
-                )
-
-                score = relevance(
-                    title,
-                    summary
-                )
-
-                if score <= 0:
-                    continue
-
-                results.append({
-                    "source": source,
-                    "title": title,
-                    "summary": summary,
-                    "link": link,
-                    "score": score
-                })
-
-        except Exception as e:
-
-            print(
-                source,
-                "error:",
-                e
-            )
-
-    return results
+        return False
 
 
-# =========================================================
+# ---------------------------------------------------------
+# ارسال عکس + متن
+# ---------------------------------------------------------
+
+def send_photo(image_url, caption):
+
+    try:
+
+        response = requests.post(
+            f"{TELEGRAM_URL}/sendPhoto",
+            data={
+                "chat_id": CHANNEL_ID,
+                "photo": image_url,
+                "caption": caption
+            },
+            timeout=40
+        )
+
+        print(
+            "Telegram photo:",
+            response.status_code,
+            response.text[:500]
+        )
+
+        return response.ok
+
+    except Exception as e:
+
+        print(
+            "Telegram photo error:",
+            e
+        )
+
+        return False
+
+
+# ---------------------------------------------------------
 # ساخت پست
-# =========================================================
+# ---------------------------------------------------------
 
-def create_post(item):
+def make_post(news):
 
-    original_title = item["title"]
+    source = news["source"]
 
-    persian_title = translate_to_persian(
+    original_title = news["title"]
+
+    translated = translate_title(
         original_title
     )
 
-    direction, strength, explanation = analyze_impact(
+    impact = impact_analysis(
         original_title,
-        item["summary"]
+        news["description"]
     )
 
-    now = datetime.now().strftime(
-        "%Y/%m/%d - %H:%M"
-    )
+    post = f"""
+📰 خبر اقتصادی
 
-    caption = (
-        "🏭 خبر بازار فولاد\n\n"
+🇬🇧 منبع: {source}
 
-        f"📰 {persian_title}\n\n"
+🔹 تیتر اصلی:
+{original_title}
 
-        f"🌐 منبع: {item['source']}\n"
+🇮🇷 ترجمه تیتر:
+{translated}
 
-        "━━━━━━━━━━━━━━\n"
+{impact}
 
-        "📊 اثر احتمالی بر بازار آهن و فولاد ایران\n\n"
+🔗 منبع خبر:
+{news['link']}
+"""
 
-        f"جهت اثر: {direction}\n"
-        f"شدت اثر: {strength}\n\n"
+    post += COMPANY_FOOTER
 
-        f"💡 تحلیل: {explanation}\n\n"
-
-        "━━━━━━━━━━━━━━\n"
-
-        f"🕐 {now}\n\n"
-
-        f"🔗 منبع اصلی:\n{item['link']}\n\n"
-
-        "⚠️ تحلیل فوق برآورد احتمالی اثر خبر بر بازار است و توصیه خرید یا فروش نیست."
-    )
-
-    return caption
+    return post.strip()
 
 
-# =========================================================
+# ---------------------------------------------------------
 # اجرای اصلی
-# =========================================================
+# ---------------------------------------------------------
 
 def main():
 
-    if not BOT_TOKEN:
-        raise RuntimeError(
-            "BOT_TOKEN is missing"
-        )
-
-    if not CHANNEL_ID:
-        raise RuntimeError(
-            "CHANNEL_ID is missing"
-        )
-
-    history = load_history()
-
-    all_news = []
-
-    # Reuters + Bloomberg
-    all_news.extend(
-        get_rss_news()
+    print(
+        "Starting economic news bot..."
     )
 
-    # SteelOrbis
-    all_news.extend(
-        get_steelorbis()
-    )
+    news_items = get_news()
 
     print(
-        "TOTAL CANDIDATES:",
-        len(all_news)
+        "Relevant new news:",
+        len(news_items)
     )
 
-    unique = {}
-
-    for item in all_news:
-
-        news_id = make_id(
-            item["title"],
-            item["link"]
-        )
-
-        if news_id in history:
-            continue
-
-        unique[news_id] = {
-            **item,
-            "id": news_id
-        }
-
-    news = list(
-        unique.values()
-    )
-
-    news.sort(
-        key=lambda x: x["score"],
-        reverse=True
-    )
-
-    if not news:
+    if not news_items:
 
         print(
-            "No new news."
+            "No new relevant news."
         )
-
-        save_history(history)
 
         return
 
-    # فقط یک خبر در هر اجرا
-    selected = news[0]
+    # حداکثر 2 خبر در هر اجرا
+    news_items = news_items[:2]
 
-    print(
-        "SELECTED:",
-        selected["source"],
-        selected["title"]
-    )
+    for news in news_items:
 
-    caption = create_post(
-        selected
-    )
+        post = make_post(news)
 
-    photo = get_pexels_image(
-        selected["title"]
-    )
-
-    sent = False
-
-    if photo:
-
-        sent = telegram_photo(
-            photo,
-            caption
+        # عکس مرتبط
+        image_query = (
+            "steel industry "
+            "steel factory iron"
         )
 
-    if not sent:
-
-        sent = telegram_message(
-            caption
+        image_url = get_image(
+            image_query
         )
 
-    if sent:
+        if image_url:
 
-        history.add(
-            selected["id"]
-        )
+            success = send_photo(
+                image_url,
+                post
+            )
 
-        save_history(
-            history
-        )
+        else:
 
-        print(
-            "✅ NEWS SENT"
-        )
+            success = send_message(
+                post
+            )
 
-    else:
+        if success:
 
-        print(
-            "❌ NEWS NOT SENT"
-        )
+            history.append(
+                news["id"]
+            )
+
+            save_history(
+                history
+            )
+
+            print(
+                "POSTED:",
+                news["title"]
+            )
+
+        else:
+
+            print(
+                "FAILED:",
+                news["title"]
+            )
 
 
 if __name__ == "__main__":
