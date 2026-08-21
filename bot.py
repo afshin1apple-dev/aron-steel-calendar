@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
+PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 
 now = datetime.now(ZoneInfo("Asia/Tehran"))
 g = now.date()
@@ -17,13 +18,8 @@ j = jdatetime.date.fromgregorian(
 )
 
 weekdays = [
-    "دوشنبه",
-    "سه‌شنبه",
-    "چهارشنبه",
-    "پنجشنبه",
-    "جمعه",
-    "شنبه",
-    "یکشنبه"
+    "دوشنبه", "سه‌شنبه", "چهارشنبه",
+    "پنجشنبه", "جمعه", "شنبه", "یکشنبه"
 ]
 
 months = [
@@ -32,9 +28,61 @@ months = [
     "آذر", "دی", "بهمن", "اسفند"
 ]
 
-weekday = weekdays[g.weekday()]
+# مکان‌های منتخب ایران
+places = [
+    ("ماسال", "Masal Iran"),
+    ("رامسر", "Ramsar Iran"),
+    ("جنگل‌های دوهزار", "Dohezar Forest Iran"),
+    ("فیلبند", "Filband Iran"),
+    ("اورامانات", "Hawraman Iran"),
+    ("دریاچه گهر", "Gahar Lake Iran"),
+    ("کویر مرنجاب", "Maranjab Desert Iran"),
+    ("کویر لوت", "Lut Desert Iran"),
+    ("ابیانه", "Abyaneh Iran"),
+    ("کاشان", "Kashan Iran"),
+    ("اصفهان", "Isfahan Iran"),
+    ("شیراز", "Shiraz Iran"),
+    ("یزد", "Yazd Iran"),
+    ("قشم", "Qeshm Iran"),
+    ("جزیره هرمز", "Hormuz Island Iran"),
+    ("چابهار", "Chabahar Iran"),
+]
 
-# تعطیلات رسمی ایران در سال ۱۴۰۵
+# هر روز یک مکان متفاوت
+index = g.toordinal() % len(places)
+place_name, search_query = places[index]
+
+# جست‌وجوی عکس در Pexels
+headers = {
+    "Authorization": PEXELS_KEY
+}
+
+params = {
+    "query": search_query,
+    "orientation": "landscape",
+    "per_page": 10
+}
+
+photo_response = requests.get(
+    "https://api.pexels.com/v1/search",
+    headers=headers,
+    params=params,
+    timeout=20
+)
+
+photo_response.raise_for_status()
+
+photos = photo_response.json().get("photos", [])
+
+if not photos:
+    raise RuntimeError(f"No photo found for {place_name}")
+
+# انتخاب عکس بر اساس تاریخ
+photo = photos[g.toordinal() % len(photos)]
+
+image_url = photo["src"]["large2x"]
+
+# تعطیلات رسمی
 holidays = {
     (1, 1): "آغاز نوروز",
     (1, 2): "عید نوروز",
@@ -42,42 +90,18 @@ holidays = {
     (1, 4): "عید نوروز",
     (1, 12): "روز جمهوری اسلامی ایران",
     (1, 13): "روز طبیعت",
-    
-    (1, 25): "شهادت امام جعفر صادق (ع)",
-    
-    (3, 3): "شهادت امام محمد باقر (ع)",
-    (3, 6): "عید قربان",
-    (3, 14): "رحلت امام خمینی و عید غدیر خم",
-    (3, 15): "قیام ۱۵ خرداد",
-
-    (4, 3): "تاسوعای حسینی",
-    (4, 4): "عاشورای حسینی",
-
-    (5, 13): "اربعین حسینی",
-    (5, 21): "رحلت پیامبر اکرم (ص) و شهادت امام حسن مجتبی (ع)",
-    (5, 22): "شهادت امام رضا (ع)",
-    (5, 30): "شهادت امام حسن عسکری (ع)",
-
-    (6, 8): "ولادت پیامبر اکرم (ص) و ولادت امام جعفر صادق (ع)",
-
-    (8, 22): "شهادت حضرت فاطمه زهرا (س)",
-
-    (10, 2): "ولادت امام علی (ع) و روز پدر",
-    (10, 16): "مبعث پیامبر اکرم (ص)",
-
-    (11, 4): "ولادت امام زمان (عج)",
+    (2, 14): "رحلت امام خمینی",
+    (2, 15): "قیام ۱۵ خرداد",
     (11, 22): "پیروزی انقلاب اسلامی ایران",
-
-    (12, 9): "شهادت امام علی (ع)",
-    (12, 19): "عید سعید فطر",
-    (12, 20): "تعطیل به مناسبت عید سعید فطر",
     (12, 29): "ملی شدن صنعت نفت ایران",
 }
 
 holiday = holidays.get((j.month, j.day))
 
 message = (
-    f"📅 <b>{weekday} {j.day} {months[j.month - 1]} {j.year}</b>\n"
+    f"📍 <b>{place_name}</b>\n\n"
+    f"📅 <b>{weekdays[g.weekday()]} "
+    f"{j.day} {months[j.month - 1]} {j.year}</b>\n"
     f"🌍 {g.day:02d}/{g.month:02d}/{g.year}\n"
 )
 
@@ -92,20 +116,22 @@ message += (
     f"☎️ 021-22122239"
 )
 
+# ارسال عکس + کپشن به تلگرام
 response = requests.post(
-    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-    json={
+    f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
+    data={
         "chat_id": CHANNEL,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
+        "photo": image_url,
+        "caption": message,
+        "parse_mode": "HTML"
     },
-    timeout=20
+    timeout=30
 )
 
+print("Telegram response:")
 print(response.text)
 
 if not response.ok:
     raise RuntimeError(response.text)
 
-print("Message sent successfully.")
+print("Photo and calendar sent successfully.")
