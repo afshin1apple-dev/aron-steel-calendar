@@ -1,133 +1,91 @@
 from playwright.sync_api import sync_playwright
-import re
 
-URLS = {
-    "سایر کارخانجات": "https://khorasan-steel.com/product.php?prd=5",
-    "نیشابور": "https://khorasan-steel.com/product.php?prd=3",
-}
-
-def clean_number(text):
-    text = text.replace(",", "").replace("،", "")
-    text = re.sub(r"[^\d]", "", text)
-    return int(text) if text else None
-
+URL = "https://khorasan-steel.com/product.php?prd=5"
 
 with sync_playwright() as p:
 
     browser = p.chromium.launch(headless=True)
 
-    page = browser.new_page(
-        locale="fa-IR"
+    page = browser.new_page(locale="fa-IR")
+
+    print("=" * 90)
+    print("DOM STRUCTURE TEST")
+    print("=" * 90)
+
+    page.goto(
+        URL,
+        wait_until="networkidle",
+        timeout=60000
     )
 
-    for group, url in URLS.items():
+    page.wait_for_timeout(3000)
 
-        print("\n" + "=" * 90)
-        print(group)
-        print(url)
-        print("=" * 90)
+    # پیدا کردن تمام عناصری که متن «قیمت امروز» دارند
+    elements = page.get_by_text(
+        "قیمت امروز",
+        exact=False
+    )
 
-        page.goto(
-            url,
-            wait_until="networkidle",
-            timeout=60000
-        )
+    print("PRICE HEADER ELEMENTS:", elements.count())
 
-        page.wait_for_timeout(3000)
+    for i in range(min(elements.count(), 10)):
 
-        # پیدا کردن عنوان‌های جدول
-        headings = page.locator("text=قیمت امروز")
+        el = elements.nth(i)
 
-        print("PRICE HEADINGS:", headings.count())
+        print("\n" + "-" * 90)
+        print("HEADER", i)
+        print("-" * 90)
 
-        # تمام متن صفحه
-        text = page.locator("body").inner_text()
-
-        lines = [
-            re.sub(r"\s+", " ", x).strip()
-            for x in text.splitlines()
-        ]
-
-        print("\n--- EXTRACTED PRODUCTS ---")
-
-        current_factory = None
-        found = 0
-
-        for i, line in enumerate(lines):
-
-            if not line:
-                continue
-
-            # تشخیص کارخانه از خطوط قبل از جدول
-            factories = [
-                "اصفهان",
-                "شاهین بناب",
-                "ظفر",
-                "راد همدان",
-                "شاهرود",
-                "سیادن ابهر",
-                "البرزتاکستان",
-                "روهینا جنوب",
-                "آریان فولاد",
-                "آناهیتا",
-                "نیک صدرا",
-                "پرشین فولاد",
-                "فولادکاسپین",
-                "شمس سپهر",
-                "میانه",
-                "کاوه تیکمه داش",
-                "آذرفولادامین",
-                "کویرکاشان",
-                "فولاد سیرجان",
-                "بافق یزد",
-                "فایکو",
-                "حدید سیرجان",
-                "ابرکوه یزد",
-                "درپاد تبریز",
-            ]
-
-            for factory in factories:
-
-                if factory in line and len(line) < 80:
-                    current_factory = factory
-                    break
-
-            # خطوطی که قیمت دارند
-            numbers = re.findall(
-                r"(?<!\d)\d{5,7}(?!\d)",
-                line.replace(",", "")
+        try:
+            print("TAG:", el.evaluate("(e) => e.tagName"))
+            print("TEXT:", el.inner_text())
+            print("\nOUTER HTML:")
+            print(
+                el.evaluate(
+                    "(e) => e.parentElement.parentElement.outerHTML"
+                )[:12000]
             )
 
-            if len(numbers) >= 2:
+        except Exception as e:
+            print("ERROR:", e)
 
-                values = [
-                    clean_number(x)
-                    for x in numbers
-                ]
+    print("\n" + "=" * 90)
+    print("SEARCHING PRICE NUMBERS")
+    print("=" * 90)
 
-                values = [
-                    x for x in values
-                    if x is not None
-                ]
+    # تمام عناصر حاوی قیمت‌های 6 رقمی
+    candidates = page.locator(
+        "text=/\\d{6}/"
+    )
 
-                if len(values) >= 2:
+    print(
+        "NUMBER CANDIDATES:",
+        candidates.count()
+    )
 
-                    # معمولاً:
-                    # سایز / قیمت دیروز / قیمت امروز
-                    print(
-                        f"FACTORY={current_factory} | "
-                        f"LINE={line}"
-                    )
+    for i in range(min(candidates.count(), 30)):
 
-                    found += 1
+        el = candidates.nth(i)
 
-                    if found >= 200:
-                        break
+        try:
 
-        print("\nFOUND:", found)
+            print("\n" + "-" * 60)
+            print("CANDIDATE", i)
+            print("TAG:", el.evaluate("(e) => e.tagName"))
+            print("TEXT:", el.inner_text()[:1000])
+
+            print("PARENT:")
+            print(
+                el.evaluate(
+                    "(e) => e.parentElement.outerHTML"
+                )[:5000]
+            )
+
+        except Exception as e:
+            print("ERROR:", e)
 
     browser.close()
 
 print("\n" + "=" * 90)
-print("REAL PRICE EXTRACTION TEST FINISHED")
+print("DOM TEST FINISHED")
 print("=" * 90)
