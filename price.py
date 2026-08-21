@@ -10,13 +10,14 @@ URLS = {
     "میلگرد نیشابور": "https://khorasan-steel.com/product.php?prd=3",
 }
 
-
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/139.0 Safari/537.36"
-    )
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
 
@@ -31,7 +32,7 @@ def clean(text):
 def price_value(text):
     text = clean(text)
 
-    if not text or text in ("-", "—", "–"):
+    if text in ("", "-", "—", "–"):
         return None
 
     digits = re.sub(r"[^\d]", "", text)
@@ -42,11 +43,7 @@ def price_value(text):
     return int(digits)
 
 
-def extract_all_rows(html):
-    """
-    همه tr های صفحه را پیدا می‌کند.
-    دیگر وابسته به وجود tbody نیست.
-    """
+def extract_table_rows(html):
 
     rows = re.findall(
         r"<tr\b[^>]*>(.*?)</tr>",
@@ -64,96 +61,107 @@ def extract_all_rows(html):
             flags=re.I | re.S
         )
 
-        values = [clean(cell) for cell in cells]
+        values = [clean(x) for x in cells]
 
-        if len(values) != 5:
-            continue
-
-        result.append(values)
+        if len(values) == 5:
+            result.append(values)
 
     return result
 
 
-def is_header_row(values):
+def extract_products(html, source_page):
 
-    if len(values) != 5:
-        return True
-
-    text = " ".join(values)
-
-    if "قیمت دیروز" in text:
-        return True
-
-    if "قیمت امروز" in text:
-        return True
-
-    if values[0] == "میلگرد":
-        return True
-
-    return False
-
-
-def is_empty_row(values):
-
-    if not values:
-        return True
-
-    return all(
-        not value or value in ("-", "—", "–")
-        for value in values
-    )
-
-
-def extract_rows(html, page_title):
-
-    rows = extract_all_rows(html)
+    rows = extract_table_rows(html)
 
     products = []
 
     for values in rows:
 
-        if is_header_row(values):
+        factory = values[0]
+        size = values[1]
+        yesterday = values[2]
+        today = values[3]
+        description = values[4]
+
+        if not factory or not size:
             continue
 
-        if is_empty_row(values):
+        if "قیمت دیروز" in yesterday:
             continue
 
-        factory = clean(values[0])
-        size = clean(values[1])
-        yesterday = price_value(values[2])
-        today = price_value(values[3])
-        description = clean(values[4])
-
-        # ردیف‌هایی که مربوط به عنوان بخش هستند
-        if not factory:
+        if "قیمت امروز" in today:
             continue
 
-        # اگر سایز وجود نداشته باشد، محصول نیست
-        if not size:
+        if factory == "میلگرد":
             continue
 
-        # جلوگیری از ورود متن‌های توضیحی
         if "قیمت ها با احتساب" in factory:
             continue
 
-        if "قیمت میلگرد" in factory:
-            continue
-
-        # اگر هر دو قیمت خالی هستند ولی ردیف توضیح محصول است،
-        # همچنان نگه می‌داریم چون ممکن است محصول موجود نباشد.
         products.append({
             "factory": factory,
             "size": size,
-            "yesterday": yesterday,
-            "today": today,
+            "yesterday": price_value(yesterday),
+            "today": price_value(today),
             "description": description,
-            "source_page": page_title
+            "source_page": source_page
         })
 
     return products
 
 
-def fetch_prices(title, url):
+def extract_nishabur(html):
+
+    """
+    استخراج مخصوص صفحه نیشابور.
+    چون ساختار صفحه نیشابور با صفحه سایر کارخانجات
+    متفاوت است، جدول‌ها را مستقیم از تمام tr ها می‌خوانیم.
+    """
+
+    products = []
+
+    rows = extract_table_rows(html)
+
+    for values in rows:
+
+        factory = clean(values[0])
+        size = clean(values[1])
+        yesterday = clean(values[2])
+        today = clean(values[3])
+        description = clean(values[4])
+
+        if not factory or not size:
+            continue
+
+        if "قیمت دیروز" in yesterday:
+            continue
+
+        if "قیمت امروز" in today:
+            continue
+
+        if factory == "میلگرد":
+            continue
+
+        # فقط ردیف‌هایی که حداقل یکی از قیمت‌ها عدد باشد
+        old_price = price_value(yesterday)
+        new_price = price_value(today)
+
+        if old_price is None and new_price is None:
+            continue
+
+        products.append({
+            "factory": factory,
+            "size": size,
+            "yesterday": old_price,
+            "today": new_price,
+            "description": description,
+            "source_page": "میلگرد نیشابور"
+        })
+
+    return products
+
+
+def fetch_page(title, url):
 
     print()
     print("=" * 70)
@@ -169,30 +177,23 @@ def fetch_prices(title, url):
             timeout=30
         )
 
-        print(f"HTTP: {response.status_code}")
-        print(f"LENGTH: {len(response.text)}")
+        print("HTTP:", response.status_code)
+        print("LENGTH:", len(response.text))
 
         response.raise_for_status()
 
-        products = extract_rows(
-            response.text,
-            title
-        )
-
-        print(f"FOUND: {len(products)}")
-
-        return products
+        return response.text
 
     except Exception as e:
 
-        print(f"ERROR: {e}")
+        print("ERROR:", e)
 
-        return []
+        return ""
 
 
 def remove_duplicates(products):
 
-    unique_products = []
+    unique = []
     seen = set()
 
     for product in products:
@@ -210,35 +211,71 @@ def remove_duplicates(products):
             continue
 
         seen.add(key)
-        unique_products.append(product)
+        unique.append(product)
 
-    return unique_products
+    return unique
 
 
 def main():
 
     all_products = []
 
-    for title, url in URLS.items():
+    # -----------------------------
+    # سایر کارخانجات
+    # -----------------------------
 
-        products = fetch_prices(
-            title,
-            url
+    html = fetch_page(
+        "میلگرد سایر کارخانجات",
+        URLS["میلگرد سایر کارخانجات"]
+    )
+
+    if html:
+
+        products = extract_products(
+            html,
+            "میلگرد سایر کارخانجات"
         )
+
+        print("FOUND:", len(products))
 
         all_products.extend(products)
 
-    unique_products = remove_duplicates(
+    # -----------------------------
+    # نیشابور
+    # -----------------------------
+
+    html = fetch_page(
+        "میلگرد نیشابور",
+        URLS["میلگرد نیشابور"]
+    )
+
+    if html:
+
+        products = extract_nishabur(html)
+
+        print("FOUND:", len(products))
+
+        all_products.extend(products)
+
+    # -----------------------------
+    # حذف تکراری
+    # -----------------------------
+
+    all_products = remove_duplicates(
         all_products
     )
+
+    # -----------------------------
+    # JSON
+    # -----------------------------
 
     data = {
         "source": "khorasan-steel.com",
         "updated_at": datetime.now(
             timezone.utc
         ).isoformat(),
-        "count": len(unique_products),
-        "prices": unique_products
+        "count": len(all_products),
+        "prices": all_products
     }
 
     with open(
@@ -254,27 +291,31 @@ def main():
             indent=2
         )
 
+    # -----------------------------
+    # خروجی
+    # -----------------------------
+
     print()
     print("=" * 70)
     print("JSON CREATED")
     print("=" * 70)
 
     print("FILE: prices.json")
-    print(f"TOTAL PRODUCTS: {len(unique_products)}")
+    print("TOTAL PRODUCTS:", len(all_products))
 
     print()
     print("COUNT BY PAGE:")
 
-    for title in URLS:
+    for page in URLS:
 
         count = sum(
             1
-            for product in unique_products
-            if product["source_page"] == title
+            for p in all_products
+            if p["source_page"] == page
         )
 
         print(
-            f"{title}: {count}"
+            f"{page}: {count}"
         )
 
     print()
@@ -282,7 +323,7 @@ def main():
     print("SAMPLE")
     print("=" * 70)
 
-    for product in unique_products[:10]:
+    for product in all_products[:10]:
 
         print(
             f"{product['factory']} | "
