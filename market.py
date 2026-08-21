@@ -26,6 +26,7 @@ def get_tgju_price(url):
         headers={"User-Agent": "Mozilla/5.0"},
         timeout=30
     )
+
     r.raise_for_status()
 
     soup = BeautifulSoup(r.text, "html.parser")
@@ -34,16 +35,17 @@ def get_tgju_price(url):
     previous = None
 
     for row in soup.find_all("tr"):
-        cells = row.find_all(["td", "th"])
+
+        text = row.get_text(" ", strip=True)
 
         values = []
 
-        for cell in cells:
+        for cell in row.find_all(["td", "th"]):
+
             n = number(cell.get_text(" ", strip=True))
+
             if n is not None:
                 values.append(n)
-
-        text = row.get_text(" ", strip=True)
 
         if "نرخ فعلی" in text and values:
             current = values[0]
@@ -52,7 +54,7 @@ def get_tgju_price(url):
             previous = values[0]
 
     if current is None:
-        raise RuntimeError("TGJU price not found")
+        raise RuntimeError(f"TGJU price not found: {url}")
 
     change = None
 
@@ -62,7 +64,12 @@ def get_tgju_price(url):
     return current, change
 
 
+# --------------------------------------------------
+# تتر
+# --------------------------------------------------
+
 def get_tether():
+
     url = "https://www.tgju.org/profile/crypto-tether/markets-local"
 
     r = requests.get(
@@ -70,11 +77,11 @@ def get_tether():
         headers={"User-Agent": "Mozilla/5.0"},
         timeout=30
     )
+
     r.raise_for_status()
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # صرافی نوبیتکس را از جدول پیدا می‌کنیم
     for row in soup.find_all("tr"):
 
         text = row.get_text(" ", strip=True)
@@ -87,31 +94,55 @@ def get_tether():
         values = []
 
         for cell in cells:
-            n = number(cell.get_text(" ", strip=True))
+
+            n = number(
+                cell.get_text(" ", strip=True)
+            )
+
             if n is not None:
                 values.append(n)
 
-        # ترتیب جدول:
-        # صرافی / USDT-IRR / فروش / خرید / تغییر / درصد
-        if len(values) >= 3:
+        if not values:
+            continue
 
-            current = values[0]
+        # پیدا کردن قیمت واقعی تتر
+        current = None
 
-            # مقدار تغییر ریالی
-            diff = values[2]
+        for value in values:
 
-            # درصد تغییر را از قیمت فعلی و مقدار تغییر حساب می‌کنیم
-            if current != 0:
-                change = (diff / (current - diff)) * 100
-            else:
-                change = None
+            if value > 1000000:
 
-            return current, change
+                current = value
 
-    raise RuntimeError("Nobitex USDT/IRR price not found")
+                break
 
+        if current is None:
+            continue
+
+        # پیدا کردن درصد تغییر واقعی
+        change = None
+
+        for value in values:
+
+            if -100 <= value <= 100:
+
+                change = value
+
+                break
+
+        return current, change
+
+    raise RuntimeError(
+        "Nobitex USDT/IRR price not found"
+    )
+
+
+# --------------------------------------------------
+# بیت کوین
+# --------------------------------------------------
 
 def get_bitcoin():
+
     r = requests.get(
         "https://api.coingecko.com/api/v3/simple/price",
         params={
@@ -126,32 +157,47 @@ def get_bitcoin():
 
     data = r.json()["bitcoin"]
 
-    return data["usd"], data["usd_24h_change"]
+    return (
+        data["usd"],
+        data["usd_24h_change"]
+    )
 
+
+# --------------------------------------------------
+# فرمت قیمت
+# --------------------------------------------------
 
 def price(value, decimals=0):
+
     if value is None:
         return "نامشخص"
 
     return f"{value:,.{decimals}f}"
 
 
+# --------------------------------------------------
+# فرمت درصد
+# --------------------------------------------------
+
 def change(value):
+
     if value is None:
         return "⚪ نامشخص"
 
     if value > 0:
+
         return f"🟢 +{value:.2f}%"
 
     if value < 0:
+
         return f"🔴 {value:.2f}%"
 
     return "⚪ 0.00%"
 
 
-# -------------------------
-# قیمت‌ها
-# -------------------------
+# --------------------------------------------------
+# دریافت قیمت‌ها
+# --------------------------------------------------
 
 gold_world, gold_world_change = get_tgju_price(
     "https://www.tgju.org/profile/ons"
@@ -170,20 +216,25 @@ tether, tether_change = get_tether()
 bitcoin, bitcoin_change = get_bitcoin()
 
 
-# -------------------------
+# --------------------------------------------------
 # عکس مالی
-# -------------------------
+# --------------------------------------------------
 
 now = datetime.now(TEHRAN)
 
 r = requests.get(
     "https://api.pexels.com/v1/search",
-    headers={"Authorization": PEXELS_KEY},
+
+    headers={
+        "Authorization": PEXELS_KEY
+    },
+
     params={
         "query": "gold bitcoin finance trading",
         "orientation": "landscape",
         "per_page": 30
     },
+
     timeout=30
 )
 
@@ -192,18 +243,24 @@ r.raise_for_status()
 photos = r.json().get("photos", [])
 
 if not photos:
-    raise RuntimeError("No financial photo found")
 
-photo = photos[now.date().toordinal() % len(photos)]
+    raise RuntimeError(
+        "No financial photo found"
+    )
+
+photo = photos[
+    now.date().toordinal() % len(photos)
+]
 
 image_url = photo["src"]["large2x"]
 
 
-# -------------------------
+# --------------------------------------------------
 # متن پست
-# -------------------------
+# --------------------------------------------------
 
 message = (
+
     "📊 <b>گزارش بازار امروز</b>\n\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
@@ -231,24 +288,30 @@ message = (
 )
 
 
-# -------------------------
-# ارسال تلگرام
-# -------------------------
+# --------------------------------------------------
+# ارسال به تلگرام
+# --------------------------------------------------
 
 r = requests.post(
+
     f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
+
     data={
         "chat_id": CHANNEL,
         "photo": image_url,
         "caption": message,
         "parse_mode": "HTML"
     },
+
     timeout=30
 )
 
 print(r.text)
 
 if not r.ok:
+
     raise RuntimeError(r.text)
 
-print("Market post sent successfully.")
+print(
+    "Market post sent successfully."
+)
