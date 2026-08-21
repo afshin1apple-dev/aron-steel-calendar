@@ -4,8 +4,9 @@ import hashlib
 import re
 import requests
 import feedparser
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from html import unescape
 
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
@@ -23,6 +24,8 @@ KEYWORDS = [
     "آهن",
     "میلگرد",
     "تیرآهن",
+    "نبشی",
+    "ناودانی",
     "شمش",
     "بورس کالا",
     "بورس",
@@ -37,6 +40,8 @@ KEYWORDS = [
     "نفت",
     "پتروشیمی",
     "اقتصاد",
+    "سوخت",
+    "بنزین",
 ]
 
 
@@ -45,16 +50,24 @@ def load_history():
         return set()
 
     try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        with open(
+            HISTORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
             return set(json.load(f))
     except Exception:
         return set()
 
 
 def save_history(history):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+    with open(
+        HISTORY_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
         json.dump(
-            list(history)[-500:],
+            list(history)[-1000:],
             f,
             ensure_ascii=False,
             indent=2
@@ -67,8 +80,46 @@ def make_id(title, link):
     ).hexdigest()
 
 
+def clean_text(text):
+    if not text:
+        return ""
+
+    text = unescape(text)
+
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text
+    )
+
+    # حذف عبارت‌های تبلیغاتی انتهای RSS
+    garbage_patterns = [
+        r"اولین بار در فولادبان.*",
+        r"پدیدار شد.*",
+        r"این مطلب.*",
+    ]
+
+    for pattern in garbage_patterns:
+        text = re.sub(
+            pattern,
+            "",
+            text,
+            flags=re.IGNORECASE
+        )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
 def is_relevant(title, summary):
-    text = (title + " " + summary).lower()
+    text = (
+        title + " " + summary
+    ).lower()
 
     return any(
         keyword.lower() in text
@@ -76,29 +127,52 @@ def is_relevant(title, summary):
     )
 
 
-def clean_text(text):
-    if not text:
-        return ""
+def get_item_date(item):
 
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"&amp;", "&", text)
-    text = re.sub(r"&quot;", '"', text)
-    text = re.sub(r"&#39;", "'", text)
-    text = re.sub(r"\s+", " ", text)
+    # تاریخ انتشار RSS
+    published = item.get(
+        "published_parsed"
+    )
 
-    return text.strip()
+    if not published:
+        published = item.get(
+            "updated_parsed"
+        )
+
+    if not published:
+        return None
+
+    try:
+        dt = datetime(
+            *published[:6],
+            tzinfo=timezone.utc
+        )
+
+        return dt.astimezone(
+            TEHRAN
+        )
+
+    except Exception:
+        return None
 
 
 def get_news():
+
     news = []
 
+    today = datetime.now(
+        TEHRAN
+    ).date()
+
     for feed_url in FEEDS:
+
         try:
+
             response = requests.get(
                 feed_url,
                 headers={
-                    "User-Agent": "Mozilla/5.0"
+                    "User-Agent":
+                        "Mozilla/5.0"
                 },
                 timeout=20
             )
@@ -109,10 +183,13 @@ def get_news():
                 response.content
             )
 
-            for item in feed.entries[:20]:
+            for item in feed.entries[:30]:
 
                 title = clean_text(
-                    item.get("title", "")
+                    item.get(
+                        "title",
+                        ""
+                    )
                 )
 
                 link = item.get(
@@ -121,11 +198,41 @@ def get_news():
                 ).strip()
 
                 summary = clean_text(
-                    item.get("summary", "")
+                    item.get(
+                        "summary",
+                        ""
+                    )
                 )
 
                 if not title or not link:
                     continue
+
+                # -------------------------
+                # فقط خبر امروز
+                # -------------------------
+
+                item_date = get_item_date(
+                    item
+                )
+
+                if item_date is None:
+                    print(
+                        "Skipped: no date",
+                        title
+                    )
+                    continue
+
+                if item_date.date() != today:
+                    print(
+                        "Skipped old news:",
+                        title,
+                        item_date
+                    )
+                    continue
+
+                # -------------------------
+                # فیلتر موضوع
+                # -------------------------
 
                 if not is_relevant(
                     title,
@@ -142,15 +249,23 @@ def get_news():
                     "id": news_id,
                     "title": title,
                     "link": link,
-                    "summary": summary
+                    "summary": summary,
+                    "date": item_date
                 })
 
         except Exception as e:
+
             print(
                 "Feed error:",
                 feed_url,
                 e
             )
+
+    # جدیدترین اول
+    news.sort(
+        key=lambda x: x["date"],
+        reverse=True
+    )
 
     return news
 
@@ -165,8 +280,12 @@ def send_news(news):
         news["summary"]
     )
 
-    if len(summary) > 500:
-        summary = summary[:500] + "..."
+    # خلاصه کوتاه و تمیز
+    if len(summary) > 450:
+        summary = (
+            summary[:450]
+            + "..."
+        )
 
     message = (
         "🚨 خبر فوری اقتصادی\n\n"
@@ -186,7 +305,8 @@ def send_news(news):
     )
 
     response = requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        f"https://api.telegram.org/"
+        f"bot{TOKEN}/sendMessage",
         data={
             "chat_id": CHANNEL,
             "text": message,
@@ -209,11 +329,13 @@ def send_news(news):
     )
 
 
-# -------------------------------
-# محدودیت ساعت انتشار
-# -------------------------------
+# =================================
+# ساعت انتشار
+# =================================
 
-now = datetime.now(TEHRAN)
+now = datetime.now(
+    TEHRAN
+)
 
 start_time = now.replace(
     hour=8,
@@ -229,23 +351,30 @@ end_time = now.replace(
     microsecond=0
 )
 
-if not (start_time <= now <= end_time):
+if not (
+    start_time
+    <= now
+    <= end_time
+):
+
     print(
-        "Outside news schedule. Nothing will be sent."
+        "Outside news schedule."
     )
+
     exit()
 
 
-# -------------------------------
+# =================================
 # اجرای ربات
-# -------------------------------
+# =================================
 
 history = load_history()
 
 news = get_news()
 
 print(
-    f"Relevant news found: {len(news)}"
+    "Today's relevant news:",
+    len(news)
 )
 
 sent = 0
@@ -263,6 +392,7 @@ for item in news:
 
     sent += 1
 
+    # حداکثر دو خبر در هر اجرا
     if sent >= 2:
         break
 
