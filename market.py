@@ -82,6 +82,20 @@ def get_tether():
 
     soup = BeautifulSoup(r.text, "html.parser")
 
+    print("========== TETHER TABLE ==========")
+
+    for row in soup.find_all("tr"):
+
+        text = row.get_text(" ", strip=True)
+
+        if "نوبیتکس" in text:
+
+            print("TETHER ROW:")
+            print(text)
+
+    print("========== END TETHER TABLE ==========")
+
+    # پیدا کردن قیمت تتر
     for row in soup.find_all("tr"):
 
         text = row.get_text(" ", strip=True)
@@ -89,54 +103,27 @@ def get_tether():
         if "نوبیتکس" not in text:
             continue
 
-        cells = row.find_all(["td", "th"])
-
         values = []
 
-        for cell in cells:
+        for cell in row.find_all(["td", "th"]):
 
-            n = number(
-                cell.get_text(" ", strip=True)
-            )
+            value = cell.get_text(" ", strip=True)
 
-            if n is not None:
-                values.append(n)
+            value = value.replace(",", "").replace("٬", "")
 
-        if not values:
-            continue
+            try:
+                values.append(float(value))
+            except:
+                pass
 
         # پیدا کردن قیمت واقعی تتر
-        current = None
-
         for value in values:
 
             if value > 1000000:
 
-                current = value
+                return value, None
 
-                break
-
-        if current is None:
-            continue
-
-        # پیدا کردن درصد تغییر واقعی
-        change = None
-
-        for value in values:
-
-            if -100 <= value <= 100:
-
-                change = value
-
-                break
-
-        return current, change
-
-    raise RuntimeError(
-        "Nobitex USDT/IRR price not found"
-    )
-
-
+    raise RuntimeError("Tether price not found")
 # --------------------------------------------------
 # بیت کوین
 # --------------------------------------------------
