@@ -8,95 +8,226 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # =========================
+      # Setup Python
+      # =========================
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+
+      # =========================
+      # Install requests
+      # =========================
+
       - name: Install requests
-        run: pip install requests
+        run: |
+          pip install requests
+
+
+      # =========================
+      # Test Pexels
+      # =========================
 
       - name: Test Pexels
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
         run: |
+
           python - <<'PY'
+
           import os
           import requests
 
-          key = os.environ.get("PEXELS_API_KEY")
+          key = os.environ.get(
+              "PEXELS_API_KEY"
+          )
 
           if not key:
-              print("❌ PEXELS_API_KEY پیدا نشد")
+
+              print(
+                  "❌ PEXELS_API_KEY پیدا نشد"
+              )
+
               raise SystemExit(1)
 
-          r = requests.get(
+
+          response = requests.get(
+
               "https://api.pexels.com/v1/search",
-              headers={"Authorization": key},
+
+              headers={
+                  "Authorization": key
+              },
+
               params={
                   "query": "steel factory",
                   "per_page": 1
               },
+
               timeout=20
           )
 
-          print("Pexels status:", r.status_code)
 
-          if r.status_code != 200:
-              print(r.text)
+          print(
+              "Pexels status:",
+              response.status_code
+          )
+
+
+          if response.status_code != 200:
+
+              print(
+                  response.text
+              )
+
               raise SystemExit(1)
 
-          data = r.json()
 
-          if not data.get("photos"):
-              print("❌ عکس پیدا نشد")
+          data = response.json()
+
+
+          photos = data.get(
+              "photos",
+              []
+          )
+
+
+          if not photos:
+
+              print(
+                  "❌ عکس پیدا نشد"
+              )
+
               raise SystemExit(1)
 
-          print("✅ Pexels OK")
-          print("Photo:", data["photos"][0]["src"]["large"])
+
+          print(
+              "✅ Pexels OK"
+          )
+
+
+          print(
+              "Photo:",
+              photos[0]["src"]["large"]
+          )
+
           PY
 
-            - name: Test Translation
+
+      # =========================
+      # Test Translation
+      # =========================
+
+      - name: Test Translation
+
         run: |
+
           python - <<'PY'
+
           import requests
 
-          text = "Gold prices rise as investors watch the global economy."
 
-          url = "https://api.mymemory.translated.net/get"
+          text = (
+              "Gold prices rise as investors "
+              "watch the global economy."
+          )
+
+
+          url = (
+              "https://api.mymemory.translated.net/get"
+          )
+
 
           try:
-              r = requests.get(
+
+              response = requests.get(
+
                   url,
+
                   params={
                       "q": text,
                       "langpair": "en|fa"
                   },
+
                   timeout=20
               )
 
-              print("MyMemory status:", r.status_code)
-              print("Response:", r.text[:1000])
 
-              if r.status_code != 200:
+              print(
+                  "MyMemory status:",
+                  response.status_code
+              )
+
+
+              print(
+                  "Response:",
+                  response.text[:1000]
+              )
+
+
+              if response.status_code != 200:
+
+                  print(
+                      "❌ Translation HTTP error"
+                  )
+
                   raise SystemExit(1)
 
-              data = r.json()
+
+              data = response.json()
+
 
               translated = (
                   data
-                  .get("responseData", {})
-                  .get("translatedText", "")
+                  .get(
+                      "responseData",
+                      {}
+                  )
+                  .get(
+                      "translatedText",
+                      ""
+                  )
               )
 
+
               if not translated:
-                  print("❌ Translation result empty")
+
+                  print(
+                      "❌ Translation result empty"
+                  )
+
                   raise SystemExit(1)
 
-              print("✅ Translation OK")
-              print("Result:", translated)
 
-          except Exception as e:
-              print("Translation error:", e)
+              print(
+                  "✅ Translation OK"
+              )
+
+
+              print(
+                  "Original:",
+                  text
+              )
+
+
+              print(
+                  "Translated:",
+                  translated
+              )
+
+
+          except Exception as error:
+
+              print(
+                  "❌ Translation error:",
+                  error
+              )
+
               raise SystemExit(1)
+
           PY
