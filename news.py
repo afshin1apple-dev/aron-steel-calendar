@@ -1,851 +1,264 @@
-import os
-import json
-import re
-import hashlib
 import requests
-import feedparser
-from datetime import datetime, timezone, timedelta
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urljoin
 
+URLS = [
+    "https://khorasan-steel.com/product.php?prd=5",
+    "https://khorasan-steel.com/product.php?prd=3",
+]
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-
-HISTORY_FILE = "news_history.json"
-
-MAX_HISTORY = 1000
-MAX_NEWS_PER_RUN = 2
-
-FOREIGN_SOURCES = {
-    "Financial Times",
-    "WSJ",
-    "Economist",
-    "Yahoo Finance",
-    "MarketWatch",
-    "Investing"
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/139.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
-
-# ============================================================
-# SOURCES
-# ============================================================
-
-SOURCES = [
-    {
-        "name": "فولادبان",
-        "url": "https://fouladban.com/feed/"
-    },
-    {
-        "name": "Financial Times",
-        "url": "https://www.ft.com/?format=rss"
-    },
-    {
-        "name": "WSJ",
-        "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
-    },
-    {
-        "name": "Economist",
-        "url": "https://www.economist.com/finance-and-economics/rss.xml"
-    },
-    {
-        "name": "Yahoo Finance",
-        "url": "https://finance.yahoo.com/news/rssindex"
-    },
-    {
-        "name": "MarketWatch",
-        "url": "https://feeds.marketwatch.com/marketwatch/topstories/"
-    },
-    {
-        "name": "Investing",
-        "url": "https://www.investing.com/rss/news.rss"
-    }
+KEYWORDS = [
+    "price",
+    "price2",
+    "today",
+    "yesterday",
+    "ajax",
+    "product",
+    "prd",
+    "قیمت",
+    "امروز",
+    "دیروز",
+    "میلگرد",
 ]
 
+def clean(text):
+    return re.sub(r"\s+", " ", text).strip()
 
-# ============================================================
-# KEYWORDS
-# ============================================================
+def show_matches(label, text):
+    print("\n---", label, "---")
 
-ECONOMIC_KEYWORDS = [
-    "economy", "economic", "inflation", "interest rate",
-    "interest rates", "fed", "federal reserve", "central bank",
-    "gdp", "recession", "growth", "employment", "jobs",
-    "unemployment", "market", "markets", "stocks", "stock",
-    "bond", "bonds", "treasury", "dollar", "currency",
-    "forex", "finance", "financial", "bank", "banking",
-    "commodity", "commodities", "oil", "crude", "brent",
-    "wti", "natural gas", "gold", "silver", "copper",
-    "steel", "iron ore", "iron", "scrap", "rebar", "billet",
-    "metals", "aluminum", "aluminium", "china", "chinese",
-    "beijing", "tariff", "tariffs", "trade", "export",
-    "exports", "import", "imports", "construction",
-    "manufacturing", "industrial", "factory", "production",
-    "supply", "demand"
-]
+    lines = text.splitlines()
+    found = 0
 
-STEEL_KEYWORDS = [
-    "steel", "iron ore", "iron", "scrap", "rebar",
-    "billet", "steel mill", "steelmaker", "steelmakers",
-    "metals", "construction", "infrastructure",
-    "iron and steel", "steel production"
-]
+    for i, line in enumerate(lines):
+        line_clean = clean(line)
 
+        if not line_clean:
+            continue
 
-# ============================================================
-# HISTORY
-# ============================================================
+        lower = line_clean.lower()
 
-def load_history():
-    try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        if any(keyword.lower() in lower for keyword in KEYWORDS):
+            print(line_clean[:1000])
+            found += 1
 
-            if isinstance(data, list):
-                return data
+            if found >= 80:
+                print("... more matches omitted ...")
+                break
 
-    except Exception:
-        pass
+    print("MATCHES:", found)
 
-    return []
+for url in URLS:
 
-
-history = load_history()
-
-
-def save_history():
-    global history
-
-    history = history[-MAX_HISTORY:]
-
-    with open(
-        HISTORY_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-        json.dump(
-            history,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
-
-
-# ============================================================
-# TEXT
-# ============================================================
-
-def clean_text(text):
-    if not text:
-        return ""
-
-    text = re.sub(
-        r"<[^>]+>",
-        " ",
-        text
-    )
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
-
-    return text.strip()
-
-
-def make_id(title, link):
-    raw = title.strip() + "|" + link.strip()
-
-    return hashlib.sha256(
-        raw.encode("utf-8")
-    ).hexdigest()
-
-
-# ============================================================
-# FILTER
-# ============================================================
-
-def is_economic(title, summary=""):
-    text = (
-        title + " " + summary
-    ).lower()
-
-    return any(
-        keyword.lower() in text
-        for keyword in ECONOMIC_KEYWORDS
-    )
-
-
-def is_steel_related(title, summary=""):
-    text = (
-        title + " " + summary
-    ).lower()
-
-    return any(
-        keyword.lower() in text
-        for keyword in STEEL_KEYWORDS
-    )
-
-
-# ============================================================
-# RSS
-# ============================================================
-
-def fetch_source(source):
-
-    print(
-        "Checking:",
-        source["name"]
-    )
+    print("\n" + "=" * 80)
+    print("CHECKING:", url)
+    print("=" * 80)
 
     try:
+        session = requests.Session()
 
-        response = requests.get(
-            source["url"],
-            headers={
-                "User-Agent":
-                "Mozilla/5.0"
-            },
-            timeout=25
+        response = session.get(
+            url,
+            headers=HEADERS,
+            timeout=30
         )
 
-        print(
-            source["name"],
-            "status:",
-            response.status_code
-        )
+        print("HTTP STATUS:", response.status_code)
+        print("FINAL URL:", response.url)
+        print("CONTENT TYPE:", response.headers.get("content-type"))
+        print("HTML LENGTH:", len(response.text))
 
         if response.status_code != 200:
-            return []
+            print("❌ PAGE FAILED")
+            continue
 
-        feed = feedparser.parse(
-            response.content
-        )
+        html = response.text
 
-        print(
-            source["name"],
-            "items:",
-            len(feed.entries)
-        )
+        soup = BeautifulSoup(html, "html.parser")
 
-        results = []
+        # -------------------------------------------------
+        # 1. لینک‌ها
+        # -------------------------------------------------
 
-        for entry in feed.entries:
+        print("\n" + "-" * 60)
+        print("LINKS")
+        print("-" * 60)
 
-            title = clean_text(
-                entry.get(
-                    "title",
-                    ""
-                )
-            )
+        links_found = set()
 
-            summary = clean_text(
-                entry.get(
-                    "summary",
-                    ""
-                )
-            )
+        for a in soup.find_all("a", href=True):
 
-            link = entry.get(
-                "link",
-                ""
-            )
+            href = a.get("href", "").strip()
 
-            if not title or not link:
+            if not href:
                 continue
 
-            if not is_economic(
-                title,
-                summary
-            ):
-                continue
+            full_url = urljoin(response.url, href)
 
-            item_id = make_id(
-                title,
-                link
-            )
+            text = clean(a.get_text(" ", strip=True))
 
-            if item_id in history:
-                continue
+            combined = (text + " " + href).lower()
 
-            results.append({
-                "id": item_id,
-                "source": source["name"],
-                "title": title,
-                "summary": summary,
-                "link": link,
-                "steel": is_steel_related(
-                    title,
-                    summary
-                )
-            })
+            if any(k.lower() in combined for k in KEYWORDS):
 
-        return results
+                item = f"{text} => {full_url}"
 
-    except Exception as e:
+                if item not in links_found:
+                    links_found.add(item)
+                    print(item)
 
-        print(
-            "ERROR:",
-            source["name"],
-            e
-        )
+        # -------------------------------------------------
+        # 2. فرم‌ها
+        # -------------------------------------------------
 
-        return []
+        print("\n" + "-" * 60)
+        print("FORMS")
+        print("-" * 60)
 
-
-# ============================================================
-# TRANSLATION
-# ============================================================
-
-def translate_with_mymemory(text):
-
-    try:
-
-        response = requests.get(
-            "https://api.mymemory.translated.net/get",
-            params={
-                "q": text,
-                "langpair": "en|fa"
-            },
-            timeout=20
-        )
-
-        print(
-            "MyMemory status:",
-            response.status_code
-        )
-
-        if response.status_code != 200:
-            return None
-
-        data = response.json()
-
-        translated = (
-            data
-            .get("responseData", {})
-            .get("translatedText")
-        )
-
-        if translated:
-            return translated.strip()
-
-    except Exception as e:
-
-        print(
-            "MyMemory error:",
-            e
-        )
-
-    return None
-
-
-def translate_with_libretranslate(text):
-
-    servers = [
-        "https://libretranslate.com/translate",
-        "https://translate.astian.org/translate"
-    ]
-
-    for url in servers:
-
-        try:
-
-            response = requests.post(
-                url,
-                json={
-                    "q": text,
-                    "source": "en",
-                    "target": "fa",
-                    "format": "text"
-                },
-                timeout=25
-            )
+        for form in soup.find_all("form"):
 
             print(
-                "LibreTranslate:",
-                url,
-                response.status_code
+                "FORM:",
+                clean(str(form))[:2000]
             )
 
-            if not response.ok:
-                continue
+        # -------------------------------------------------
+        # 3. Script ها
+        # -------------------------------------------------
 
-            data = response.json()
+        print("\n" + "-" * 60)
+        print("SCRIPTS")
+        print("-" * 60)
 
-            translated = data.get(
-                "translatedText"
+        scripts = soup.find_all("script")
+
+        print("SCRIPT COUNT:", len(scripts))
+
+        for index, script in enumerate(scripts):
+
+            src = script.get("src")
+
+            if src:
+                full_src = urljoin(response.url, src)
+
+                print(
+                    f"SCRIPT {index + 1}:",
+                    full_src
+                )
+
+            else:
+
+                content = script.get_text()
+
+                lower = content.lower()
+
+                if any(k.lower() in lower for k in KEYWORDS):
+
+                    print(
+                        f"\nINLINE SCRIPT {index + 1}:"
+                    )
+
+                    print(
+                        clean(content)[:5000]
+                    )
+
+        # -------------------------------------------------
+        # 4. درخواست‌های AJAX داخل HTML
+        # -------------------------------------------------
+
+        print("\n" + "-" * 60)
+        print("AJAX / API CANDIDATES")
+        print("-" * 60)
+
+        patterns = [
+            r"""url\s*:\s*["']([^"']+)["']""",
+            r"""href\s*=\s*["']([^"']+)["']""",
+            r"""fetch\s*\(\s*["']([^"']+)["']""",
+            r"""ajax\s*\([^)]*url\s*:\s*["']([^"']+)["']""",
+            r"""["']([^"']*(?:ajax|api|price|product)[^"']*)["']""",
+        ]
+
+        candidates = set()
+
+        for pattern in patterns:
+
+            matches = re.findall(
+                pattern,
+                html,
+                flags=re.IGNORECASE
             )
 
-            if translated:
-                return translated.strip()
+            for match in matches:
 
-        except Exception as e:
+                full = urljoin(response.url, match)
 
-            print(
-                "LibreTranslate error:",
-                e
-            )
+                candidates.add(full)
 
-    return None
+        if candidates:
 
-
-def translate_text(text):
-
-    if not text:
-        return ""
-
-    # اول MyMemory
-    translated = translate_with_mymemory(
-        text
-    )
-
-    if translated:
-        return translated
-
-    # بعد LibreTranslate
-    translated = translate_with_libretranslate(
-        text
-    )
-
-    if translated:
-        return translated
-
-    # اگر ترجمه پیدا نشد، None
-    # برمی‌گردانیم تا خبر انگلیسی منتشر نشود.
-    return None
-
-
-# ============================================================
-# IMAGE
-# ============================================================
-
-def get_image(query):
-
-    if not PEXELS_API_KEY:
-
-        print(
-            "PEXELS_API_KEY not found"
-        )
-
-        return None
-
-    try:
-
-        response = requests.get(
-            "https://api.pexels.com/v1/search",
-            headers={
-                "Authorization":
-                PEXELS_API_KEY
-            },
-            params={
-                "query": query,
-                "per_page": 10
-            },
-            timeout=20
-        )
-
-        print(
-            "Pexels status:",
-            response.status_code
-        )
-
-        if response.status_code != 200:
-            return None
-
-        data = response.json()
-
-        photos = data.get(
-            "photos",
-            []
-        )
-
-        if not photos:
-            return None
-
-        return (
-            photos[0]
-            .get("src", {})
-            .get("large")
-        )
-
-    except Exception as e:
-
-        print(
-            "Image error:",
-            e
-        )
-
-        return None
-
-
-# ============================================================
-# STEEL IMPACT
-# ============================================================
-
-def steel_impact(title, summary):
-
-    text = (
-        title + " " + summary
-    ).lower()
-
-    increase_words = [
-        "supply cut",
-        "production cut",
-        "production cuts",
-        "shortage",
-        "shortfall",
-        "demand rises",
-        "demand increase",
-        "stimulus",
-        "rate cut",
-        "interest rate cut",
-        "infrastructure spending",
-        "construction growth",
-        "export restriction",
-        "production restriction",
-        "steel tariff"
-    ]
-
-    decrease_words = [
-        "demand falls",
-        "demand decline",
-        "recession",
-        "economic slowdown",
-        "production increase",
-        "oversupply",
-        "surplus",
-        "steel imports rise",
-        "weak construction",
-        "construction slowdown",
-        "rate hike",
-        "interest rate hike"
-    ]
-
-    increase = any(
-        word in text
-        for word in increase_words
-    )
-
-    decrease = any(
-        word in text
-        for word in decrease_words
-    )
-
-    if increase and not decrease:
-
-        return (
-            "🟢 این خبر احتمالاً باعث "
-            "افزایش قیمت فولاد می‌شود.\n"
-            "📝 دلیل: شرایط ایجادشده "
-            "می‌تواند از تقاضا یا قیمت "
-            "فولاد حمایت کند."
-        )
-
-    if decrease and not increase:
-
-        return (
-            "🔴 این خبر احتمالاً باعث "
-            "کاهش قیمت فولاد می‌شود.\n"
-            "📝 دلیل: شرایط ایجادشده "
-            "می‌تواند فشار کاهشی بر "
-            "تقاضا یا قیمت فولاد ایجاد کند."
-        )
-
-    return (
-        "🟡 این خبر احتمالاً تأثیر "
-        "خاصی بر قیمت فولاد نخواهد داشت."
-    )
-
-
-# ============================================================
-# TELEGRAM
-# ============================================================
-
-def send_telegram(text, image_url=None):
-
-    try:
-
-        if image_url:
-
-            url = (
-                "https://api.telegram.org/"
-                f"bot{BOT_TOKEN}/sendPhoto"
-            )
-
-            response = requests.post(
-                url,
-                data={
-                    "chat_id": CHANNEL_ID,
-                    "photo": image_url,
-                    "caption": text
-                },
-                timeout=30
-            )
+            for candidate in sorted(candidates):
+                print(candidate)
 
         else:
 
-            url = (
-                "https://api.telegram.org/"
-                f"bot{BOT_TOKEN}/sendMessage"
-            )
+            print("No obvious AJAX/API URL found.")
 
-            response = requests.post(
-                url,
-                data={
-                    "chat_id": CHANNEL_ID,
-                    "text": text,
-                    "disable_web_page_preview": False
-                },
-                timeout=30
-            )
+        # -------------------------------------------------
+        # 5. کلمات مرتبط با قیمت
+        # -------------------------------------------------
 
-        print(
-            "Telegram status:",
-            response.status_code
+        show_matches(
+            "PRICE RELATED HTML",
+            html
         )
 
-        if not response.ok:
+        # -------------------------------------------------
+        # 6. اعداد بزرگ موجود در HTML
+        # -------------------------------------------------
 
-            print(
-                "Telegram error:",
-                response.text
-            )
+        print("\n" + "-" * 60)
+        print("NUMERIC DATA CANDIDATES")
+        print("-" * 60)
 
-            return False
+        numbers = re.findall(
+            r"(?<!\d)\d{4,8}(?!\d)",
+            html
+        )
 
-        return True
+        unique_numbers = []
+
+        for number in numbers:
+
+            if number not in unique_numbers:
+                unique_numbers.append(number)
+
+        for number in unique_numbers[:150]:
+
+            print(number)
+
+        print(
+            "\nTOTAL UNIQUE NUMBERS:",
+            len(unique_numbers)
+        )
+
+        print("\nDONE:", url)
 
     except Exception as e:
 
-        print(
-            "Telegram error:",
-            e
-        )
-
-        return False
-
-
-# ============================================================
-# BUILD MESSAGE
-# ============================================================
-
-def build_message(item):
-
-    source = item["source"]
-    original_title = item["title"]
-    summary = item["summary"]
-    link = item["link"]
-
-    if source in FOREIGN_SOURCES:
-
-        translated_title = translate_text(
-            original_title
-        )
-
-        if not translated_title:
-
-            print(
-                "Translation failed:",
-                original_title
-            )
-
-            return None
-
-        translated_summary = ""
-
-        if summary:
-
-            translated_summary = (
-                translate_text(
-                    summary[:700]
-                )
-                or ""
-            )
-
-        message = (
-            "🌍 خبر اقتصادی جهان\n\n"
-            f"📌 {translated_title}\n"
-        )
-
-        if translated_summary:
-
-            message += (
-                "\n"
-                f"📝 {translated_summary}\n"
-            )
-
-    else:
-
-        message = (
-            "🇮🇷 خبر اقتصادی ایران\n\n"
-            f"📌 {original_title}\n"
-        )
-
-        if summary:
-
-            message += (
-                "\n"
-                f"📝 {summary[:700]}\n"
-            )
-
-    message += (
-        "\n"
-        "📊 تأثیر احتمالی بر بازار فولاد:\n"
-        + steel_impact(
-            original_title,
-            summary
-        )
-    )
-
-    message += (
-        "\n\n"
-        f"📰 منبع: {source}\n"
-        f"🔗 {link}\n\n"
-        "🆔 @Arvand_Aron_Steel\n"
-        "☎️ 021-22122239"
-    )
-
-    return message
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-print()
-print(
-    "======================================"
-)
-print(
-    "       ECONOMIC NEWS BOT"
-)
-print(
-    "======================================"
-)
-print()
-
-all_news = []
-
-for source in SOURCES:
-
-    news = fetch_source(
-        source
-    )
-
-    all_news.extend(
-        news
-    )
-
-
-print()
-print(
-    "Today's relevant news:",
-    len(all_news)
-)
-print()
-
-
-# ============================================================
-# PRIORITY
-# ============================================================
-
-def priority(item):
-
-    score = 0
-
-    if item["steel"]:
-        score += 20
-
-    if item["source"] == "فولادبان":
-        score += 10
-
-    if item["source"] == "Financial Times":
-        score += 8
-
-    if item["source"] == "WSJ":
-        score += 7
-
-    if item["source"] == "Economist":
-        score += 6
-
-    return score
-
-
-all_news.sort(
-    key=priority,
-    reverse=True
-)
-
-
-# ============================================================
-# SEND
-# ============================================================
-
-sent = 0
-
-for item in all_news:
-
-    if sent >= MAX_NEWS_PER_RUN:
-        break
-
-    message = build_message(
-        item
-    )
-
-    # اگر ترجمه خبر خارجی انجام نشد
-    # اصلاً ارسال نمی‌کنیم.
-    if not message:
-
-        print(
-            "SKIPPED - translation failed:",
-            item["title"]
-        )
-
-        continue
-
-    image = get_image(
-        "steel economy market "
-        + item["title"]
-    )
-
-    success = send_telegram(
-        message,
-        image
-    )
-
-    if success:
-
-        history.append(
-            item["id"]
-        )
-
-        sent += 1
-
-        print(
-            "SENT:",
-            item["title"]
-        )
-
-    else:
-
-        print(
-            "FAILED:",
-            item["title"]
-        )
-
-
-# ============================================================
-# SAVE
-# ============================================================
-
-save_history()
-
-print()
-print(
-    "Finished. Sent:",
-    sent
-)
+        print("\n❌ ERROR:")
+        print(type(e).__name__, str(e))
+
+print("\n" + "=" * 80)
+print("PRICE SOURCE INVESTIGATION FINISHED")
+print("=" * 80)
