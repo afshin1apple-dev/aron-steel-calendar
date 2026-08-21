@@ -1,122 +1,90 @@
 import requests
+from bs4 import BeautifulSoup
 import re
-from urllib.parse import urljoin
 
-BASE = "https://khorasan-steel.com/"
-JS_URL = urljoin(BASE, "js/filter-products.js")
+URLS = {
+    "میلگرد سایر کارخانجات": "https://khorasan-steel.com/product.php?prd=5",
+    "میلگرد نیشابور": "https://khorasan-steel.com/product.php?prd=3",
+}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0 Safari/537.36",
     "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
-print("=" * 80)
-print("KHORASAN STEEL - FILTER SCRIPT TEST")
-print("=" * 80)
+for title, url in URLS.items():
 
-try:
-    r = requests.get(
-        JS_URL,
-        headers=HEADERS,
-        timeout=30
-    )
+    print("\n" + "=" * 90)
+    print(title)
+    print(url)
+    print("=" * 90)
 
-    print("JS URL:", JS_URL)
-    print("HTTP STATUS:", r.status_code)
-    print("JS LENGTH:", len(r.text))
+    r = requests.get(url, headers=HEADERS, timeout=30)
 
-    if r.status_code != 200:
-        raise Exception("Could not download filter-products.js")
+    print("HTTP:", r.status_code)
+    print("LENGTH:", len(r.text))
 
-    js = r.text
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    print("\n" + "-" * 70)
-    print("FILTER-PRODUCTS.JS")
-    print("-" * 70)
+    # تمام tr ها
+    rows = soup.find_all("tr")
 
-    print(js[:30000])
+    print("\nTR COUNT:", len(rows))
 
-    print("\n" + "-" * 70)
-    print("POSSIBLE AJAX / API / PRICE URLS")
-    print("-" * 70)
+    print("\n" + "-" * 90)
+    print("PRICE ROWS")
+    print("-" * 90)
 
-    patterns = [
-        r"""url\s*:\s*["']([^"']+)["']""",
-        r"""["']([^"']*(?:ajax|api|product|price|filter)[^"']*)["']""",
-        r"""(?:get|post)\s*\(\s*["']([^"']+)["']""",
-        r"""fetch\s*\(\s*["']([^"']+)["']""",
-    ]
+    found = 0
 
-    found = set()
+    for row in rows:
 
-    for pattern in patterns:
+        text = row.get_text(" ", strip=True)
 
-        matches = re.findall(
-            pattern,
-            js,
-            re.IGNORECASE
-        )
-
-        for match in matches:
-            found.add(match)
-
-    if found:
-
-        for item in sorted(found):
-            print(item)
-
-    else:
-
-        print("NO DIRECT URL FOUND")
-
-    print("\n" + "-" * 70)
-    print("IMPORTANT KEYWORDS")
-    print("-" * 70)
-
-    keywords = [
-        "ajax",
-        "url",
-        "post",
-        "get",
-        "price",
-        "product",
-        "filter",
-        "size",
-        "factory",
-        "prd",
-        "load"
-    ]
-
-    lines = js.splitlines()
-
-    count = 0
-
-    for line in lines:
-
-        line = line.strip()
-
-        if not line:
+        if not text:
             continue
 
-        low = line.lower()
+        # فقط ردیف‌هایی که احتمالاً قیمت دارند
+        if (
+            "قیمت" in text
+            or "ریال" in text
+            or re.search(r"\d{5,}", text)
+        ):
 
-        if any(k in low for k in keywords):
+            print(text[:2000])
 
-            print(line[:3000])
+            found += 1
 
-            count += 1
-
-            if count >= 150:
+            if found >= 150:
                 break
 
-    print("\nMATCHED LINES:", count)
+    print("\nFOUND ROWS:", found)
 
-    print("\n" + "=" * 80)
-    print("TEST FINISHED")
-    print("=" * 80)
+    print("\n" + "-" * 90)
+    print("TABLE-LIKE ELEMENTS")
+    print("-" * 90)
 
-except Exception as e:
+    # هر چیزی که نقش جدول دارد
+    for tag in soup.find_all(["div", "ul", "li", "section"]):
 
-    print("\n❌ ERROR")
-    print(type(e).__name__, str(e))
-    raise
+        text = tag.get_text(" ", strip=True)
+
+        if not text:
+            continue
+
+        if (
+            "قیمت امروز" in text
+            or "قیمت دیروز" in text
+        ):
+
+            print("\nELEMENT:", tag.name)
+            print(text[:3000])
+
+            found += 1
+
+            if found >= 180:
+                break
+
+    print("\n" + "=" * 90)
+
+print("EXTRACTION TEST FINISHED")
