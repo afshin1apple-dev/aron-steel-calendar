@@ -7,8 +7,7 @@ from zoneinfo import ZoneInfo
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
 
-TEHRAN = ZoneInfo("Asia/Tehran")
-now = datetime.now(TEHRAN)
+now = datetime.now(ZoneInfo("Asia/Tehran"))
 g = now.date()
 j = jdatetime.date.fromgregorian(date=g)
 
@@ -33,7 +32,7 @@ msg = (
     f"{j.day} {months[j.month-1]} {j.year}</b>\n"
     f"🌍 {g.day:02d}/{g.month:02d}/{g.year}\n\n"
     f"🎉 <b>مناسبت‌های امروز:</b>\n"
-    f"• در حال آماده‌سازی تقویم مناسبت‌ها..."
+    f"• تقویم روزانه آرون استیل"
 )
 
 response = requests.post(
@@ -46,5 +45,10 @@ response = requests.post(
     timeout=20
 )
 
-response.raise_for_status()
-print("Posted successfully.")
+print("Telegram response:")
+print(response.text)
+
+if not response.ok:
+    raise RuntimeError(response.text)
+
+print("Message sent successfully.")
