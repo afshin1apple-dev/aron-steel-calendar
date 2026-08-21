@@ -5,7 +5,6 @@ import hashlib
 import requests
 import feedparser
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse
 
 
 # ============================================================
@@ -18,9 +17,17 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
 HISTORY_FILE = "news_history.json"
 
-TEHRAN = timezone(timedelta(hours=3, minutes=30))
-
 MAX_HISTORY = 1000
+MAX_NEWS_PER_RUN = 2
+
+FOREIGN_SOURCES = {
+    "Financial Times",
+    "WSJ",
+    "Economist",
+    "Yahoo Finance",
+    "MarketWatch",
+    "Investing"
+}
 
 
 # ============================================================
@@ -28,37 +35,30 @@ MAX_HISTORY = 1000
 # ============================================================
 
 SOURCES = [
-
     {
         "name": "فولادبان",
         "url": "https://fouladban.com/feed/"
     },
-
     {
         "name": "Financial Times",
         "url": "https://www.ft.com/?format=rss"
     },
-
     {
         "name": "WSJ",
         "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
     },
-
     {
         "name": "Economist",
         "url": "https://www.economist.com/finance-and-economics/rss.xml"
     },
-
     {
         "name": "Yahoo Finance",
         "url": "https://finance.yahoo.com/news/rssindex"
     },
-
     {
         "name": "MarketWatch",
         "url": "https://feeds.marketwatch.com/marketwatch/topstories/"
     },
-
     {
         "name": "Investing",
         "url": "https://www.investing.com/rss/news.rss"
@@ -67,125 +67,41 @@ SOURCES = [
 
 
 # ============================================================
-# ECONOMIC KEYWORDS
+# KEYWORDS
 # ============================================================
 
-KEYWORDS = [
-
-    # Economy
-    "economy",
-    "economic",
-    "inflation",
-    "interest rate",
-    "rates",
-    "fed",
-    "federal reserve",
-    "central bank",
-    "gdp",
-    "recession",
-    "growth",
-    "employment",
-    "jobs",
-    "unemployment",
-
-    # Markets
-    "market",
-    "markets",
-    "stocks",
-    "stock",
-    "bond",
-    "bonds",
-    "treasury",
-    "dollar",
-    "currency",
-    "forex",
-    "finance",
-    "financial",
-    "bank",
-    "banking",
-
-    # Commodities
-    "commodity",
-    "commodities",
-    "oil",
-    "crude",
-    "brent",
-    "wti",
-    "gas",
-    "natural gas",
-    "gold",
-    "silver",
-    "copper",
-
-    # Steel
-    "steel",
-    "iron ore",
-    "iron",
-    "scrap",
-    "rebar",
-    "billet",
-    "metals",
-    "aluminum",
-    "aluminium",
-
-    # China
-    "china",
-    "chinese",
-    "beijing",
-
-    # Trade
-    "tariff",
-    "tariffs",
-    "trade",
-    "export",
-    "exports",
-    "import",
-    "imports",
-
-    # Industry
-    "construction",
-    "manufacturing",
-    "industrial",
-    "factory",
-    "production",
-    "supply",
-    "demand"
+ECONOMIC_KEYWORDS = [
+    "economy", "economic", "inflation", "interest rate",
+    "interest rates", "fed", "federal reserve", "central bank",
+    "gdp", "recession", "growth", "employment", "jobs",
+    "unemployment", "market", "markets", "stocks", "stock",
+    "bond", "bonds", "treasury", "dollar", "currency",
+    "forex", "finance", "financial", "bank", "banking",
+    "commodity", "commodities", "oil", "crude", "brent",
+    "wti", "natural gas", "gold", "silver", "copper",
+    "steel", "iron ore", "iron", "scrap", "rebar", "billet",
+    "metals", "aluminum", "aluminium", "china", "chinese",
+    "beijing", "tariff", "tariffs", "trade", "export",
+    "exports", "import", "imports", "construction",
+    "manufacturing", "industrial", "factory", "production",
+    "supply", "demand"
 ]
-
 
 STEEL_KEYWORDS = [
-
-    "steel",
-    "iron ore",
-    "iron",
-    "scrap",
-    "rebar",
-    "billet",
-    "steel mill",
-    "steelmaker",
-    "steelmakers",
-    "metals",
-    "construction",
-    "infrastructure",
-    "iron and steel",
-    "steel production"
+    "steel", "iron ore", "iron", "scrap", "rebar",
+    "billet", "steel mill", "steelmaker", "steelmakers",
+    "metals", "construction", "infrastructure",
+    "iron and steel", "steel production"
 ]
 
 
 # ============================================================
-# LOAD HISTORY
+# HISTORY
 # ============================================================
 
 def load_history():
-
     try:
-
-        with open(
-            HISTORY_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
 
             if isinstance(data, list):
@@ -200,12 +116,7 @@ def load_history():
 history = load_history()
 
 
-# ============================================================
-# SAVE HISTORY
-# ============================================================
-
 def save_history():
-
     global history
 
     history = history[-MAX_HISTORY:]
@@ -215,7 +126,6 @@ def save_history():
         "w",
         encoding="utf-8"
     ) as f:
-
         json.dump(
             history,
             f,
@@ -225,11 +135,10 @@ def save_history():
 
 
 # ============================================================
-# NORMALIZE TEXT
+# TEXT
 # ============================================================
 
 def clean_text(text):
-
     if not text:
         return ""
 
@@ -248,53 +157,8 @@ def clean_text(text):
     return text.strip()
 
 
-# ============================================================
-# CHECK ECONOMIC NEWS
-# ============================================================
-
-def is_economic(title, summary=""):
-
-    text = (
-        title + " " + summary
-    ).lower()
-
-    for keyword in KEYWORDS:
-
-        if keyword.lower() in text:
-            return True
-
-    return False
-
-
-# ============================================================
-# STEEL RELATED
-# ============================================================
-
-def is_steel_related(title, summary=""):
-
-    text = (
-        title + " " + summary
-    ).lower()
-
-    for keyword in STEEL_KEYWORDS:
-
-        if keyword.lower() in text:
-            return True
-
-    return False
-
-
-# ============================================================
-# NEWS ID
-# ============================================================
-
 def make_id(title, link):
-
-    raw = (
-        title.strip()
-        + "|"
-        + link.strip()
-    )
+    raw = title.strip() + "|" + link.strip()
 
     return hashlib.sha256(
         raw.encode("utf-8")
@@ -302,7 +166,33 @@ def make_id(title, link):
 
 
 # ============================================================
-# FETCH RSS
+# FILTER
+# ============================================================
+
+def is_economic(title, summary=""):
+    text = (
+        title + " " + summary
+    ).lower()
+
+    return any(
+        keyword.lower() in text
+        for keyword in ECONOMIC_KEYWORDS
+    )
+
+
+def is_steel_related(title, summary=""):
+    text = (
+        title + " " + summary
+    ).lower()
+
+    return any(
+        keyword.lower() in text
+        for keyword in STEEL_KEYWORDS
+    )
+
+
+# ============================================================
+# RSS
 # ============================================================
 
 def fetch_source(source):
@@ -330,7 +220,6 @@ def fetch_source(source):
         )
 
         if response.status_code != 200:
-
             return []
 
         feed = feedparser.parse(
@@ -384,23 +273,12 @@ def fetch_source(source):
                 continue
 
             results.append({
-
                 "id": item_id,
-
-                "source":
-                source["name"],
-
-                "title":
-                title,
-
-                "summary":
-                summary,
-
-                "link":
-                link,
-
-                "steel":
-                is_steel_related(
+                "source": source["name"],
+                "title": title,
+                "summary": summary,
+                "link": link,
+                "steel": is_steel_related(
                     title,
                     summary
                 )
@@ -423,68 +301,126 @@ def fetch_source(source):
 # TRANSLATION
 # ============================================================
 
-def translate_text(text):
+def translate_with_mymemory(text):
 
-    urls = [
+    try:
 
+        response = requests.get(
+            "https://api.mymemory.translated.net/get",
+            params={
+                "q": text,
+                "langpair": "en|fa"
+            },
+            timeout=20
+        )
+
+        print(
+            "MyMemory status:",
+            response.status_code
+        )
+
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+
+        translated = (
+            data
+            .get("responseData", {})
+            .get("translatedText")
+        )
+
+        if translated:
+            return translated.strip()
+
+    except Exception as e:
+
+        print(
+            "MyMemory error:",
+            e
+        )
+
+    return None
+
+
+def translate_with_libretranslate(text):
+
+    servers = [
         "https://libretranslate.com/translate",
         "https://translate.astian.org/translate"
     ]
 
-    for url in urls:
+    for url in servers:
 
         try:
 
             response = requests.post(
-
                 url,
-
                 json={
-
                     "q": text,
-
-                    "source":
-                    "en",
-
-                    "target":
-                    "fa",
-
-                    "format":
-                    "text"
+                    "source": "en",
+                    "target": "fa",
+                    "format": "text"
                 },
-
-                timeout=20
+                timeout=25
             )
 
             print(
-                "Translation status:",
+                "LibreTranslate:",
+                url,
                 response.status_code
             )
 
-            if response.ok:
+            if not response.ok:
+                continue
 
-                data = response.json()
+            data = response.json()
 
-                translated = data.get(
-                    "translatedText"
-                )
+            translated = data.get(
+                "translatedText"
+            )
 
-                if translated:
-
-                    return translated.strip()
+            if translated:
+                return translated.strip()
 
         except Exception as e:
 
             print(
-                "Translation error:",
+                "LibreTranslate error:",
                 e
             )
 
-    return text
+    return None
+
+
+def translate_text(text):
+
+    if not text:
+        return ""
+
+    # اول MyMemory
+    translated = translate_with_mymemory(
+        text
+    )
+
+    if translated:
+        return translated
+
+    # بعد LibreTranslate
+    translated = translate_with_libretranslate(
+        text
+    )
+
+    if translated:
+        return translated
+
+    # اگر ترجمه پیدا نشد، None
+    # برمی‌گردانیم تا خبر انگلیسی منتشر نشود.
+    return None
 
 
 # ============================================================
-# IMAGE SEARCH
+# IMAGE
 # ============================================================
 
 def get_image(query):
@@ -500,34 +436,24 @@ def get_image(query):
     try:
 
         response = requests.get(
-
             "https://api.pexels.com/v1/search",
-
             headers={
-
                 "Authorization":
                 PEXELS_API_KEY
             },
-
             params={
-
-                "query":
-                query,
-
-                "per_page":
-                10
+                "query": query,
+                "per_page": 10
             },
-
             timeout=20
         )
 
+        print(
+            "Pexels status:",
+            response.status_code
+        )
+
         if response.status_code != 200:
-
-            print(
-                "Pexels status:",
-                response.status_code
-            )
-
             return None
 
         data = response.json()
@@ -538,14 +464,13 @@ def get_image(query):
         )
 
         if not photos:
-
             return None
 
-        return photos[0][
-            "src"
-        ][
-            "large"
-        ]
+        return (
+            photos[0]
+            .get("src", {})
+            .get("large")
+        )
 
     except Exception as e:
 
@@ -558,7 +483,7 @@ def get_image(query):
 
 
 # ============================================================
-# STEEL IMPACT ANALYSIS
+# STEEL IMPACT
 # ============================================================
 
 def steel_impact(title, summary):
@@ -567,8 +492,7 @@ def steel_impact(title, summary):
         title + " " + summary
     ).lower()
 
-    positive_words = [
-
+    increase_words = [
         "supply cut",
         "production cut",
         "production cuts",
@@ -581,14 +505,12 @@ def steel_impact(title, summary):
         "interest rate cut",
         "infrastructure spending",
         "construction growth",
-        "tariff on steel",
-        "steel tariff",
         "export restriction",
-        "production restriction"
+        "production restriction",
+        "steel tariff"
     ]
 
-    negative_words = [
-
+    decrease_words = [
         "demand falls",
         "demand decline",
         "recession",
@@ -603,33 +525,31 @@ def steel_impact(title, summary):
         "interest rate hike"
     ]
 
-    positive = any(
+    increase = any(
         word in text
-        for word in positive_words
+        for word in increase_words
     )
 
-    negative = any(
+    decrease = any(
         word in text
-        for word in negative_words
+        for word in decrease_words
     )
 
-    if positive and not negative:
+    if increase and not decrease:
 
         return (
             "🟢 این خبر احتمالاً باعث "
-            "افزایش قیمت فولاد می‌شود."
-            "\n"
+            "افزایش قیمت فولاد می‌شود.\n"
             "📝 دلیل: شرایط ایجادشده "
             "می‌تواند از تقاضا یا قیمت "
             "فولاد حمایت کند."
         )
 
-    if negative and not positive:
+    if decrease and not increase:
 
         return (
             "🔴 این خبر احتمالاً باعث "
-            "کاهش قیمت فولاد می‌شود."
-            "\n"
+            "کاهش قیمت فولاد می‌شود.\n"
             "📝 دلیل: شرایط ایجادشده "
             "می‌تواند فشار کاهشی بر "
             "تقاضا یا قیمت فولاد ایجاد کند."
@@ -642,65 +562,44 @@ def steel_impact(title, summary):
 
 
 # ============================================================
-# SEND TELEGRAM
+# TELEGRAM
 # ============================================================
 
-def send_telegram(
-    text,
-    image_url=None
-):
+def send_telegram(text, image_url=None):
 
     try:
 
         if image_url:
 
             url = (
-                f"https://api.telegram.org/"
+                "https://api.telegram.org/"
                 f"bot{BOT_TOKEN}/sendPhoto"
             )
 
             response = requests.post(
-
                 url,
-
                 data={
-
-                    "chat_id":
-                    CHANNEL_ID,
-
-                    "photo":
-                    image_url,
-
-                    "caption":
-                    text
+                    "chat_id": CHANNEL_ID,
+                    "photo": image_url,
+                    "caption": text
                 },
-
                 timeout=30
             )
 
         else:
 
             url = (
-                f"https://api.telegram.org/"
+                "https://api.telegram.org/"
                 f"bot{BOT_TOKEN}/sendMessage"
             )
 
             response = requests.post(
-
                 url,
-
                 data={
-
-                    "chat_id":
-                    CHANNEL_ID,
-
-                    "text":
-                    text,
-
-                    "disable_web_page_preview":
-                    False
+                    "chat_id": CHANNEL_ID,
+                    "text": text,
+                    "disable_web_page_preview": False
                 },
-
                 timeout=30
             )
 
@@ -737,38 +636,35 @@ def send_telegram(
 def build_message(item):
 
     source = item["source"]
-
     original_title = item["title"]
-
     summary = item["summary"]
-
     link = item["link"]
 
-    foreign_sources = [
-
-        "Financial Times",
-        "WSJ",
-        "Economist",
-        "Yahoo Finance",
-        "MarketWatch",
-        "Investing"
-    ]
-
-    if source in foreign_sources:
+    if source in FOREIGN_SOURCES:
 
         translated_title = translate_text(
             original_title
         )
 
-        if summary:
+        if not translated_title:
 
-            translated_summary = translate_text(
-                summary[:700]
+            print(
+                "Translation failed:",
+                original_title
             )
 
-        else:
+            return None
 
-            translated_summary = ""
+        translated_summary = ""
+
+        if summary:
+
+            translated_summary = (
+                translate_text(
+                    summary[:700]
+                )
+                or ""
+            )
 
         message = (
             "🌍 خبر اقتصادی جهان\n\n"
@@ -779,9 +675,7 @@ def build_message(item):
 
             message += (
                 "\n"
-                "📝 "
-                + translated_summary
-                + "\n"
+                f"📝 {translated_summary}\n"
             )
 
     else:
@@ -795,20 +689,16 @@ def build_message(item):
 
             message += (
                 "\n"
-                "📝 "
-                + summary[:700]
-                + "\n"
+                f"📝 {summary[:700]}\n"
             )
 
-    # Steel impact
     message += (
         "\n"
         "📊 تأثیر احتمالی بر بازار فولاد:\n"
-    )
-
-    message += steel_impact(
-        original_title,
-        summary
+        + steel_impact(
+            original_title,
+            summary
+        )
     )
 
     message += (
@@ -868,19 +758,19 @@ def priority(item):
     score = 0
 
     if item["steel"]:
+        score += 20
+
+    if item["source"] == "فولادبان":
         score += 10
 
     if item["source"] == "Financial Times":
-        score += 5
-
-    if item["source"] == "فولادبان":
-        score += 5
+        score += 8
 
     if item["source"] == "WSJ":
-        score += 4
+        score += 7
 
     if item["source"] == "Economist":
-        score += 4
+        score += 6
 
     return score
 
@@ -892,36 +782,34 @@ all_news.sort(
 
 
 # ============================================================
-# LIMIT
-# ============================================================
-
-# برای جلوگیری از بمباران کانال،
-# در هر اجرای ربات حداکثر 2 خبر ارسال می‌شود.
-
-all_news = all_news[:2]
-
-
-sent = 0
-
-
-# ============================================================
 # SEND
 # ============================================================
 
+sent = 0
+
 for item in all_news:
+
+    if sent >= MAX_NEWS_PER_RUN:
+        break
 
     message = build_message(
         item
     )
 
-    # Image search
-    image_query = (
-        "steel market economy "
-        + item["title"]
-    )
+    # اگر ترجمه خبر خارجی انجام نشد
+    # اصلاً ارسال نمی‌کنیم.
+    if not message:
+
+        print(
+            "SKIPPED - translation failed:",
+            item["title"]
+        )
+
+        continue
 
     image = get_image(
-        image_query
+        "steel economy market "
+        + item["title"]
     )
 
     success = send_telegram(
@@ -955,7 +843,6 @@ for item in all_news:
 # ============================================================
 
 save_history()
-
 
 print()
 print(
