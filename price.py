@@ -2,7 +2,7 @@ import requests
 import re
 import json
 from html import unescape
-from datetime import datetime
+from datetime import datetime, timezone
 
 URLS = {
     "میلگرد سایر کارخانجات": "https://khorasan-steel.com/product.php?prd=5",
@@ -67,10 +67,9 @@ def extract_rows(html):
 
             values = [clean(x) for x in cells]
 
-            if len(values) < 5:
+            if len(values) != 5:
                 continue
 
-            # رد کردن عنوان ستون‌ها
             if (
                 "قیمت دیروز" in values[2]
                 or "قیمت امروز" in values[3]
@@ -78,11 +77,11 @@ def extract_rows(html):
             ):
                 continue
 
-            factory = values[0]
-            size = values[1]
-            yesterday = values[2]
-            today = values[3]
-            description = values[4]
+            factory = clean(values[0])
+            size = clean(values[1])
+            yesterday = price_value(values[2])
+            today = price_value(values[3])
+            description = clean(values[4])
 
             if not factory or not size:
                 continue
@@ -90,8 +89,8 @@ def extract_rows(html):
             products.append({
                 "factory": factory,
                 "size": size,
-                "yesterday": price_value(yesterday),
-                "today": price_value(today),
+                "yesterday": yesterday,
+                "today": today,
                 "description": description
             })
 
@@ -100,33 +99,29 @@ def extract_rows(html):
 
 def fetch_prices(title, url):
 
-    print("\n")
-    print("=" * 100)
-    print(title)
-    print(url)
-    print("=" * 100)
+    print(f"\n[{title}]")
 
     try:
+
         response = requests.get(
             url,
             headers=HEADERS,
             timeout=30
         )
 
-        print("HTTP:", response.status_code)
-        print("LENGTH:", len(response.text))
+        print(f"HTTP: {response.status_code}")
 
         response.raise_for_status()
 
         products = extract_rows(response.text)
 
-        print("FOUND:", len(products))
+        print(f"FOUND: {len(products)}")
 
         return products
 
     except Exception as e:
 
-        print("ERROR:", e)
+        print(f"ERROR: {e}")
 
         return []
 
@@ -141,7 +136,7 @@ def main():
 
         all_products.extend(products)
 
-    # حذف موارد کاملاً تکراری
+    # حذف ردیف‌های کاملاً تکراری
     unique_products = []
 
     seen = set()
@@ -156,13 +151,15 @@ def main():
             product["description"]
         )
 
-        if key not in seen:
-            seen.add(key)
-            unique_products.append(product)
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique_products.append(product)
 
     data = {
         "source": "khorasan-steel.com",
-        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
         "count": len(unique_products),
         "prices": unique_products
     }
@@ -180,29 +177,26 @@ def main():
             indent=2
         )
 
-    print("\n")
-    print("=" * 100)
+    print("\n==============================")
     print("JSON CREATED")
-    print("=" * 100)
-
+    print("==============================")
     print("FILE: prices.json")
-    print("TOTAL PRODUCTS:", len(unique_products))
+    print(f"TOTAL: {len(unique_products)}")
 
-    print("\nFIRST 10 PRODUCTS:")
+    print("\nSAMPLE:")
 
-    for product in unique_products[:10]:
+    for product in unique_products[:5]:
 
         print(
             f"{product['factory']} | "
-            f"{product['size']} | "
-            f"{product['today']} | "
+            f"سایز {product['size']} | "
+            f"امروز {product['today']} | "
             f"{product['description']}"
         )
 
-    print("\n")
-    print("=" * 100)
+    print("\n==============================")
     print("TEST FINISHED")
-    print("=" * 100)
+    print("==============================")
 
 
 if __name__ == "__main__":
