@@ -3,6 +3,7 @@ name: Economic News
 on:
   schedule:
     - cron: '0,10,20,30,40,50 5-13 * * *'
+- cron: '30 4 * * *'
   workflow_dispatch:
 
 permissions:
