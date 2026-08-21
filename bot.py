@@ -7,11 +7,9 @@ from zoneinfo import ZoneInfo
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
 
-# ساعت ایران
 now = datetime.now(ZoneInfo("Asia/Tehran"))
 g = now.date()
 
-# تاریخ شمسی
 j = jdatetime.date.fromgregorian(
     year=g.year,
     month=g.month,
@@ -29,96 +27,72 @@ weekdays = [
 ]
 
 months = [
-    "فروردین",
-    "اردیبهشت",
-    "خرداد",
-    "تیر",
-    "مرداد",
-    "شهریور",
-    "مهر",
-    "آبان",
-    "آذر",
-    "دی",
-    "بهمن",
-    "اسفند"
+    "فروردین", "اردیبهشت", "خرداد", "تیر",
+    "مرداد", "شهریور", "مهر", "آبان",
+    "آذر", "دی", "بهمن", "اسفند"
 ]
 
 weekday = weekdays[g.weekday()]
 
-# مناسبت‌های امروز
-events = []
+# تعطیلات رسمی ایران در سال ۱۴۰۵
+holidays = {
+    (1, 1): "آغاز نوروز",
+    (1, 2): "عید نوروز",
+    (1, 3): "عید نوروز",
+    (1, 4): "عید نوروز",
+    (1, 12): "روز جمهوری اسلامی ایران",
+    (1, 13): "روز طبیعت",
+    
+    (1, 25): "شهادت امام جعفر صادق (ع)",
+    
+    (3, 3): "شهادت امام محمد باقر (ع)",
+    (3, 6): "عید قربان",
+    (3, 14): "رحلت امام خمینی و عید غدیر خم",
+    (3, 15): "قیام ۱۵ خرداد",
 
-try:
-    url = f"https://holidayapi.ir/jalali/{j.year}/{j.month:02d}/{j.day:02d}"
-    response = requests.get(url, timeout=20)
-    data = response.json()
+    (4, 3): "تاسوعای حسینی",
+    (4, 4): "عاشورای حسینی",
 
-    for event in data.get("events", []):
-        title = (
-            event.get("description")
-            or event.get("title")
-            or event.get("name")
-            or ""
-        )
+    (5, 13): "اربعین حسینی",
+    (5, 21): "رحلت پیامبر اکرم (ص) و شهادت امام حسن مجتبی (ع)",
+    (5, 22): "شهادت امام رضا (ع)",
+    (5, 30): "شهادت امام حسن عسکری (ع)",
 
-        if title:
-            events.append(title)
+    (6, 8): "ولادت پیامبر اکرم (ص) و ولادت امام جعفر صادق (ع)",
 
-except Exception as e:
-    print("Calendar API error:", e)
+    (8, 22): "شهادت حضرت فاطمه زهرا (س)",
 
-# حذف موارد تکراری
-events = list(dict.fromkeys(events))
+    (10, 2): "ولادت امام علی (ع) و روز پدر",
+    (10, 16): "مبعث پیامبر اکرم (ص)",
 
-# حذف مناسبت‌های مذهبی رایج
-religious_words = [
-    "شهادت",
-    "ولادت",
-    "عزاداری",
-    "عاشورا",
-    "تاسوعا",
-    "اربعین",
-    "محرم",
-    "صفر",
-    "رمضان",
-    "فطر",
-    "غدیر",
-    "مبعث",
-    "فاطمیه",
-    "امام",
-    "پیامبر",
-    "حضرت"
-]
+    (11, 4): "ولادت امام زمان (عج)",
+    (11, 22): "پیروزی انقلاب اسلامی ایران",
 
-filtered_events = []
+    (12, 9): "شهادت امام علی (ع)",
+    (12, 19): "عید سعید فطر",
+    (12, 20): "تعطیل به مناسبت عید سعید فطر",
+    (12, 29): "ملی شدن صنعت نفت ایران",
+}
 
-for event in events:
-    if not any(word in event for word in religious_words):
-        filtered_events.append(event)
-
-events = filtered_events
-
-# اگر منبع مناسبت‌ها را نداد، مناسبت‌های ثابت ایرانی را بررسی کن
-# ۳۰ مرداد = شهریورگان
-if j.month == 5 and j.day == 30:
-    if not any("شهریورگان" in e for e in events):
-        events.append("جشن شهریورگان؛ از جشن‌های باستانی ایران")
-
-if events:
-    events_text = "\n".join(f"• {event}" for event in events)
-else:
-    events_text = "• مناسبت عمومی ثبت نشده است."
+holiday = holidays.get((j.month, j.day))
 
 message = (
     f"📅 <b>{weekday} {j.day} {months[j.month - 1]} {j.year}</b>\n"
-    f"🌍 {g.day:02d}/{g.month:02d}/{g.year}\n\n"
-    f"🎉 <b>مناسبت‌های امروز:</b>\n"
-    f"{events_text}\n\n"
-    f"🆔 @Arvand_Aron_Steel\n"
+    f"🌍 {g.day:02d}/{g.month:02d}/{g.year}\n"
+)
+
+if holiday:
+    message += (
+        f"\n🔴 <b>تعطیل رسمی</b>\n"
+        f"📌 {holiday}\n"
+    )
+
+message += (
+    f"\n🆔 @Arvand_Aron_Steel\n"
     f"☎️ 021-22122239"
 )
 
-telegram = requests.post(
+response = requests.post(
     f"https://api.telegram.org/bot{TOKEN}/sendMessage",
     json={
         "chat_id": CHANNEL,
@@ -129,10 +103,9 @@ telegram = requests.post(
     timeout=20
 )
 
-print("Telegram response:")
-print(telegram.text)
+print(response.text)
 
-if not telegram.ok:
-    raise RuntimeError(telegram.text)
+if not response.ok:
+    raise RuntimeError(response.text)
 
 print("Message sent successfully.")
