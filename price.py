@@ -2,141 +2,132 @@ from playwright.sync_api import sync_playwright
 import re
 
 URLS = {
-    "میلگرد سایر کارخانجات": "https://khorasan-steel.com/product.php?prd=5",
-    "میلگرد نیشابور": "https://khorasan-steel.com/product.php?prd=3",
+    "سایر کارخانجات": "https://khorasan-steel.com/product.php?prd=5",
+    "نیشابور": "https://khorasan-steel.com/product.php?prd=3",
 }
+
+def clean_number(text):
+    text = text.replace(",", "").replace("،", "")
+    text = re.sub(r"[^\d]", "", text)
+    return int(text) if text else None
+
 
 with sync_playwright() as p:
 
-    browser = p.chromium.launch(
-        headless=True
-    )
+    browser = p.chromium.launch(headless=True)
 
     page = browser.new_page(
         locale="fa-IR"
     )
 
-    for title, url in URLS.items():
+    for group, url in URLS.items():
 
         print("\n" + "=" * 90)
-        print(title)
+        print(group)
         print(url)
         print("=" * 90)
 
-        try:
+        page.goto(
+            url,
+            wait_until="networkidle",
+            timeout=60000
+        )
 
-            page.goto(
-                url,
-                wait_until="networkidle",
-                timeout=60000
+        page.wait_for_timeout(3000)
+
+        # پیدا کردن عنوان‌های جدول
+        headings = page.locator("text=قیمت امروز")
+
+        print("PRICE HEADINGS:", headings.count())
+
+        # تمام متن صفحه
+        text = page.locator("body").inner_text()
+
+        lines = [
+            re.sub(r"\s+", " ", x).strip()
+            for x in text.splitlines()
+        ]
+
+        print("\n--- EXTRACTED PRODUCTS ---")
+
+        current_factory = None
+        found = 0
+
+        for i, line in enumerate(lines):
+
+            if not line:
+                continue
+
+            # تشخیص کارخانه از خطوط قبل از جدول
+            factories = [
+                "اصفهان",
+                "شاهین بناب",
+                "ظفر",
+                "راد همدان",
+                "شاهرود",
+                "سیادن ابهر",
+                "البرزتاکستان",
+                "روهینا جنوب",
+                "آریان فولاد",
+                "آناهیتا",
+                "نیک صدرا",
+                "پرشین فولاد",
+                "فولادکاسپین",
+                "شمس سپهر",
+                "میانه",
+                "کاوه تیکمه داش",
+                "آذرفولادامین",
+                "کویرکاشان",
+                "فولاد سیرجان",
+                "بافق یزد",
+                "فایکو",
+                "حدید سیرجان",
+                "ابرکوه یزد",
+                "درپاد تبریز",
+            ]
+
+            for factory in factories:
+
+                if factory in line and len(line) < 80:
+                    current_factory = factory
+                    break
+
+            # خطوطی که قیمت دارند
+            numbers = re.findall(
+                r"(?<!\d)\d{5,7}(?!\d)",
+                line.replace(",", "")
             )
 
-            page.wait_for_timeout(5000)
+            if len(numbers) >= 2:
 
-            print("PAGE TITLE:", page.title())
-            print("FINAL URL:", page.url)
+                values = [
+                    clean_number(x)
+                    for x in numbers
+                ]
 
-            html = page.content()
+                values = [
+                    x for x in values
+                    if x is not None
+                ]
 
-            print("DOM LENGTH:", len(html))
+                if len(values) >= 2:
 
-            print("\n--- TEXT CONTAINING PRICE ---")
-
-            text = page.locator("body").inner_text()
-
-            lines = text.splitlines()
-
-            found = 0
-
-            for line in lines:
-
-                line = re.sub(
-                    r"\s+",
-                    " ",
-                    line
-                ).strip()
-
-                if not line:
-                    continue
-
-                if (
-                    "قیمت" in line
-                    or "ریال" in line
-                    or re.search(r"\d{5,}", line)
-                ):
-
-                    print(line[:1000])
+                    # معمولاً:
+                    # سایز / قیمت دیروز / قیمت امروز
+                    print(
+                        f"FACTORY={current_factory} | "
+                        f"LINE={line}"
+                    )
 
                     found += 1
 
-                    if found >= 150:
+                    if found >= 200:
                         break
 
-            print("\nFOUND:", found)
-
-            print("\n--- INPUTS ---")
-
-            inputs = page.locator("input")
-
-            print(
-                "INPUT COUNT:",
-                inputs.count()
-            )
-
-            for i in range(inputs.count()):
-
-                el = inputs.nth(i)
-
-                print(
-                    i,
-                    el.get_attribute("name"),
-                    el.get_attribute("value"),
-                    el.get_attribute("type")
-                )
-
-            print("\n--- TABLE COUNT ---")
-
-            print(
-                "TABLES:",
-                page.locator("table").count()
-            )
-
-            print(
-                "ROWS:",
-                page.locator("tr").count()
-            )
-
-            print("\n--- PRICE KEYWORDS ---")
-
-            for keyword in [
-                "قیمت امروز",
-                "قیمت دیروز",
-                "میلگرد",
-                "نیشابور",
-                "اصفهان",
-                "شاهین بناب",
-                "ظفر بناب"
-            ]:
-
-                count = text.count(keyword)
-
-                if count:
-                    print(
-                        keyword,
-                        "=>",
-                        count
-                    )
-
-        except Exception as e:
-
-            print(
-                "ERROR:",
-                type(e).__name__,
-                str(e)
-            )
+        print("\nFOUND:", found)
 
     browser.close()
 
 print("\n" + "=" * 90)
-print("BROWSER PRICE TEST FINISHED")
+print("REAL PRICE EXTRACTION TEST FINISHED")
 print("=" * 90)
