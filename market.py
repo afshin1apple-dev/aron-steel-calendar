@@ -65,10 +65,6 @@ def get_tgju_price(url):
     return current, change
 
 
-# --------------------------------------------------
-# تتر
-# --------------------------------------------------
-
 def get_tether():
 
     url = "https://www.tgju.org/profile/crypto-tether/markets-local"
@@ -96,9 +92,7 @@ def get_tether():
 
         for cell in row.find_all(["td", "th"]):
 
-            n = number(
-                cell.get_text(" ", strip=True)
-            )
+            n = number(cell.get_text(" ", strip=True))
 
             if n is not None:
                 values.append(n)
@@ -117,10 +111,6 @@ def get_tether():
 
     return current
 
-
-# --------------------------------------------------
-# تاریخچه
-# --------------------------------------------------
 
 def load_history():
 
@@ -169,10 +159,6 @@ def calculate_change(current, previous):
     ) * 100
 
 
-# --------------------------------------------------
-# بیت کوین
-# --------------------------------------------------
-
 def get_bitcoin():
 
     r = requests.get(
@@ -194,10 +180,6 @@ def get_bitcoin():
         data["usd_24h_change"]
     )
 
-
-# --------------------------------------------------
-# فرمت
-# --------------------------------------------------
 
 def price(value, decimals=0):
 
@@ -221,10 +203,6 @@ def change(value):
     return "⚪ 0.00%"
 
 
-# --------------------------------------------------
-# دریافت قیمت‌ها
-# --------------------------------------------------
-
 gold_world, gold_world_change = get_tgju_price(
     "https://www.tgju.org/profile/ons"
 )
@@ -242,10 +220,6 @@ tether = get_tether()
 bitcoin, bitcoin_change = get_bitcoin()
 
 
-# --------------------------------------------------
-# محاسبه تغییر تتر
-# --------------------------------------------------
-
 history = load_history()
 
 previous_tether = history.get("tether")
@@ -255,15 +229,10 @@ tether_change = calculate_change(
     previous_tether
 )
 
-# قیمت امروز را برای فردا ذخیره کن
 history["tether"] = tether
 
 save_history(history)
 
-
-# --------------------------------------------------
-# عکس
-# --------------------------------------------------
 
 now = datetime.now(TEHRAN)
 
@@ -294,12 +263,7 @@ photo = photos[
 image_url = photo["src"]["large2x"]
 
 
-# --------------------------------------------------
-# متن پست
-# --------------------------------------------------
-
 message = (
-
     "📊 <b>گزارش بازار امروز</b>\n\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
@@ -327,21 +291,14 @@ message = (
 )
 
 
-# --------------------------------------------------
-# ارسال تلگرام
-# --------------------------------------------------
-
 r = requests.post(
-
     f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-
     data={
         "chat_id": CHANNEL,
         "photo": image_url,
         "caption": message,
         "parse_mode": "HTML"
     },
-
     timeout=30
 )
 
