@@ -1,94 +1,122 @@
 import requests
 import re
+from urllib.parse import urljoin
 
-URLS = [
-    "https://khorasan-steel.com/product.php?prd=5",
-    "https://khorasan-steel.com/product.php?prd=3",
-]
+BASE = "https://khorasan-steel.com/"
+JS_URL = urljoin(BASE, "js/filter-products.js")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0 Safari/537.36",
     "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
-for url in URLS:
+print("=" * 80)
+print("KHORASAN STEEL - FILTER SCRIPT TEST")
+print("=" * 80)
 
-    print("\n" + "=" * 80)
-    print("URL:", url)
-    print("=" * 80)
+try:
+    r = requests.get(
+        JS_URL,
+        headers=HEADERS,
+        timeout=30
+    )
 
-    r = requests.get(url, headers=HEADERS, timeout=30)
+    print("JS URL:", JS_URL)
+    print("HTTP STATUS:", r.status_code)
+    print("JS LENGTH:", len(r.text))
 
-    print("STATUS:", r.status_code)
-    print("LENGTH:", len(r.text))
+    if r.status_code != 200:
+        raise Exception("Could not download filter-products.js")
 
-    html = r.text
+    js = r.text
 
-    keywords = [
-        "قیمت امروز",
-        "قیمت دیروز",
-        "قیمت",
-        "price",
-        "today",
-        "yesterday",
-        "ajax",
-        "load",
-        "product"
+    print("\n" + "-" * 70)
+    print("FILTER-PRODUCTS.JS")
+    print("-" * 70)
+
+    print(js[:30000])
+
+    print("\n" + "-" * 70)
+    print("POSSIBLE AJAX / API / PRICE URLS")
+    print("-" * 70)
+
+    patterns = [
+        r"""url\s*:\s*["']([^"']+)["']""",
+        r"""["']([^"']*(?:ajax|api|product|price|filter)[^"']*)["']""",
+        r"""(?:get|post)\s*\(\s*["']([^"']+)["']""",
+        r"""fetch\s*\(\s*["']([^"']+)["']""",
     ]
 
-    print("\n--- MATCHED HTML LINES ---")
+    found = set()
 
-    lines = html.splitlines()
+    for pattern in patterns:
+
+        matches = re.findall(
+            pattern,
+            js,
+            re.IGNORECASE
+        )
+
+        for match in matches:
+            found.add(match)
+
+    if found:
+
+        for item in sorted(found):
+            print(item)
+
+    else:
+
+        print("NO DIRECT URL FOUND")
+
+    print("\n" + "-" * 70)
+    print("IMPORTANT KEYWORDS")
+    print("-" * 70)
+
+    keywords = [
+        "ajax",
+        "url",
+        "post",
+        "get",
+        "price",
+        "product",
+        "filter",
+        "size",
+        "factory",
+        "prd",
+        "load"
+    ]
+
+    lines = js.splitlines()
 
     count = 0
 
     for line in lines:
 
-        line_clean = re.sub(r"\s+", " ", line).strip()
+        line = line.strip()
 
-        if not line_clean:
+        if not line:
             continue
 
-        low = line_clean.lower()
+        low = line.lower()
 
-        if any(k.lower() in low for k in keywords):
+        if any(k in low for k in keywords):
 
-            print(line_clean[:3000])
+            print(line[:3000])
 
             count += 1
 
-            if count >= 100:
+            if count >= 150:
                 break
 
-    print("\nMATCH COUNT:", count)
+    print("\nMATCHED LINES:", count)
 
-    print("\n--- SCRIPT URLS ---")
+    print("\n" + "=" * 80)
+    print("TEST FINISHED")
+    print("=" * 80)
 
-    scripts = re.findall(
-        r'<script[^>]+src=["\']([^"\']+)["\']',
-        html,
-        re.IGNORECASE
-    )
+except Exception as e:
 
-    for script in scripts:
-        print(script)
-
-    print("\n--- POSSIBLE PRICE VALUES ---")
-
-    numbers = re.findall(
-        r"(?<!\d)\d{5,8}(?!\d)",
-        html
-    )
-
-    unique = []
-
-    for n in numbers:
-        if n not in unique:
-            unique.append(n)
-
-    for n in unique[:100]:
-        print(n)
-
-print("\n" + "=" * 80)
-print("INVESTIGATION FINISHED")
-print("=" * 80)
+    print("\n❌ ERROR")
+    print(type(e).__name__, str(e))
+    raise
