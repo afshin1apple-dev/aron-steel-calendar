@@ -5,6 +5,7 @@ import html
 import requests
 import feedparser
 from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = os.environ["CHANNEL_ID"]
@@ -26,50 +27,37 @@ COMPANY_FOOTER = """
 # =========================================================
 
 FEEDS = [
-
-    # Reuters
     {
         "name": "Reuters",
-        "url": "https://news.google.com/rss/search?q=site%3Areuters.com+steel+OR+iron+OR+iron+ore+OR+sanctions+OR+Iran+OR+dollar+when%3A1d&hl=en-US&gl=US&ceid=US%3Aen"
+        "url": "https://feeds.reuters.com/reuters/businessNews"
     },
-
-    # Bloomberg
     {
         "name": "Bloomberg",
-        "url": "https://news.google.com/rss/search?q=site%3Abloomberg.com+steel+OR+iron+ore+OR+commodities+OR+metals+OR+Iran+OR+dollar+when%3A1d&hl=en-US&gl=US&ceid=US%3Aen"
+        "url": "https://feeds.bloomberg.com/markets/news.rss"
     },
-
-    # Bloomberg Commodities
-    {
-        "name": "Bloomberg Commodities",
-        "url": "https://news.google.com/rss/search?q=site%3Abloomberg.com+commodities+OR+metals+OR+iron+ore+OR+steel+OR+oil+OR+coal+when%3A1d&hl=en-US&gl=US&ceid=US%3Aen"
-    },
-
-    # فولادبان
-    {
-        "name": "فولادبان",
-        "url": "https://news.google.com/rss/search?q=site%3Afouladban.com+فولاد+OR+آهن+OR+میلگرد+OR+شمش+OR+دلار+OR+تحریم+when%3A1d&hl=fa&gl=IR&ceid=IR%3Afa"
-    },
-
-    # اقتصادنیوز
-    {
-        "name": "اقتصادنیوز",
-        "url": "https://news.google.com/rss/search?q=site%3Aeghtesadnews.com+فولاد+OR+آهن+OR+دلار+OR+تحریم+OR+کامودیتی+OR+اقتصاد+when%3A1d&hl=fa&gl=IR&ceid=IR%3Afa"
-    },
-
-    # Commodity
     {
         "name": "Commodity",
-        "url": "https://news.google.com/rss/search?q=commodities+steel+iron+ore+coking+coal+scrap+copper+oil+when%3A1d&hl=en-US&gl=US&ceid=US%3Aen"
+        "url": "https://www.commodity.com/feed/"
+    },
+    {
+        "name": "Fooladban",
+        "url": "https://fooladban.com/feed/"
+    },
+    {
+        "name": "Eghtesad News",
+        "url": "https://www.eghtesadnews.com/rss"
+    },
+    {
+        "name": "Steel.com",
+        "url": "https://www.steel.com/feed/"
     }
 ]
 
 # =========================================================
-# کلمات مهم
+# موضوعات مورد نظر
 # =========================================================
 
 KEYWORDS = [
-
     # فولاد
     "steel",
     "iron",
@@ -78,83 +66,92 @@ KEYWORDS = [
     "billet",
     "slab",
     "scrap",
-    "coking coal",
-    "steel price",
-    "iron ore price",
-
-    # فلزات
-    "metal",
+    "steel mill",
+    "steelmaker",
+    "steelmaking",
     "metals",
-    "copper",
-    "aluminum",
-    "nickel",
-    "zinc",
+    "metal",
+    "coking coal",
+    "coke",
+    "hot rolled",
+    "cold rolled",
+    "stainless steel",
 
-    # کامودیتی
-    "commodity",
-    "commodities",
-    "oil",
-    "crude",
-    "energy",
-    "coal",
+    # اقتصاد
+    "economy",
+    "economic",
+    "inflation",
+    "interest rate",
+    "central bank",
+    "fed",
+    "federal reserve",
+    "manufacturing",
+    "construction",
+    "industry",
+    "industrial",
 
-    # چین
-    "china",
-    "chinese",
-    "beijing",
-
-    # تجارت
-    "export",
-    "exports",
-    "import",
-    "imports",
-    "tariff",
-    "trade",
-
-    # ایران
-    "iran",
-    "iranian",
-
-    # تحریم
-    "sanction",
-    "sanctions",
-
-    # ارز
+    # دلار و ارز
     "dollar",
     "usd",
     "currency",
     "exchange rate",
     "forex",
+    "rial",
+    "yuan",
+
+    # تحریم و سیاست تجاری
+    "sanction",
+    "sanctions",
+    "tariff",
+    "tariffs",
+    "trade war",
+    "export ban",
+    "import ban",
+    "embargo",
+
+    # چین
+    "china",
+    "chinese",
+    "beijing",
+    "property market",
+    "real estate",
+
+    # انرژی و کامودیتی
+    "oil",
+    "crude",
+    "energy",
+    "commodity",
+    "commodities",
+    "gold",
+    "copper",
 
     # فارسی
     "فولاد",
     "آهن",
     "میلگرد",
     "شمش",
-    "ورق",
     "سنگ آهن",
     "سنگ‌آهن",
     "قراضه",
     "کک",
     "زغال سنگ",
-    "زغال‌سنگ",
-    "مس",
-    "آلومینیوم",
-    "نیکل",
-    "روی",
-    "کامودیتی",
-    "کامودیتی‌ها",
+    "بازار فولاد",
     "دلار",
     "ارز",
     "نرخ ارز",
+    "ریال",
     "تحریم",
     "تحریم‌ها",
     "تعرفه",
+    "اقتصاد",
+    "تورم",
+    "چین",
     "صادرات",
     "واردات",
-    "چین",
     "نفت",
-    "انرژی",
+    "طلا",
+    "مس",
+    "کامودیتی",
     "بازار"
 ]
 
@@ -206,10 +203,8 @@ history = load_history()
 
 def clean_text(text):
 
-    text = html.unescape(text or "")
-
     text = BeautifulSoup(
-        text,
+        html.unescape(text or ""),
         "html.parser"
     ).get_text(
         " ",
@@ -226,7 +221,7 @@ def clean_text(text):
 
 
 # =========================================================
-# بررسی ارتباط خبر
+# تشخیص خبر مرتبط
 # =========================================================
 
 def is_relevant(title, description):
@@ -244,7 +239,7 @@ def is_relevant(title, description):
 
 
 # =========================================================
-# گرفتن اخبار
+# دریافت اخبار
 # =========================================================
 
 def get_news():
@@ -264,10 +259,14 @@ def get_news():
                 feed_info["url"]
             )
 
-            print(
-                "Entries:",
-                len(feed.entries)
-            )
+            if not feed.entries:
+
+                print(
+                    "No entries:",
+                    feed_info["name"]
+                )
+
+                continue
 
             for item in feed.entries[:30]:
 
@@ -281,10 +280,7 @@ def get_news():
                 description = clean_text(
                     item.get(
                         "summary",
-                        item.get(
-                            "description",
-                            ""
-                        )
+                        ""
                     )
                 )
 
@@ -296,18 +292,17 @@ def get_news():
                 if not title:
                     continue
 
-                if not link:
-                    continue
-
                 if not is_relevant(
                     title,
                     description
                 ):
                     continue
 
-                news_id = (
-                    title.lower().strip()
-                )
+                news_id = re.sub(
+                    r"\s+",
+                    " ",
+                    title.lower()
+                ).strip()
 
                 if news_id in history:
                     continue
@@ -334,196 +329,76 @@ def get_news():
         except Exception as e:
 
             print(
-                "Feed error:",
-                feed_info["name"],
-                str(e)
+                f"Feed error {feed_info['name']}: {e}"
             )
 
     return results
 
 
 # =========================================================
-# ترجمه تیتر
+# ترجمه کامل تیتر
 # =========================================================
 
 def translate_title(title):
 
-    replacements = {
+    try:
 
-        "iron ore":
-            "سنگ‌آهن",
+        encoded = quote(title)
 
-        "coking coal":
-            "زغال‌سنگ کک‌شو",
-
-        "steel":
-            "فولاد",
-
-        "iron":
-            "آهن",
-
-        "rebar":
-            "میلگرد",
-
-        "billet":
-            "شمش",
-
-        "slab":
-            "اسلب",
-
-        "scrap":
-            "قراضه",
-
-        "copper":
-            "مس",
-
-        "aluminum":
-            "آلومینیوم",
-
-        "nickel":
-            "نیکل",
-
-        "zinc":
-            "روی",
-
-        "commodities":
-            "کامودیتی‌ها",
-
-        "commodity":
-            "کامودیتی",
-
-        "oil":
-            "نفت",
-
-        "crude oil":
-            "نفت خام",
-
-        "coal":
-            "زغال‌سنگ",
-
-        "China":
-            "چین",
-
-        "Chinese":
-            "چینی",
-
-        "prices":
-            "قیمت‌ها",
-
-        "price":
-            "قیمت",
-
-        "market":
-            "بازار",
-
-        "markets":
-            "بازارها",
-
-        "demand":
-            "تقاضا",
-
-        "supply":
-            "عرضه",
-
-        "exports":
-            "صادرات",
-
-        "imports":
-            "واردات",
-
-        "tariffs":
-            "تعرفه‌ها",
-
-        "tariff":
-            "تعرفه",
-
-        "sanctions":
-            "تحریم‌ها",
-
-        "sanction":
-            "تحریم",
-
-        "dollar":
-            "دلار",
-
-        "currency":
-            "ارز",
-
-        "rise":
-            "افزایش",
-
-        "rises":
-            "افزایش یافت",
-
-        "increase":
-            "افزایش",
-
-        "increased":
-            "افزایش یافت",
-
-        "surge":
-            "جهش",
-
-        "higher":
-            "بالاتر",
-
-        "fall":
-            "کاهش",
-
-        "falls":
-            "کاهش یافت",
-
-        "decrease":
-            "کاهش",
-
-        "decreased":
-            "کاهش یافت",
-
-        "drop":
-            "افت",
-
-        "lower":
-            "پایین‌تر",
-
-        "strong":
-            "قوی",
-
-        "weak":
-            "ضعیف",
-
-        "production":
-            "تولید",
-
-        "production cut":
-            "کاهش تولید",
-
-        "demand rises":
-            "تقاضا افزایش یافت",
-
-        "demand falls":
-            "تقاضا کاهش یافت"
-    }
-
-    result = title
-
-    for en, fa in sorted(
-        replacements.items(),
-        key=lambda x: len(x[0]),
-        reverse=True
-    ):
-
-        result = re.sub(
-            re.escape(en),
-            fa,
-            result,
-            flags=re.IGNORECASE
+        url = (
+            "https://translate.googleapis.com/"
+            "translate_a/single"
+            f"?client=gtx"
+            f"&sl=auto"
+            f"&tl=fa"
+            f"&dt=t"
+            f"&q={encoded}"
         )
 
-    return result
+        response = requests.get(
+            url,
+            timeout=20
+        )
+
+        if response.status_code != 200:
+            return title
+
+        data = response.json()
+
+        translated_parts = []
+
+        for part in data[0]:
+
+            if part and part[0]:
+                translated_parts.append(
+                    part[0]
+                )
+
+        translated = "".join(
+            translated_parts
+        )
+
+        translated = clean_text(
+            translated
+        )
+
+        if not translated:
+            return title
+
+        return translated
+
+    except Exception as e:
+
+        print(
+            "Translation error:",
+            e
+        )
+
+        return title
 
 
 # =========================================================
-# تحلیل اثر خبر روی فولاد
+# تحلیل اثر روی بازار فولاد
 # =========================================================
 
 def impact_analysis(
@@ -537,54 +412,46 @@ def impact_analysis(
 
     positive_words = [
 
-        "rise",
-        "rises",
-        "increase",
-        "increased",
-        "surge",
-        "higher",
+        "steel price rise",
+        "steel prices rise",
+        "steel prices increase",
+        "iron ore rise",
+        "iron ore prices rise",
         "strong demand",
-        "stimulus",
+        "demand increase",
         "production cut",
         "supply cut",
+        "stimulus",
         "tariff",
-        "sanction",
         "sanctions",
-        "dollar rises",
-        "oil rises",
-
-        "افزایش",
-        "جهش",
-        "رشد",
-        "کاهش تولید",
-        "تحریم",
-        "افزایش دلار",
-        "افزایش نرخ ارز"
+        "sanction",
+        "oil rise",
+        "oil prices rise",
+        "dollar falls",
+        "weaker dollar",
+        "weak dollar",
+        "china stimulus",
+        "export restriction"
 
     ]
 
     negative_words = [
 
-        "fall",
-        "falls",
-        "drop",
-        "decrease",
-        "decreased",
-        "lower",
+        "steel price fall",
+        "steel prices fall",
+        "steel prices decrease",
+        "iron ore fall",
+        "iron ore prices fall",
         "weak demand",
+        "demand falls",
         "oversupply",
-        "recession",
         "production increase",
-        "dollar falls",
-        "oil falls",
+        "recession",
+        "dollar rises",
+        "strong dollar",
+        "china property slump",
+        "construction slowdown"
 
-        "کاهش",
-        "افت",
-        "تقاضای ضعیف",
-        "مازاد عرضه",
-        "افزایش تولید",
-        "کاهش دلار",
-        "کاهش نرخ ارز"
     ]
 
     positive = any(
@@ -597,69 +464,87 @@ def impact_analysis(
         for word in negative_words
     )
 
+    # تحریم معمولا برای بازار ایران
+    # اثر افزایشی روی هزینه واردات و نرخ ارز دارد
+    if (
+        "sanction" in text
+        or "تحریم" in text
+    ):
+
+        return (
+            "⚠️ اثر احتمالی بر بازار فولاد ایران: "
+            "ریسک افزایشی؛ تشدید تحریم‌ها می‌تواند "
+            "هزینه تجارت، حمل‌ونقل و نرخ ارز را افزایش دهد."
+        )
+
     if positive and not negative:
 
         return (
-            "📈 اثر احتمالی روی فولاد: "
-            "مثبت؛ احتمال حمایت از قیمت‌ها "
-            "در صورت تداوم این عامل."
+            "📈 اثر احتمالی بر بازار فولاد: "
+            "مثبت و متمایل به افزایش قیمت‌ها."
         )
 
     if negative and not positive:
 
         return (
-            "📉 اثر احتمالی روی فولاد: "
-            "منفی؛ احتمال فشار کاهشی "
-            "بر قیمت‌ها."
+            "📉 اثر احتمالی بر بازار فولاد: "
+            "منفی و متمایل به کاهش قیمت‌ها."
+        )
+
+    if (
+        "dollar" in text
+        or "usd" in text
+        or "دلار" in text
+    ):
+
+        return (
+            "💵 اثر احتمالی بر بازار فولاد: "
+            "وابسته به مسیر نرخ ارز؛ تغییرات دلار "
+            "می‌تواند مستقیماً بر هزینه و قیمت فولاد اثر بگذارد."
+        )
+
+    if (
+        "china" in text
+        or "چین" in text
+    ):
+
+        return (
+            "🇨🇳 اثر احتمالی بر بازار فولاد: "
+            "مهم؛ تغییرات تقاضا و تولید چین "
+            "می‌تواند بر بازار جهانی فولاد و سنگ‌آهن اثرگذار باشد."
         )
 
     return (
-        "⚖️ اثر احتمالی روی فولاد: "
-        "خنثی تا وابسته به واکنش عرضه، "
-        "تقاضا و نرخ ارز."
+        "⚖️ اثر احتمالی بر بازار فولاد: "
+        "خنثی تا وابسته به واکنش عرضه، تقاضا و نرخ ارز."
     )
 
 
 # =========================================================
-# عکس Pexels
+# عکس مرتبط
 # =========================================================
 
-def get_image():
+def get_image(query):
 
     if not PEXELS_API_KEY:
-
-        print(
-            "PEXELS_API_KEY not found"
-        )
-
         return None
 
     try:
 
+        headers = {
+            "Authorization":
+                PEXELS_API_KEY
+        }
+
         response = requests.get(
-
             "https://api.pexels.com/v1/search",
-
-            headers={
-                "Authorization":
-                    PEXELS_API_KEY
-            },
-
+            headers=headers,
             params={
-                "query":
-                    "steel factory steel industry",
-                "per_page":
-                    10,
-                "orientation":
-                    "landscape"
+                "query": query,
+                "per_page": 10,
+                "orientation": "landscape"
             },
-
             timeout=20
-        )
-
-        print(
-            "Pexels status:",
-            response.status_code
         )
 
         if response.status_code != 200:
@@ -681,14 +566,14 @@ def get_image():
 
         print(
             "Pexels error:",
-            str(e)
+            e
         )
 
         return None
 
 
 # =========================================================
-# ارسال متن
+# ارسال پیام
 # =========================================================
 
 def send_message(text):
@@ -696,11 +581,8 @@ def send_message(text):
     try:
 
         response = requests.post(
-
             f"{TELEGRAM_URL}/sendMessage",
-
             data={
-
                 "chat_id":
                     CHANNEL_ID,
 
@@ -709,18 +591,13 @@ def send_message(text):
 
                 "disable_web_page_preview":
                     False
-
             },
-
             timeout=30
         )
 
         print(
             "Telegram:",
-            response.status_code
-        )
-
-        print(
+            response.status_code,
             response.text[:500]
         )
 
@@ -730,7 +607,7 @@ def send_message(text):
 
         print(
             "Telegram error:",
-            str(e)
+            e
         )
 
         return False
@@ -748,11 +625,8 @@ def send_photo(
     try:
 
         response = requests.post(
-
             f"{TELEGRAM_URL}/sendPhoto",
-
             data={
-
                 "chat_id":
                     CHANNEL_ID,
 
@@ -761,18 +635,13 @@ def send_photo(
 
                 "caption":
                     caption
-
             },
-
             timeout=40
         )
 
         print(
             "Telegram photo:",
-            response.status_code
-        )
-
-        print(
+            response.status_code,
             response.text[:500]
         )
 
@@ -782,7 +651,7 @@ def send_photo(
 
         print(
             "Telegram photo error:",
-            str(e)
+            e
         )
 
         return False
@@ -794,14 +663,16 @@ def send_photo(
 
 def make_post(news):
 
+    source = news["source"]
+
+    original_title = news["title"]
+
     translated = translate_title(
-        news["title"]
+        original_title
     )
 
     impact = impact_analysis(
-
-        news["title"],
-
+        original_title,
         news["description"]
     )
 
@@ -809,10 +680,10 @@ def make_post(news):
 📰 خبر اقتصادی و بازار فولاد
 
 📰 منبع:
-{news["source"]}
+{source}
 
 🔹 تیتر اصلی:
-{news["title"]}
+{original_title}
 
 🇮🇷 ترجمه تیتر:
 {translated}
@@ -820,7 +691,7 @@ def make_post(news):
 {impact}
 
 🔗 منبع:
-{news["link"]}
+{news['link']}
 """
 
     post += COMPANY_FOOTER
@@ -835,21 +706,13 @@ def make_post(news):
 def main():
 
     print(
-        "========================================"
-    )
-
-    print(
-        "STARTING ARVAND STEEL NEWS BOT"
-    )
-
-    print(
-        "========================================"
+        "Starting economic news bot..."
     )
 
     news_items = get_news()
 
     print(
-        "TOTAL NEW RELEVANT NEWS:",
+        "Relevant new news:",
         len(news_items)
     )
 
@@ -867,7 +730,7 @@ def main():
     for news in news_items:
 
         print(
-            "Preparing:",
+            "Processing:",
             news["title"]
         )
 
@@ -875,7 +738,17 @@ def main():
             news
         )
 
-        image_url = get_image()
+        # عکس بر اساس موضوع خبر
+        image_query = (
+            "steel industry "
+            "iron ore "
+            "steel factory "
+            "commodity market"
+        )
+
+        image_url = get_image(
+            image_query
+        )
 
         if image_url:
 
@@ -901,18 +774,16 @@ def main():
             )
 
             print(
-                "POSTED SUCCESSFULLY"
+                "POSTED:",
+                news["title"]
             )
 
         else:
 
             print(
-                "POST FAILED"
+                "FAILED:",
+                news["title"]
             )
-
-    print(
-        "BOT FINISHED"
-    )
 
 
 if __name__ == "__main__":
