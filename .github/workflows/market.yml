@@ -1,0 +1,25 @@
+name: Daily Market
+
+on:
+  schedule:
+    - cron: '31 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  market:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get files
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packages
+        run: pip install requests
+
+      - name: Run market bot
+        run: python market.py
