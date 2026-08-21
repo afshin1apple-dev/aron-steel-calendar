@@ -19,7 +19,11 @@ jobs:
           python-version: '3.12'
 
       - name: Install packages
-        run: pip install requests
+        run: pip install requests beautifulsoup4
 
       - name: Run market bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python market.py
