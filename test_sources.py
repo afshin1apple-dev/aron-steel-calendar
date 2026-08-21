@@ -1,43 +1,91 @@
-name: Economic News
+import requests
+import feedparser
 
-on:
-  schedule:
-    # هر 10 دقیقه، از 08:30 تا 17:00 به وقت تهران
-    - cron: '0,10,20,30,40,50 5-13 * * *'
-  workflow_dispatch:
+sources = {
+    "WSJ Commodities": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "Economist": "https://www.economist.com/finance-and-economics/rss.xml",
+    "Yahoo Finance": "https://finance.yahoo.com/news/rssindex",
+    "MarketWatch": "https://feeds.marketwatch.com/marketwatch/topstories/",
+    "Investing": "https://www.investing.com/rss/news.rss",
+}
 
-permissions:
-  contents: write
+print()
+print("========== SOURCE TEST ==========")
+print()
 
-jobs:
-  news:
-    runs-on: ubuntu-latest
+for name, url in sources.items():
 
-    steps:
+    print("Checking:", name)
+    print("URL:", url)
 
-      - name: Get files
-        uses: actions/checkout@v4
+    try:
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            },
+            timeout=20
+        )
 
-      - name: Install packages
-        run: |
-          pip install requests feedparser
+        print(
+            "HTTP status:",
+            response.status_code
+        )
 
-      - name: Run source test
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: python test_sources.py
+        if response.status_code == 200:
 
-      - name: Save changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Source test" || echo "No changes"
-          git push
+            feed = feedparser.parse(
+                response.content
+            )
+
+            print(
+                "Entries:",
+                len(feed.entries)
+            )
+
+            if feed.entries:
+
+                print(
+                    "Latest:",
+                    feed.entries[0].get(
+                        "title",
+                        "No title"
+                    )
+                )
+
+                print(
+                    "Link:",
+                    feed.entries[0].get(
+                        "link",
+                        "No link"
+                    )
+                )
+
+                print("✅ WORKING")
+
+            else:
+
+                print(
+                    "⚠️ Connected but no entries"
+                )
+
+        else:
+
+            print("❌ FAILED")
+
+    except Exception as error:
+
+        print(
+            "❌ ERROR:",
+            error
+        )
+
+    print(
+        "--------------------------------"
+    )
+    print()
+
+print(
+    "========== TEST FINISHED =========="
+)
