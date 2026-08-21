@@ -54,19 +54,15 @@ def get_tgju_price(url):
             previous = values[0]
 
     if current is None:
-        raise RuntimeError(f"TGJU price not found: {url}")
-
-    change = None
+        raise RuntimeError(f"Price not found: {url}")
 
     if previous and previous != 0:
         change = ((current - previous) / previous) * 100
+    else:
+        change = None
 
     return current, change
 
-
-# --------------------------------------------------
-# تتر
-# --------------------------------------------------
 
 def get_tether():
 
@@ -82,20 +78,8 @@ def get_tether():
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    print("========== TETHER TABLE ==========")
+    current = None
 
-    for row in soup.find_all("tr"):
-
-        text = row.get_text(" ", strip=True)
-
-        if "نوبیتکس" in text:
-
-            print("TETHER ROW:")
-            print(text)
-
-    print("========== END TETHER TABLE ==========")
-
-    # پیدا کردن قیمت تتر
     for row in soup.find_all("tr"):
 
         text = row.get_text(" ", strip=True)
@@ -107,26 +91,81 @@ def get_tether():
 
         for cell in row.find_all(["td", "th"]):
 
-            value = cell.get_text(" ", strip=True)
+            n = number(
+                cell.get_text(" ", strip=True)
+            )
 
-            value = value.replace(",", "").replace("٬", "")
+            if n is not None:
+                values.append(n)
 
-            try:
-                values.append(float(value))
-            except:
-                pass
-
-        # پیدا کردن قیمت واقعی تتر
+        # قیمت تتر
         for value in values:
 
             if value > 1000000:
+                current = value
+                break
 
-                return value, None
+        if current is not None:
+            break
 
-    raise RuntimeError("Tether price not found")
-# --------------------------------------------------
-# بیت کوین
-# --------------------------------------------------
+    if current is None:
+        raise RuntimeError("Tether price not found")
+
+    # دریافت قیمت روز قبل از صفحه اصلی تتر
+    main_url = "https://www.tgju.org/profile/crypto-tether"
+
+    r = requests.get(
+        main_url,
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=30
+    )
+
+    r.raise_for_status()
+
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    previous = None
+
+    for row in soup.find_all("tr"):
+
+        text = row.get_text(" ", strip=True)
+
+        if "نرخ روز گذشته" not in text:
+            continue
+
+        values = []
+
+        for cell in row.find_all(["td", "th"]):
+
+            n = number(
+                cell.get_text(" ", strip=True)
+            )
+
+            if n is not None:
+                values.append(n)
+
+        for value in values:
+
+            if value > 1000000:
+                previous = value
+                break
+
+        if previous is not None:
+            break
+
+    if previous and previous != 0:
+
+        change = (
+            (current - previous)
+            / previous
+        ) * 100
+
+    else:
+
+        change = None
+
+    return current, change
+
 
 def get_bitcoin():
 
@@ -150,10 +189,6 @@ def get_bitcoin():
     )
 
 
-# --------------------------------------------------
-# فرمت قیمت
-# --------------------------------------------------
-
 def price(value, decimals=0):
 
     if value is None:
@@ -162,29 +197,21 @@ def price(value, decimals=0):
     return f"{value:,.{decimals}f}"
 
 
-# --------------------------------------------------
-# فرمت درصد
-# --------------------------------------------------
-
 def change(value):
 
     if value is None:
         return "⚪ نامشخص"
 
     if value > 0:
-
         return f"🟢 +{value:.2f}%"
 
     if value < 0:
-
         return f"🔴 {value:.2f}%"
 
     return "⚪ 0.00%"
 
 
-# --------------------------------------------------
-# دریافت قیمت‌ها
-# --------------------------------------------------
+# قیمت‌ها
 
 gold_world, gold_world_change = get_tgju_price(
     "https://www.tgju.org/profile/ons"
@@ -203,25 +230,20 @@ tether, tether_change = get_tether()
 bitcoin, bitcoin_change = get_bitcoin()
 
 
-# --------------------------------------------------
-# عکس مالی
-# --------------------------------------------------
+# عکس
 
 now = datetime.now(TEHRAN)
 
 r = requests.get(
     "https://api.pexels.com/v1/search",
-
     headers={
         "Authorization": PEXELS_KEY
     },
-
     params={
         "query": "gold bitcoin finance trading",
         "orientation": "landscape",
         "per_page": 30
     },
-
     timeout=30
 )
 
@@ -230,10 +252,7 @@ r.raise_for_status()
 photos = r.json().get("photos", [])
 
 if not photos:
-
-    raise RuntimeError(
-        "No financial photo found"
-    )
+    raise RuntimeError("No financial photo found")
 
 photo = photos[
     now.date().toordinal() % len(photos)
@@ -242,12 +261,9 @@ photo = photos[
 image_url = photo["src"]["large2x"]
 
 
-# --------------------------------------------------
-# متن پست
-# --------------------------------------------------
+# کپشن
 
 message = (
-
     "📊 <b>گزارش بازار امروز</b>\n\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
@@ -275,30 +291,22 @@ message = (
 )
 
 
-# --------------------------------------------------
-# ارسال به تلگرام
-# --------------------------------------------------
+# ارسال
 
 r = requests.post(
-
     f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-
     data={
         "chat_id": CHANNEL,
         "photo": image_url,
         "caption": message,
         "parse_mode": "HTML"
     },
-
     timeout=30
 )
 
 print(r.text)
 
 if not r.ok:
-
     raise RuntimeError(r.text)
 
-print(
-    "Market post sent successfully."
-)
+print("Market post sent successfully.")
