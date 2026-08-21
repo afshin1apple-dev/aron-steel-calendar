@@ -1,0 +1,130 @@
+name: Test Services
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Test Pexels
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+
+          key = os.environ.get("PEXELS_API_KEY")
+
+          if not key:
+              print("❌ PEXELS_API_KEY پیدا نشد")
+              raise SystemExit(1)
+
+          r = requests.get(
+              "https://api.pexels.com/v1/search",
+              headers={"Authorization": key},
+              params={
+                  "query": "steel factory",
+                  "per_page": 1
+              },
+              timeout=20
+          )
+
+          print("Pexels status:", r.status_code)
+
+          if r.status_code != 200:
+              print(r.text)
+              raise SystemExit(1)
+
+          data = r.json()
+
+          if not data.get("photos"):
+              print("❌ عکس پیدا نشد")
+              raise SystemExit(1)
+
+          print("✅ Pexels OK")
+          print("Photo:", data["photos"][0]["src"]["large"])
+          PY
+
+      - name: Test Translation
+        run: |
+          python - <<'PY'
+          import requests
+
+          text = "Gold prices rise as investors watch the global economy."
+
+          urls = [
+              "https://translate.astian.org/translate",
+              "https://libretranslate.com/translate"
+          ]
+
+          success = False
+
+          for url in urls:
+
+              try:
+
+                  r = requests.post(
+                      url,
+                      json={
+                          "q": text,
+                          "source": "en",
+                          "target": "fa",
+                          "format": "text"
+                      },
+                      timeout=20
+                  )
+
+                  print(
+                      "Translation status:",
+                      url,
+                      r.status_code
+                  )
+
+                  if r.ok:
+
+                      data = r.json()
+
+                      translated = data.get(
+                          "translatedText"
+                      )
+
+                      if translated:
+
+                          print(
+                              "✅ Translation OK"
+                          )
+
+                          print(
+                              "Result:",
+                              translated
+                          )
+
+                          success = True
+                          break
+
+              except Exception as e:
+
+                  print(
+                      "Translation error:",
+                      e
+                  )
+
+          if not success:
+
+              print(
+                  "❌ Translation service unavailable"
+              )
+
+              raise SystemExit(1)
+          PY
