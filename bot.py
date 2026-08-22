@@ -1,705 +1,1927 @@
 import os
+import re
+import json
+import html
+import random
 import requests
-import jdatetime
+import feedparser
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 
 # =========================================================
 # تنظیمات
 # =========================================================
 
-TOKEN = os.environ["BOT_TOKEN"]
-CHANNEL = os.environ["CHANNEL_ID"]
-PEXELS_KEY = os.environ["PEXELS_API_KEY"]
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+CHANNEL_ID = os.environ["CHANNEL_ID"]
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
-# توکن داخلی GitHub Actions
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# نام Repository به صورت خودکار توسط GitHub
-GITHUB_REPOSITORY = os.environ.get(
-    "GITHUB_REPOSITORY",
-    ""
-)
+HISTORY_FILE = "news_history.json"
 
-# فایل وضعیت ارسال تقویم
-STATE_FILE = "calendar_state.txt"
+MAX_POSTS_PER_RUN = 2
+MIN_NEWS_SCORE = 10
 
 
 # =========================================================
-# زمان ایران
+# اطلاعات آروند آرون استیل
 # =========================================================
 
-now = datetime.now(
-    ZoneInfo("Asia/Tehran")
-)
-
-g = now.date()
-
-
-# =========================================================
-# تبدیل میلادی به شمسی
-# =========================================================
-
-j = jdatetime.date.fromgregorian(
-    year=g.year,
-    month=g.month,
-    day=g.day
-)
+COMPANY_FOOTER = """
+━━━━━━━━━━━━━━
+🏭 آروند آرون استیل
+👤 مدیریت: افشین آورزمانی
+📞 021-22122239
+🆔 @arvand_aron_steel
+"""
 
 
 # =========================================================
-# جلوگیری از ارسال دوباره
+# منابع خبری
 # =========================================================
 
-today_key = (
-    f"{j.year:04d}-"
-    f"{j.month:02d}-"
-    f"{j.day:02d}"
-)
+FEEDS = [
+
+    {
+        "name": "فولادبان",
+        "url": "https://fooladban.com/feed/"
+    },
+
+    {
+        "name": "اخبار اقتصادی داخلی",
+        "url": "https://www.eghtesadnews.com/rss"
+    },
+
+    {
+        "name": "دلار در بازار ایران",
+        "url": "https://www.tgju.org/rss"
+    },
+
+    {
+        "name": "طلا ایران و جهان",
+        "url": "https://www.tgju.org/rss"
+    },
+
+    {
+        "name": "بنزین ایران",
+        "url": "https://www.tabnak.ir/fa/rss/allnews"
+    },
+
+    {
+        "name": "اخبار جنگ ایران و آمریکا",
+        "url": "https://www.tabnak.ir/fa/rss/allnews"
+    }
+]
 
 
-def get_saved_date():
+# =========================================================
+# اقتصاد داخلی ایران
+# =========================================================
 
-    # اگر GitHub Token نداریم،
-    # از فایل محلی استفاده می‌کنیم.
+IRAN_ECONOMY_KEYWORDS = [
 
-    if not GITHUB_TOKEN or not GITHUB_REPOSITORY:
+    "iran",
+    "iranian",
+    "iran's",
+    "tehran",
+    "iran economy",
+    "iranian economy",
 
-        if not os.path.exists(
-            STATE_FILE
-        ):
-            return ""
+    "ایران",
+    "ایرانی",
+    "تهران",
+    "اقتصاد ایران",
+    "اقتصاد داخلی",
 
-        try:
+    "central bank of iran",
+    "central bank",
+    "بانک مرکزی",
 
-            with open(
-                STATE_FILE,
-                "r",
-                encoding="utf-8"
-            ) as f:
+    "currency center",
+    "exchange center",
+    "مرکز مبادله",
 
-                return f.read().strip()
+    "interest rate",
+    "نرخ بهره",
 
-        except Exception:
+    "inflation",
+    "تورم",
 
-            return ""
+    "liquidity",
+    "نقدینگی",
+
+    "ministry of industry",
+    "ministry of industry mine trade",
+    "وزارت صمت",
+    "صمت",
+
+    "customs",
+    "گمرک",
+
+    "import",
+    "imports",
+    "واردات",
+
+    "export",
+    "exports",
+    "صادرات",
+
+    "tax",
+    "taxes",
+    "مالیات",
+
+    "commodity exchange",
+    "iran commodity exchange",
+    "بورس کالا",
+
+    "tehran stock exchange",
+    "stock exchange",
+    "بورس",
+
+    "electricity shortage",
+    "power shortage",
+    "gas shortage",
+    "power restriction",
+    "gas restriction",
+    "industrial electricity",
+    "industrial gas",
+
+    "محدودیت برق",
+    "قطعی برق",
+    "برق صنایع",
+    "محدودیت گاز",
+    "گاز صنایع"
+]
 
 
-    # =====================================================
-    # خواندن فایل وضعیت از GitHub
-    # =====================================================
+# =========================================================
+# فولاد و بازار آهن
+# =========================================================
+
+STEEL_KEYWORDS = [
+
+    "steel",
+    "steel price",
+    "steel prices",
+    "steelmaker",
+    "steel mill",
+    "steelmaking",
+    "steel production",
+    "steel output",
+    "steel exports",
+    "steel imports",
+
+    "iron ore",
+    "iron ore price",
+    "iron ore prices",
+
+    "rebar",
+    "billet",
+    "slab",
+    "scrap steel",
+    "steel scrap",
+
+    "coking coal",
+    "coke",
+    "hot rolled",
+    "cold rolled",
+    "stainless steel",
+
+    "فولاد",
+    "بازار فولاد",
+    "قیمت فولاد",
+    "تولید فولاد",
+    "صادرات فولاد",
+    "واردات فولاد",
+
+    "آهن",
+    "بازار آهن",
+    "قیمت آهن",
+    "میلگرد",
+    "شمش",
+    "سنگ آهن",
+    "سنگ‌آهن",
+    "قراضه",
+    "کک",
+    "زغال سنگ",
+    "ورق",
+    "تیرآهن",
+    "آهن اسفنجی"
+]
+
+
+# =========================================================
+# دلار و ارز ایران
+# =========================================================
+
+CURRENCY_KEYWORDS = [
+
+    "dollar",
+    "usd",
+    "rial",
+    "iranian rial",
+    "exchange rate",
+    "currency",
+
+    "دلار",
+    "نرخ دلار",
+    "ارز",
+    "نرخ ارز",
+    "ریال",
+
+    "تتر",
+    "usdt",
+    "سکه",
+    "طلا",
+    "طلای ۱۸ عیار"
+]
+
+
+# =========================================================
+# تحریم و تجارت مرتبط با ایران
+# =========================================================
+
+SANCTIONS_KEYWORDS = [
+
+    "sanction",
+    "sanctions",
+    "iran sanctions",
+    "sanctions on iran",
+
+    "tariff",
+    "tariffs",
+    "trade war",
+    "export ban",
+    "import ban",
+    "embargo",
+
+    "تحریم",
+    "تحریم‌ها",
+    "تحریم ایران",
+    "تعرفه",
+    "محدودیت صادرات",
+    "محدودیت واردات"
+]
+
+
+# =========================================================
+# جنگ ایران و آمریکا
+# =========================================================
+
+WAR_KEYWORDS = [
+
+    "iran war",
+    "iran us war",
+    "iran u.s. war",
+    "iran united states",
+    "iran america",
+    "iran american",
+    "iran us",
+    "iran u.s.",
+
+    "iran attack",
+    "iran attacks",
+    "iran strike",
+    "iran strikes",
+
+    "us attack iran",
+    "us strikes iran",
+    "america attack iran",
+    "american attack iran",
+
+    "missile",
+    "missiles",
+    "military",
+    "military strike",
+    "airstrike",
+    "air strikes",
+    "attack",
+    "attacks",
+    "conflict",
+
+    "حمله به ایران",
+    "حمله آمریکا",
+    "حمله امریکا",
+    "ایران و آمریکا",
+    "ایران و امریکا",
+    "جنگ ایران و آمریکا",
+    "جنگ ایران و امریکا",
+    "درگیری ایران و آمریکا",
+    "درگیری ایران و امریکا",
+    "حمله",
+    "موشک",
+    "موشکی",
+    "حمله هوایی",
+    "حملات هوایی",
+    "درگیری",
+    "جنگ"
+]
+
+
+# =========================================================
+# بنزین و انرژی ایران
+# =========================================================
+
+FUEL_KEYWORDS = [
+
+    "gasoline",
+    "gasoline price",
+    "petrol",
+    "fuel",
+    "fuel price",
+    "fuel prices",
+
+    "بنزین",
+    "قیمت بنزین",
+    "سوخت",
+    "قیمت سوخت",
+    "سهمیه بنزین",
+    "کارت سوخت",
+    "نرخ بنزین",
+
+    "oil",
+    "crude",
+    "energy",
+    "نفت",
+    "نفت خام",
+    "انرژی"
+]
+
+
+# =========================================================
+# طلا ایران و جهان
+# =========================================================
+
+GOLD_KEYWORDS = [
+
+    "gold",
+    "gold price",
+    "gold prices",
+    "gold market",
+    "gold futures",
+
+    "طلا",
+    "قیمت طلا",
+    "طلای جهانی",
+    "طلای ۱۸ عیار",
+    "طلای آبشده",
+    "سکه",
+    "سکه امامی",
+
+    "ons",
+    "ounce",
+    "اونس"
+]
+
+
+# =========================================================
+# بازار جهانی
+# =========================================================
+
+GLOBAL_KEYWORDS = [
+
+    "china",
+    "chinese",
+    "beijing",
+    "china steel",
+    "china steel demand",
+
+    "چین",
+    "فولاد چین",
+
+    "commodity",
+    "commodities",
+
+    "copper",
+    "مس",
+
+    "stimulus",
+    "china stimulus",
+
+    "تحریک اقتصادی",
+    "محرک اقتصادی"
+]
+
+
+# =========================================================
+# کلمات عمومی ضعیف
+# =========================================================
+
+WEAK_KEYWORDS = [
+
+    "economy",
+    "economic",
+    "market",
+    "markets",
+    "metal",
+    "metals",
+    "industry",
+    "industrial",
+    "business",
+    "finance",
+    "financial",
+
+    "اقتصاد",
+    "بازار",
+    "صنعت",
+    "مالی"
+]
+
+
+# =========================================================
+# تاریخچه
+# =========================================================
+
+def load_history():
+
+    if not os.path.exists(
+        HISTORY_FILE
+    ):
+
+        return []
 
     try:
 
-        url = (
-            "https://api.github.com/repos/"
-            f"{GITHUB_REPOSITORY}/contents/"
-            f"{STATE_FILE}"
+        with open(
+            HISTORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            return json.load(file)
+
+    except Exception:
+
+        return []
+
+
+def save_history(history):
+
+    try:
+
+        with open(
+            HISTORY_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                history[-500:],
+                file,
+                ensure_ascii=False,
+                indent=2
+            )
+
+    except Exception as e:
+
+        print(
+            "History save error:",
+            e
         )
 
-        headers = {
 
-            "Authorization":
-                f"Bearer {GITHUB_TOKEN}",
+history = load_history()
 
-            "Accept":
-                "application/vnd.github+json"
-        }
+
+# =========================================================
+# تمیز کردن متن
+# =========================================================
+
+def clean_text(text):
+
+    text = BeautifulSoup(
+        html.unescape(text or ""),
+        "html.parser"
+    ).get_text(
+        " ",
+        strip=True
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
+# =========================================================
+# نرمال‌سازی
+# =========================================================
+
+def normalize_text(text):
+
+    text = clean_text(
+        text
+    ).lower()
+
+    text = text.replace(
+        "‌",
+        " "
+    )
+
+    text = text.replace(
+        "ي",
+        "ی"
+    )
+
+    text = text.replace(
+        "ك",
+        "ک"
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text
+
+
+# =========================================================
+# بررسی کلمه
+# =========================================================
+
+def contains_keyword(
+    text,
+    keyword
+):
+
+    text = normalize_text(
+        text
+    )
+
+    keyword = normalize_text(
+        keyword
+    )
+
+    if not keyword:
+
+        return False
+
+    if " " in keyword:
+
+        return keyword in text
+
+    return re.search(
+        rf"(?<!\w){re.escape(keyword)}(?!\w)",
+        text
+    ) is not None
+
+
+# =========================================================
+# پیدا کردن کلمات
+# =========================================================
+
+def find_hits(
+    text,
+    keywords
+):
+
+    hits = []
+
+    for keyword in keywords:
+
+        if contains_keyword(
+            text,
+            keyword
+        ):
+
+            hits.append(
+                keyword
+            )
+
+    return hits
+
+
+# =========================================================
+# امتیاز خبر
+# =========================================================
+
+def score_news(
+    title,
+    description,
+    source
+):
+
+    text = (
+        title +
+        " " +
+        description
+    )
+
+    score = 0
+
+    iran_hits = find_hits(
+        text,
+        IRAN_ECONOMY_KEYWORDS
+    )
+
+    steel_hits = find_hits(
+        text,
+        STEEL_KEYWORDS
+    )
+
+    currency_hits = find_hits(
+        text,
+        CURRENCY_KEYWORDS
+    )
+
+    sanctions_hits = find_hits(
+        text,
+        SANCTIONS_KEYWORDS
+    )
+
+    war_hits = find_hits(
+        text,
+        WAR_KEYWORDS
+    )
+
+    fuel_hits = find_hits(
+        text,
+        FUEL_KEYWORDS
+    )
+
+    gold_hits = find_hits(
+        text,
+        GOLD_KEYWORDS
+    )
+
+    global_hits = find_hits(
+        text,
+        GLOBAL_KEYWORDS
+    )
+
+    weak_hits = find_hits(
+        text,
+        WEAK_KEYWORDS
+    )
+
+
+    # اقتصاد ایران
+    score += (
+        len(iran_hits) * 5
+    )
+
+
+    # فولاد
+    score += (
+        len(steel_hits) * 4
+    )
+
+
+    # ارز
+    score += (
+        len(currency_hits) * 3
+    )
+
+
+    # تحریم
+    score += (
+        len(sanctions_hits) * 3
+    )
+
+
+    # جنگ ایران آمریکا
+    score += (
+        len(war_hits) * 5
+    )
+
+
+    # بنزین
+    score += (
+        len(fuel_hits) * 4
+    )
+
+
+    # طلا
+    score += (
+        len(gold_hits) * 4
+    )
+
+
+    # بازار جهانی
+    score += (
+        len(global_hits) * 2
+    )
+
+
+    # ایران + فولاد
+    if (
+        iran_hits
+        and steel_hits
+    ):
+
+        score += 10
+
+
+    # ایران + ارز
+    if (
+        iran_hits
+        and currency_hits
+    ):
+
+        score += 8
+
+
+    # ایران + تحریم
+    if (
+        iran_hits
+        and sanctions_hits
+    ):
+
+        score += 8
+
+
+    # ایران + جنگ
+    if (
+        iran_hits
+        and war_hits
+    ):
+
+        score += 12
+
+
+    # ایران + بنزین
+    if (
+        iran_hits
+        and fuel_hits
+    ):
+
+        score += 10
+
+
+    # ایران + طلا
+    if (
+        iran_hits
+        and gold_hits
+    ):
+
+        score += 8
+
+
+    # چین + فولاد
+    if (
+        global_hits
+        and steel_hits
+    ):
+
+        score += 6
+
+
+    # انرژی با ایران یا فولاد
+    energy_hits = find_hits(
+        text,
+        [
+            "oil",
+            "crude",
+            "energy",
+            "نفت",
+            "انرژی"
+        ]
+    )
+
+    if (
+        energy_hits
+        and (
+            iran_hits
+            or steel_hits
+        )
+    ):
+
+        score += 5
+
+
+    # منابع تخصصی
+    if source in [
+        "فولادبان",
+        "اخبار اقتصادی داخلی",
+        "دلار در بازار ایران",
+        "طلا ایران و جهان"
+    ]:
+
+        score += 2
+
+
+    # خبر عمومی بدون ارتباط
+    if (
+        not iran_hits
+        and not steel_hits
+        and not war_hits
+        and not fuel_hits
+        and not gold_hits
+    ):
+
+        score -= 12
+
+
+    # فقط کلمات ضعیف
+    if (
+        weak_hits
+        and not iran_hits
+        and not steel_hits
+        and not currency_hits
+        and not sanctions_hits
+        and not war_hits
+        and not fuel_hits
+        and not gold_hits
+    ):
+
+        score = 0
+
+
+    return {
+
+        "score":
+            score,
+
+        "iran_hits":
+            iran_hits,
+
+        "steel_hits":
+            steel_hits,
+
+        "currency_hits":
+            currency_hits,
+
+        "sanctions_hits":
+            sanctions_hits,
+
+        "war_hits":
+            war_hits,
+
+        "fuel_hits":
+            fuel_hits,
+
+        "gold_hits":
+            gold_hits,
+
+        "global_hits":
+            global_hits
+    }
+
+
+# =========================================================
+# مرتبط بودن
+# =========================================================
+
+def is_relevant(
+    title,
+    description,
+    source
+):
+
+    analysis = score_news(
+        title,
+        description,
+        source
+    )
+
+    return (
+        analysis["score"]
+        >= MIN_NEWS_SCORE
+    )
+
+
+# =========================================================
+# شناسه خبر
+# =========================================================
+
+def make_news_id(
+    title,
+    link
+):
+
+    if link:
+
+        return (
+            "url:" +
+            link.strip().lower()
+        )
+
+    return (
+        "title:" +
+        normalize_text(
+            title
+        )
+    )
+
+
+# =========================================================
+# خبر تکراری
+# =========================================================
+
+def is_duplicate_title(
+    title,
+    history
+):
+
+    new_words = set(
+        normalize_text(
+            title
+        ).split()
+    )
+
+    if len(new_words) < 5:
+
+        return False
+
+
+    for old_id in history[-200:]:
+
+        if not isinstance(
+            old_id,
+            str
+        ):
+
+            continue
+
+
+        if not old_id.startswith(
+            "title:"
+        ):
+
+            continue
+
+
+        old_title = old_id[6:]
+
+
+        old_words = set(
+            old_title.split()
+        )
+
+
+        if not old_words:
+
+            continue
+
+
+        common = len(
+            new_words &
+            old_words
+        )
+
+
+        similarity = (
+            common /
+            max(
+                len(new_words),
+                len(old_words)
+            )
+        )
+
+
+        if similarity >= 0.70:
+
+            return True
+
+
+    return False
+
+
+# =========================================================
+# دریافت اخبار
+# =========================================================
+
+def get_news():
+
+    results = []
+
+
+    for feed_info in FEEDS:
+
+        print(
+            "Checking:",
+            feed_info["name"]
+        )
+
+
+        try:
+
+            feed = feedparser.parse(
+                feed_info["url"]
+            )
+
+
+            if not feed.entries:
+
+                print(
+                    "No entries:",
+                    feed_info["name"]
+                )
+
+                continue
+
+
+            for item in feed.entries[:30]:
+
+                title = clean_text(
+                    item.get(
+                        "title",
+                        ""
+                    )
+                )
+
+
+                description = clean_text(
+                    item.get(
+                        "summary",
+                        ""
+                    )
+                )
+
+
+                link = item.get(
+                    "link",
+                    ""
+                )
+
+
+                if not title:
+
+                    continue
+
+
+                analysis = score_news(
+                    title,
+                    description,
+                    feed_info["name"]
+                )
+
+
+                print(
+                    "NEWS SCORE:",
+                    analysis["score"],
+                    "|",
+                    feed_info["name"],
+                    "|",
+                    title
+                )
+
+
+                if (
+                    analysis["score"]
+                    < MIN_NEWS_SCORE
+                ):
+
+                    continue
+
+
+                news_id = make_news_id(
+                    title,
+                    link
+                )
+
+
+                if news_id in history:
+
+                    continue
+
+
+                if is_duplicate_title(
+                    title,
+                    history
+                ):
+
+                    continue
+
+
+                results.append({
+
+                    "source":
+                        feed_info["name"],
+
+                    "title":
+                        title,
+
+                    "description":
+                        description,
+
+                    "link":
+                        link,
+
+                    "id":
+                        news_id,
+
+                    "score":
+                        analysis["score"]
+                })
+
+
+        except Exception as e:
+
+            print(
+                f"Feed error "
+                f"{feed_info['name']}: {e}"
+            )
+
+
+    results.sort(
+        key=lambda x:
+            x["score"],
+        reverse=True
+    )
+
+
+    return results
+
+
+# =========================================================
+# ترجمه تیتر
+# =========================================================
+
+def translate_title(
+    title
+):
+
+    # اگر تیتر فارسی است،
+    # اصلاً ترجمه نکن.
+
+    persian_chars = len(
+        re.findall(
+            r"[\u0600-\u06FF]",
+            title
+        )
+    )
+
+    if persian_chars >= 3:
+
+        return title
+
+
+    try:
+
+        encoded_title = quote(
+            title
+        )
+
+
+        url = (
+            "https://translate.googleapis.com/"
+            "translate_a/single"
+            "?client=gtx"
+            "&sl=auto"
+            "&tl=fa"
+            "&dt=t"
+            f"&q={encoded_title}"
+        )
+
 
         response = requests.get(
             url,
-            headers=headers,
             timeout=20
         )
 
 
-        if response.status_code == 404:
+        if response.status_code != 200:
 
-            return ""
-
-
-        if not response.ok:
-
-            print(
-                "GitHub state read error:",
-                response.text
-            )
-
-            return ""
+            return title
 
 
         data = response.json()
 
 
-        import base64
+        translated_parts = []
 
-        content = base64.b64decode(
-            data["content"]
-        ).decode(
-            "utf-8"
+
+        for part in data[0]:
+
+            if (
+                part
+                and part[0]
+            ):
+
+                translated_parts.append(
+                    part[0]
+                )
+
+
+        translated = "".join(
+            translated_parts
         )
 
 
-        return content.strip()
+        translated = clean_text(
+            translated
+        )
+
+
+        if not translated:
+
+            return title
+
+
+        return translated
 
 
     except Exception as e:
 
         print(
-            "State read error:",
+            "Translation error:",
             e
         )
 
-        return ""
+        return title
 
 
-def save_date(date_value):
+# =========================================================
+# تحلیل اثر خبر
+# =========================================================
 
-    # =====================================================
-    # اگر GitHub Token نداریم
-    # =====================================================
+def impact_analysis(
+    title,
+    description
+):
 
-    if not GITHUB_TOKEN or not GITHUB_REPOSITORY:
-
-        try:
-
-            with open(
-                STATE_FILE,
-                "w",
-                encoding="utf-8"
-            ) as f:
-
-                f.write(
-                    date_value
-                )
-
-        except Exception as e:
-
-            print(
-                "Local state save error:",
-                e
-            )
-
-        return
+    text = normalize_text(
+        title +
+        " " +
+        description
+    )
 
 
-    # =====================================================
-    # ذخیره وضعیت داخل GitHub
-    # =====================================================
+    positive_words = [
+
+        "steel price rise",
+        "steel prices rise",
+        "steel prices increase",
+
+        "iron ore rise",
+        "iron ore prices rise",
+
+        "strong demand",
+        "demand increase",
+
+        "production cut",
+        "supply cut",
+
+        "stimulus",
+        "china stimulus",
+
+        "tariff",
+        "sanction",
+        "sanctions",
+
+        "oil rise",
+        "oil prices rise",
+
+        "dollar falls",
+        "weaker dollar",
+        "weak dollar",
+
+        "export restriction",
+
+        "افزایش قیمت",
+        "افزایش تقاضا",
+        "کاهش تولید",
+        "کاهش عرضه",
+        "محرک اقتصادی",
+        "رشد قیمت"
+    ]
+
+
+    negative_words = [
+
+        "steel price fall",
+        "steel prices fall",
+        "steel prices decrease",
+
+        "iron ore fall",
+        "iron ore prices fall",
+
+        "weak demand",
+        "demand falls",
+
+        "oversupply",
+        "production increase",
+
+        "recession",
+
+        "dollar rises",
+        "strong dollar",
+
+        "china property slump",
+        "construction slowdown",
+
+        "کاهش قیمت",
+        "کاهش تقاضا",
+        "افزایش تولید",
+        "مازاد عرضه",
+        "رکود",
+        "افت قیمت"
+    ]
+
+
+    positive = any(
+        contains_keyword(
+            text,
+            word
+        )
+        for word in positive_words
+    )
+
+
+    negative = any(
+        contains_keyword(
+            text,
+            word
+        )
+        for word in negative_words
+    )
+
+
+    if (
+        positive
+        and not negative
+    ):
+
+        return (
+            "🟢 اثر احتمالی بر بازار فولاد: افزایش\n"
+            "این خبر می‌تواند از قیمت یا انتظارات بازار حمایت کند."
+        )
+
+
+    if (
+        negative
+        and not positive
+    ):
+
+        return (
+            "🔴 اثر احتمالی بر بازار فولاد: کاهش\n"
+            "این خبر می‌تواند بر قیمت یا تقاضای بازار فشار وارد کند."
+        )
+
+
+    return (
+        "🟡 اثر احتمالی بر بازار فولاد: خنثی / نامشخص\n"
+        "اثر مستقیم این خبر بر بازار فولاد فعلاً مشخص نیست."
+    )
+
+
+# =========================================================
+# عکس
+# =========================================================
+
+def make_image_query(
+    news
+):
+
+    title = news[
+        "title"
+    ].lower()
+
+    description = news[
+        "description"
+    ].lower()
+
+    text = (
+        title +
+        " " +
+        description
+    )
+
+
+    if (
+        "iron ore" in text
+        or "سنگ آهن" in text
+        or "سنگ‌آهن" in text
+    ):
+
+        return (
+            "iron ore mining "
+            "iron ore industry"
+        )
+
+
+    if (
+        "rebar" in text
+        or "میلگرد" in text
+    ):
+
+        return (
+            "steel rebar "
+            "construction steel"
+        )
+
+
+    if (
+        "billet" in text
+        or "شمش" in text
+    ):
+
+        return (
+            "steel billet "
+            "steel factory"
+        )
+
+
+    if (
+        "scrap" in text
+        or "قراضه" in text
+    ):
+
+        return (
+            "steel scrap "
+            "metal recycling"
+        )
+
+
+    if (
+        "gold" in text
+        or "طلا" in text
+        or "سکه" in text
+    ):
+
+        return (
+            "gold market "
+            "gold trading"
+        )
+
+
+    if (
+        "dollar" in text
+        or "usd" in text
+        or "دلار" in text
+        or "ارز" in text
+    ):
+
+        return (
+            "US dollar currency "
+            "financial market"
+        )
+
+
+    if (
+        "بنزین" in text
+        or "gasoline" in text
+        or "fuel" in text
+    ):
+
+        return (
+            "gasoline fuel "
+            "Iran oil industry"
+        )
+
+
+    if (
+        "sanction" in text
+        or "تحریم" in text
+    ):
+
+        return (
+            "international trade "
+            "global economy"
+        )
+
+
+    if (
+        "oil" in text
+        or "crude" in text
+        or "نفت" in text
+    ):
+
+        return (
+            "oil refinery "
+            "oil market"
+        )
+
+
+    if (
+        "missile" in text
+        or "attack" in text
+        or "جنگ" in text
+        or "حمله" in text
+        or "موشک" in text
+    ):
+
+        return (
+            "Iran Middle East "
+            "military news"
+        )
+
+
+    if (
+        "china" in text
+        or "چین" in text
+    ):
+
+        return (
+            "China steel industry "
+            "Chinese factory"
+        )
+
+
+    if (
+        "iran" in text
+        or "ایران" in text
+        or "tehran" in text
+        or "تهران" in text
+    ):
+
+        return (
+            "Iran economy "
+            "Tehran financial market"
+        )
+
+
+    return (
+        "steel industry "
+        "steel factory "
+        "metal market"
+    )
+
+
+# =========================================================
+# دریافت عکس Pexels
+# =========================================================
+
+def get_image(
+    query
+):
+
+    if not PEXELS_API_KEY:
+
+        print(
+            "Pexels API key not configured."
+        )
+
+        return None
+
 
     try:
-
-        import base64
-
-        url = (
-            "https://api.github.com/repos/"
-            f"{GITHUB_REPOSITORY}/contents/"
-            f"{STATE_FILE}"
-        )
 
         headers = {
 
             "Authorization":
-                f"Bearer {GITHUB_TOKEN}",
-
-            "Accept":
-                "application/vnd.github+json"
+                PEXELS_API_KEY
         }
 
 
-        # بررسی اینکه فایل قبلاً وجود دارد یا نه
+        response = requests.get(
 
-        get_response = requests.get(
-            url,
-            headers=headers,
-            timeout=20
-        )
-
-
-        sha = None
-
-        if get_response.status_code == 200:
-
-            sha = get_response.json().get(
-                "sha"
-            )
-
-
-        encoded_content = base64.b64encode(
-            date_value.encode("utf-8")
-        ).decode("utf-8")
-
-
-        payload = {
-
-            "message":
-                f"Update calendar state {date_value}",
-
-            "content":
-                encoded_content
-        }
-
-
-        if sha:
-
-            payload["sha"] = sha
-
-
-        response = requests.put(
-
-            url,
+            "https://api.pexels.com/v1/search",
 
             headers=headers,
 
-            json=payload,
+            params={
+
+                "query":
+                    query,
+
+                "per_page":
+                    20,
+
+                "orientation":
+                    "landscape"
+            },
 
             timeout=20
         )
 
 
-        print(
-            "GitHub state save:",
-            response.status_code
-        )
-
-        print(
-            response.text[:500]
-        )
-
-
-        if not response.ok:
+        if response.status_code != 200:
 
             print(
-                "WARNING: Could not save calendar state."
+                "Pexels status:",
+                response.status_code
             )
+
+            return None
+
+
+        data = response.json()
+
+
+        photos = data.get(
+            "photos",
+            []
+        )
+
+
+        if not photos:
+
+            return None
+
+
+        selected_photo = random.choice(
+            photos
+        )
+
+
+        return selected_photo.get(
+            "src",
+            {}
+        ).get(
+            "large"
+        )
 
 
     except Exception as e:
 
         print(
-            "State save error:",
+            "Pexels error:",
             e
         )
 
+        return None
+
 
 # =========================================================
-# بررسی اینکه امروز قبلاً ارسال شده یا نه
+# ارسال پیام
 # =========================================================
 
-saved_date = get_saved_date()
+def send_message(
+    text
+):
+
+    try:
+
+        response = requests.post(
+
+            f"{TELEGRAM_URL}/sendMessage",
+
+            data={
+
+                "chat_id":
+                    CHANNEL_ID,
+
+                "text":
+                    text,
+
+                "disable_web_page_preview":
+                    False
+            },
+
+            timeout=30
+        )
 
 
-print(
-    "Iran time:",
-    now.strftime(
-        "%Y-%m-%d %H:%M:%S"
+        print(
+            "Telegram:",
+            response.status_code,
+            response.text[:500]
+        )
+
+
+        return response.ok
+
+
+    except Exception as e:
+
+        print(
+            "Telegram error:",
+            e
+        )
+
+        return False
+
+
+# =========================================================
+# ارسال عکس
+# =========================================================
+
+def send_photo(
+    image_url,
+    caption
+):
+
+    try:
+
+        response = requests.post(
+
+            f"{TELEGRAM_URL}/sendPhoto",
+
+            data={
+
+                "chat_id":
+                    CHANNEL_ID,
+
+                "photo":
+                    image_url,
+
+                "caption":
+                    caption
+            },
+
+            timeout=40
+        )
+
+
+        print(
+            "Telegram photo:",
+            response.status_code,
+            response.text[:500]
+        )
+
+
+        return response.ok
+
+
+    except Exception as e:
+
+        print(
+            "Telegram photo error:",
+            e
+        )
+
+        return False
+
+
+# =========================================================
+# ساخت پست
+# =========================================================
+
+def make_post(
+    news
+):
+
+    source = news[
+        "source"
+    ]
+
+    original_title = news[
+        "title"
+    ]
+
+
+    translated = translate_title(
+        original_title
     )
-)
-
-print(
-    "Today:",
-    today_key
-)
-
-print(
-    "Saved date:",
-    saved_date
-)
 
 
-if saved_date == today_key:
+    impact = impact_analysis(
+
+        original_title,
+
+        news[
+            "description"
+        ]
+
+    )
+
+
+    post = f"""
+📰 خبر اقتصادی و بازار
+
+📰 منبع:
+{source}
+
+🔹 خبر:
+{original_title}
+
+🇮🇷 ترجمه تیتر:
+{translated}
+
+{impact}
+"""
+
+
+    post += COMPANY_FOOTER
+
+
+    return post.strip()
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
+def main():
 
     print(
-        "Today's calendar has already been posted."
+        "========================================"
     )
 
     print(
-        "Nothing to do."
+        "Starting Arvand Aron Steel News Bot..."
     )
 
-    raise SystemExit(0)
-
-
-# =========================================================
-# روزهای هفته
-# =========================================================
-
-weekdays = [
-
-    "دوشنبه",
-    "سه‌شنبه",
-    "چهارشنبه",
-    "پنجشنبه",
-    "جمعه",
-    "شنبه",
-    "یکشنبه"
-]
-
-
-# =========================================================
-# ماه‌های شمسی
-# =========================================================
-
-months = [
-
-    "فروردین",
-    "اردیبهشت",
-    "خرداد",
-    "تیر",
-    "مرداد",
-    "شهریور",
-    "مهر",
-    "آبان",
-    "آذر",
-    "دی",
-    "بهمن",
-    "اسفند"
-]
-
-
-# =========================================================
-# مکان‌های ایران
-# =========================================================
-
-places = [
-
-    ("ماسال", "Masal Iran"),
-
-    ("رامسر", "Ramsar Iran"),
-
-    ("فیلبند", "Filband Iran"),
-
-    ("جنگل دوهزار", "Dohezar Forest Iran"),
-
-    ("اورامانات", "Hawraman Iran"),
-
-    ("دریاچه گهر", "Gahar Lake Iran"),
-
-    ("کویر مرنجاب", "Maranjab Desert Iran"),
-
-    ("کویر لوت", "Lut Desert Iran"),
-
-    ("ابیانه", "Abyaneh Iran"),
-
-    ("اصفهان", "Isfahan Iran"),
-
-    ("شیراز", "Shiraz Iran"),
-
-    ("یزد", "Yazd Iran"),
-
-    ("قشم", "Qeshm Iran"),
-
-    ("جزیره هرمز", "Hormuz Island Iran"),
-
-    ("چابهار", "Chabahar Iran")
-]
-
-
-index = (
-    g.toordinal()
-    %
-    len(places)
-)
-
-
-place_name, search_query = places[index]
-
-
-# =========================================================
-# جمله‌های انگیزشی
-# =========================================================
-
-quotes = [
-
-    "هر روز یک قدم کوچک، تو را به یک هدف بزرگ نزدیک‌تر می‌کند.",
-
-    "موفقیت نتیجه استمرار است، نه عجله.",
-
-    "امروز فرصت تازه‌ای برای بهتر شدن است.",
-
-    "به خودت اعتماد کن و ادامه بده.",
-
-    "کارهای بزرگ از قدم‌های کوچک شروع می‌شوند.",
-
-    "اگر شروع کنی، نصف مسیر را رفته‌ای.",
-
-    "امروز را بهتر از دیروز بساز.",
-
-    "هیچ تلاشی بی‌نتیجه نمی‌ماند.",
-
-    "آرام و پیوسته جلو برو؛ مسیر ساخته می‌شود.",
-
-    "به آینده‌ای که می‌خواهی بسازی فکر کن و از امروز شروع کن."
-]
-
-
-quote = quotes[
-    g.toordinal() % len(quotes)
-]
-
-
-# =========================================================
-# تعطیلات رسمی ایران در سال ۱۴۰۵
-# =========================================================
-
-holidays = {
-
-    # فروردین
-    (1, 1):
-        "نوروز و عید فطر",
-
-    (1, 2):
-        "نوروز و عید فطر",
-
-    (1, 3):
-        "نوروز",
-
-    (1, 4):
-        "نوروز",
-
-    (1, 12):
-        "روز جمهوری اسلامی ایران",
-
-    (1, 13):
-        "روز طبیعت",
-
-    (1, 24):
-        "شهادت امام جعفر صادق (ع)",
-
-    # خرداد
-    (3, 6):
-        "عید سعید قربان",
-
-    (3, 14):
-        "رحلت امام خمینی (ره) و عید غدیر خم",
-
-    (3, 15):
-        "قیام ۱۵ خرداد",
-
-    # تیر
-    (4, 3):
-        "تاسوعای حسینی",
-
-    (4, 4):
-        "عاشورای حسینی",
-
-    # مرداد
-    (5, 13):
-        "اربعین حسینی",
-
-    (5, 21):
-        "رحلت پیامبر اکرم (ص) و شهادت امام حسن مجتبی (ع)",
-
-    (5, 22):
-        "شهادت امام رضا (ع)",
-
-    (5, 30):
-        "شهادت امام حسن عسکری (ع)",
-
-    # شهریور
-    (6, 8):
-        "ولادت پیامبر اکرم (ص) و ولادت امام جعفر صادق (ع)",
-
-    # آبان
-    (8, 22):
-        "شهادت حضرت فاطمه زهرا (س)",
-
-    # دی
-    (10, 2):
-        "ولادت امام علی (ع) و روز پدر",
-
-    (10, 16):
-        "مبعث پیامبر اکرم (ص)",
-
-    # بهمن
-    (11, 4):
-        "ولادت حضرت قائم (عج)",
-
-    (11, 22):
-        "پیروزی انقلاب اسلامی ایران",
-
-    # اسفند
-    (12, 9):
-        "شهادت حضرت علی (ع)",
-
-    (12, 19):
-        "عید سعید فطر",
-
-    (12, 20):
-        "تعطیل به مناسبت عید سعید فطر",
-
-    (12, 29):
-        "روز ملی شدن صنعت نفت ایران"
-}
-
-
-holiday = holidays.get(
-    (j.month, j.day)
-)
-
-
-# =========================================================
-# جستجوی عکس
-# =========================================================
-
-headers = {
-
-    "Authorization":
-        PEXELS_KEY
-}
-
-
-params = {
-
-    "query":
-        search_query,
-
-    "orientation":
-        "landscape",
-
-    "per_page":
-        10
-}
-
-
-photo_response = requests.get(
-
-    "https://api.pexels.com/v1/search",
-
-    headers=headers,
-
-    params=params,
-
-    timeout=20
-)
-
-
-photo_response.raise_for_status()
-
-
-photos = photo_response.json().get(
-    "photos",
-    []
-)
-
-
-if not photos:
-
-    raise RuntimeError(
-        f"No photo found for {place_name}"
+    print(
+        "========================================"
     )
 
 
-photo = photos[
-    g.toordinal() % len(photos)
-]
+    news_items = get_news()
 
 
-image_url = photo["src"]["large2x"]
-
-
-# =========================================================
-# ساخت متن
-# =========================================================
-
-message = (
-
-    f"📍 <b>{place_name}</b>\n\n"
-
-    f"📅 <b>"
-    f"{weekdays[g.weekday()]} "
-    f"{j.day} "
-    f"{months[j.month - 1]} "
-    f"{j.year}"
-    f"</b>\n"
-
-    f"🌍 "
-    f"{g.day:02d}/"
-    f"{g.month:02d}/"
-    f"{g.year}\n"
-)
-
-
-if holiday:
-
-    message += (
-
-        f"\n🔴 <b>تعطیل رسمی</b>\n"
-
-        f"📌 {holiday}\n"
+    print(
+        "Qualified news:",
+        len(news_items)
     )
 
 
-message += (
+    if not news_items:
 
-    f"\n💡 <b>{quote}</b>\n\n"
+        print(
+            "No high-quality relevant news."
+        )
 
-    f"🆔 @Arvand_Aron_Steel\n"
-
-    f"☎️ 021-22122239"
-)
-
-
-# =========================================================
-# ارسال به کانال
-# =========================================================
-
-response = requests.post(
-
-    f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-
-    data={
-
-        "chat_id":
-            CHANNEL,
-
-        "photo":
-            image_url,
-
-        "caption":
-            message,
-
-        "parse_mode":
-            "HTML"
-
-    },
-
-    timeout=30
-)
+        return
 
 
-print(
-    "Telegram response:"
-)
-
-print(
-    response.text
-)
+    news_items = news_items[
+        :MAX_POSTS_PER_RUN
+    ]
 
 
-if not response.ok:
+    for news in news_items:
 
-    raise RuntimeError(
-        response.text
+        print(
+            "Processing:",
+            news["score"],
+            news["title"]
+        )
+
+
+        post = make_post(
+            news
+        )
+
+
+        image_query = make_image_query(
+            news
+        )
+
+
+        print(
+            "Image search:",
+            image_query
+        )
+
+
+        image_url = get_image(
+            image_query
+        )
+
+
+        if image_url:
+
+            success = send_photo(
+
+                image_url,
+
+                post
+            )
+
+        else:
+
+            success = send_message(
+                post
+            )
+
+
+        if success:
+
+            history.append(
+                news["id"]
+            )
+
+
+            history.append(
+                "title:" +
+                normalize_text(
+                    news["title"]
+                )
+            )
+
+
+            save_history(
+                history
+            )
+
+
+            print(
+                "POSTED:",
+                news["title"]
+            )
+
+        else:
+
+            print(
+                "FAILED:",
+                news["title"]
+            )
+
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "Bot finished."
+    )
+
+    print(
+        "========================================"
     )
 
 
-# =========================================================
-# فقط بعد از ارسال موفق، روز را ثبت کن
-# =========================================================
+if __name__ == "__main__":
 
-save_date(
-    today_key
-)
-
-
-print(
-    "Posted successfully."
-)
-
-print(
-    "Calendar date saved:",
-    today_key
-)
+    main()
