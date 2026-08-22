@@ -4,11 +4,7 @@ import json
 import hashlib
 import requests
 from datetime import datetime, timedelta, timezone
-
-try:
-    import pandas as pd
-except ImportError:
-    pd = None
+from html.parser import HTMLParser
 
 
 # =========================================================
@@ -27,8 +23,8 @@ HISTORY_FILE = "sent_history.json"
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# حداکثر تعداد تحلیل در هر اجرا
-MAX_POSTS_PER_RUN = 3
+# فقط یک پست تحلیلی در هر اجرا
+MAX_POSTS_PER_RUN = 1
 
 
 # =========================================================
@@ -36,44 +32,19 @@ MAX_POSTS_PER_RUN = 3
 # =========================================================
 
 PRODUCT_GROUPS = {
-    "شمش بلوم 5SP": [
-        "شمش بلوم",
-        "5SP",
-    ],
-
-    "شمش بلوم 3SP": [
-        "شمش بلوم",
-        "3SP",
-    ],
-
-    "بیلت": [
-        "بیلت",
-    ],
-
-    "اسلب": [
-        "اسلب",
-    ],
-
-    "میلگرد": [
-        "میلگرد",
-    ],
-
-    "ورق گرم": [
-        "ورق گرم",
-    ],
-
-    "ورق سرد": [
-        "ورق سرد",
-    ],
-
-    "ورق گالوانیزه": [
-        "ورق گالوانیزه",
-    ],
+    "شمش بلوم 5SP": ["شمش بلوم", "5SP"],
+    "شمش بلوم 3SP": ["شمش بلوم", "3SP"],
+    "بیلت": ["بیلت"],
+    "اسلب": ["اسلب"],
+    "میلگرد": ["میلگرد"],
+    "ورق گرم": ["ورق گرم"],
+    "ورق سرد": ["ورق سرد"],
+    "ورق گالوانیزه": ["ورق گالوانیزه"],
 }
 
 
 # =========================================================
-# EXCLUDE NON-STEEL
+# EXCLUDE
 # =========================================================
 
 EXCLUDE_WORDS = [
@@ -97,58 +68,184 @@ EXCLUDE_WORDS = [
 
 
 # =========================================================
-# TELEGRAM
+# HTML TABLE PARSER
+# بدون pandas
 # =========================================================
 
-def send_telegram(text):
+class TableParser(HTMLParser):
 
-    url = f"{TELEGRAM_URL}/sendMessage"
+    def __init__(self):
+        super().__init__()
 
-    payload = {
-        "chat_id": CHANNEL_ID,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
+        self.tables = []
+        self.current_table = None
+        self.current_row = None
+        self.current_cell = None
+        self.cell_text = []
+
+    def handle_starttag(self, tag, attrs):
+
+        tag = tag.lower()
+
+        if tag == "table":
+
+            self.current_table = []
+
+        elif tag == "tr" and self.current_table is not None:
+
+            self.current_row = []
+
+        elif tag in ("td", "th") and self.current_row is not None:
+
+            self.current_cell = []
+            self.cell_text = []
+
+    def handle_data(self, data):
+
+        if self.current_cell is not None:
+
+            self.cell_text.append(data)
+
+    def handle_endtag(self, tag):
+
+        tag = tag.lower()
+
+        if tag in ("td", "th"):
+
+            if self.current_cell is not None:
+
+                text = "".join(
+                    self.cell_text
+                )
+
+                text = clean_text(text)
+
+                self.current_row.append(text)
+
+                self.current_cell = None
+                self.cell_text = []
+
+        elif tag == "tr":
+
+            if (
+                self.current_row is not None
+                and self.current_table is not None
+            ):
+
+                if any(
+                    str(x).strip()
+                    for x in self.current_row
+                ):
+
+                    self.current_table.append(
+                        self.current_row
+                    )
+
+            self.current_row = None
+
+        elif tag == "table":
+
+            if self.current_table is not None:
+
+                if self.current_table:
+
+                    self.tables.append(
+                        self.current_table
+                    )
+
+            self.current_table = None
+
+
+# =========================================================
+# TEXT / NUMBER
+# =========================================================
+
+def normalize_digits(value):
+
+    if value is None:
+        return ""
+
+    text = str(value)
+
+    table = str.maketrans(
+        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+        "01234567890123456789",
+    )
+
+    return text.translate(table)
+
+
+def clean_text(value):
+
+    if value is None:
+        return ""
+
+    text = normalize_digits(value)
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    )
+
+    return text.strip()
+
+
+def number(value):
+
+    if value is None:
+        return None
+
+    text = normalize_digits(value)
+
+    text = (
+        text
+        .replace(",", "")
+        .replace("٬", "")
+        .replace(" ", "")
+    )
+
+    if not text:
+        return None
+
+    # حذف کاراکترهای اضافی ولی حفظ اعشار
+    text = re.sub(
+        r"[^\d.\-]",
+        "",
+        text,
+    )
 
     try:
 
-        response = requests.post(
-            url,
-            json=payload,
-            timeout=30,
-        )
+        return float(text)
 
-        print(
-            "TELEGRAM STATUS:",
-            response.status_code,
-        )
+    except Exception:
 
-        if not response.ok:
+        return None
 
-            print(
-                "TELEGRAM ERROR:",
-                response.text[:1000],
-            )
 
-            return False
+def format_number(value):
 
-        data = response.json()
+    if value is None:
+        return "-"
 
-        return bool(data.get("ok"))
+    try:
 
-    except Exception as e:
+        value = float(value)
 
-        print(
-            "TELEGRAM EXCEPTION:",
-            e,
-        )
+        if value.is_integer():
 
-        return False
+            return f"{int(value):,}"
+
+        return f"{value:,.0f}"
+
+    except Exception:
+
+        return str(value)
 
 
 # =========================================================
-# JALALI DATE
+# JALALI
 # =========================================================
 
 def gregorian_to_jalali(gy, gm, gd):
@@ -175,6 +272,7 @@ def gregorian_to_jalali(gy, gm, gd):
     )
 
     for i in range(gm2):
+
         g_day_no += g_days[i]
 
     if (
@@ -185,6 +283,7 @@ def gregorian_to_jalali(gy, gm, gd):
             or gy % 400 == 0
         )
     ):
+
         g_day_no += 1
 
     g_day_no += gd2
@@ -226,7 +325,7 @@ def gregorian_to_jalali(gy, gm, gd):
     return jy, jm, jd
 
 
-def jalali_string():
+def today_jalali():
 
     iran_tz = timezone(
         timedelta(hours=3, minutes=30)
@@ -234,111 +333,71 @@ def jalali_string():
 
     now = datetime.now(iran_tz)
 
-    y, m, d = gregorian_to_jalali(
+    return gregorian_to_jalali(
         now.year,
         now.month,
         now.day,
     )
 
+
+def jalali_string():
+
+    y, m, d = today_jalali()
+
     return f"{y:04d}/{m:02d}/{d:02d}"
 
 
 # =========================================================
-# TEXT HELPERS
+# TELEGRAM
 # =========================================================
 
-def normalize_digits(value):
+def send_telegram(text):
 
-    if value is None:
-        return ""
+    url = f"{TELEGRAM_URL}/sendMessage"
 
-    text = str(value)
-
-    table = str.maketrans(
-        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
-        "01234567890123456789",
-    )
-
-    return text.translate(table)
-
-
-def clean_text(value):
-
-    if value is None:
-        return ""
-
-    text = normalize_digits(value)
-
-    text = re.sub(
-        r"<[^>]+>",
-        " ",
-        text,
-    )
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text,
-    )
-
-    return text.strip()
-
-
-def number(value):
-
-    if value is None:
-        return None
-
-    text = normalize_digits(value)
-
-    text = (
-        text
-        .replace(",", "")
-        .replace("٬", "")
-        .replace(" ", "")
-        .replace("\u200c", "")
-    )
-
-    if not text:
-        return None
-
-    # حذف کاراکترهای غیر عددی به جز نقطه و منفی
-    text = re.sub(
-        r"[^0-9.\-]",
-        "",
-        text,
-    )
-
-    if not text:
-        return None
+    payload = {
+        "chat_id": CHANNEL_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
 
     try:
 
-        return float(text)
+        response = requests.post(
+            url,
+            json=payload,
+            timeout=30,
+        )
 
-    except Exception:
+        print(
+            "TELEGRAM STATUS:",
+            response.status_code,
+        )
 
-        return None
+        if not response.ok:
 
+            print(
+                "TELEGRAM ERROR:",
+                response.text[:1000],
+            )
 
-def format_number(value):
+            return False
 
-    if value is None:
-        return "-"
+        data = response.json()
 
-    try:
+        return bool(
+            data.get("ok")
+        )
 
-        value = float(value)
+    except Exception as e:
 
-        if value.is_integer():
+        print(
+            "TELEGRAM EXCEPTION:",
+            e,
+        )
 
-            return f"{int(value):,}"
-
-        return f"{value:,.2f}"
-
-    except Exception:
-
-        return str(value)
+        return False
 
 
 # =========================================================
@@ -347,7 +406,9 @@ def format_number(value):
 
 def load_history():
 
-    if not os.path.exists(HISTORY_FILE):
+    if not os.path.exists(
+        HISTORY_FILE
+    ):
 
         return set()
 
@@ -361,7 +422,10 @@ def load_history():
 
             data = json.load(f)
 
-        if isinstance(data, list):
+        if isinstance(
+            data,
+            list,
+        ):
 
             return set(
                 str(x)
@@ -412,24 +476,22 @@ def download_page():
     print("=" * 70)
 
     headers = {
-        "User-Agent": (
+
+        "User-Agent":
             "Mozilla/5.0 "
             "(Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 "
             "(KHTML, like Gecko) "
-            "Chrome/120 Safari/537.36"
-        ),
+            "Chrome/120 Safari/537.36",
 
-        "Accept": (
+        "Accept":
             "text/html,"
             "application/xhtml+xml,"
             "application/xml;q=0.9,"
-            "*/*;q=0.8"
-        ),
+            "*/*;q=0.8",
 
-        "Accept-Language": (
-            "fa-IR,fa;q=0.9,en;q=0.8"
-        ),
+        "Accept-Language":
+            "fa-IR,fa;q=0.9,en;q=0.8",
     }
 
     try:
@@ -445,12 +507,15 @@ def download_page():
             response.status_code,
         )
 
-        response.raise_for_status()
-
         print(
             "SPAD BYTES:",
             len(response.content),
         )
+
+        response.raise_for_status()
+
+        # اجازه بده requests encoding سایت را تعیین کند
+        response.encoding = response.apparent_encoding or "utf-8"
 
         return response.text
 
@@ -465,323 +530,345 @@ def download_page():
 
 
 # =========================================================
-# TABLE EXTRACTION
+# READ TABLES
 # =========================================================
 
-def normalize_columns(columns):
-
-    result = []
-
-    for col in columns:
-
-        if isinstance(col, tuple):
-
-            col = " ".join(
-                str(x)
-                for x in col
-                if str(x).lower() != "nan"
-            )
-
-        col = clean_text(col)
-
-        result.append(col)
-
-    return result
-
-
-def find_transaction_table(html):
-
-    if pd is None:
-
-        print(
-            "ERROR: pandas is not installed."
-        )
-
-        return None
+def read_tables(html):
 
     print(
-        "TRYING TO READ HTML TABLES..."
+        "PARSING HTML DIRECTLY..."
     )
+
+    parser = TableParser()
 
     try:
 
-        tables = pd.read_html(
-            html,
-            flavor="lxml",
-        )
+        parser.feed(html)
 
     except Exception as e:
 
         print(
-            "READ HTML ERROR:",
+            "HTML PARSER ERROR:",
             e,
         )
 
-        return None
+        return []
 
     print(
         "TABLES FOUND:",
-        len(tables),
+        len(parser.tables),
     )
 
-    wanted_groups = [
-        [
-            "نام کالا",
-            "تولیدکننده",
-            "حجم معامله",
-            "قیمت پایه",
-            "قیمت میانگین",
-        ],
-        [
-            "حجم معامله",
-            "قیمت پایه",
-            "قیمت میانگین",
-            "درصد رقابت",
-        ],
-    ]
+    for i, table in enumerate(
+        parser.tables
+    ):
 
-    best_table = None
+        if table:
+
+            print(
+                f"TABLE {i}: "
+                f"ROWS={len(table)} "
+                f"COLS={max(len(x) for x in table)}"
+            )
+
+            print(
+                "HEADER:",
+                " | ".join(
+                    table[0][:12]
+                )
+            )
+
+    return parser.tables
+
+
+# =========================================================
+# FIND TRANSACTION TABLE
+# =========================================================
+
+def find_transaction_table(
+    tables
+):
+
+    best = None
     best_score = 0
 
-    for index, table in enumerate(tables):
+    wanted = [
+        "نام کالا",
+        "تولیدکننده",
+        "حجم معامله",
+        "قیمت پایه",
+        "قیمت میانگین",
+        "درصد رقابت",
+    ]
 
-        cols = normalize_columns(
-            table.columns
-        )
+    for index, table in enumerate(
+        tables
+    ):
 
-        joined = " ".join(cols)
+        if not table:
+            continue
 
-        print(
-            f"TABLE {index}: {joined[:500]}"
+        header = " ".join(
+            table[0]
         )
 
         score = 0
 
-        for wanted in wanted_groups:
+        for item in wanted:
 
-            local_score = sum(
-                1
-                for item in wanted
-                if item in joined
-            )
+            if item in header:
 
-            score = max(
-                score,
-                local_score,
-            )
+                score += 1
+
+        print(
+            f"TABLE {index} SCORE:",
+            score,
+        )
 
         if score > best_score:
 
             best_score = score
+            best = table
 
-            best_table = table
+    if best is not None:
 
-    print(
-        "BEST TABLE SCORE:",
-        best_score,
+        print(
+            "TRANSACTION TABLE FOUND"
+        )
+
+        print(
+            "MATCH SCORE:",
+            best_score,
+        )
+
+    return best
+
+
+# =========================================================
+# MAP COLUMNS
+# =========================================================
+
+def make_column_map(header):
+
+    mapping = {}
+
+    for index, name in enumerate(
+        header
+    ):
+
+        name = clean_text(name)
+
+        if "نام کالا" in name:
+            mapping["product"] = index
+
+        elif "تولیدکننده" in name:
+            mapping["producer"] = index
+
+        elif "حجم معامله" in name:
+            mapping["volume"] = index
+
+        elif "قیمت پایه (با مالیات)" in name:
+            mapping["base_vat"] = index
+
+        elif "قیمت پایه" in name:
+            mapping["base"] = index
+
+        elif "قیمت میانگین (با مالیات)" in name:
+            mapping["avg_vat"] = index
+
+        elif "قیمت میانگین" in name:
+            mapping["avg"] = index
+
+        elif "درصد رقابت" in name:
+            mapping["competition"] = index
+
+    return mapping
+
+
+def get_cell(row, mapping, key):
+
+    index = mapping.get(key)
+
+    if index is None:
+        return ""
+
+    if index >= len(row):
+        return ""
+
+    return clean_text(
+        row[index]
     )
 
-    if best_table is not None:
 
-        best_table.columns = (
-            normalize_columns(
-                best_table.columns
-            )
-        )
+# =========================================================
+# PARSE TRANSACTIONS
+# =========================================================
+
+def parse_transactions(table):
+
+    if not table or len(table) < 2:
+
+        return []
+
+    header = table[0]
+
+    mapping = make_column_map(
+        header
+    )
+
+    print(
+        "COLUMN MAP:",
+        mapping,
+    )
+
+    required = [
+        "product",
+        "volume",
+        "base",
+        "avg",
+    ]
+
+    missing = [
+        x
+        for x in required
+        if x not in mapping
+    ]
+
+    if missing:
 
         print(
-            "TRANSACTION TABLE FOUND."
+            "MISSING COLUMNS:",
+            missing,
         )
 
-        print(
-            "COLUMNS:",
-            list(best_table.columns),
-        )
-
-        return best_table
-
-    return None
-
-
-# =========================================================
-# COLUMN FINDER
-# =========================================================
-
-def get_column(row, names):
-
-    for wanted in names:
-
-        for col in row.index:
-
-            col_text = clean_text(col)
-
-            if wanted in col_text:
-
-                value = row[col]
-
-                if (
-                    value is not None
-                    and str(value).lower()
-                    != "nan"
-                ):
-
-                    return value
-
-    return None
-
-
-# =========================================================
-# PARSE TRANSACTION TABLE
-# =========================================================
-
-def parse_rows(table):
+        return []
 
     records = []
 
-    for _, row in table.iterrows():
+    for row in table[1:]:
 
-        product = clean_text(
-            get_column(
-                row,
-                [
-                    "نام کالا",
-                    "نام محصول",
-                    "کالا",
-                    "محصول",
-                ],
-            )
+        product = get_cell(
+            row,
+            mapping,
+            "product",
         )
 
-        producer = clean_text(
-            get_column(
-                row,
-                [
-                    "تولیدکننده",
-                    "عرضه کننده",
-                    "عرضه‌کننده",
-                ],
-            )
-        )
-
-        volume_offer = number(
-            get_column(
-                row,
-                [
-                    "حجم عرضه",
-                ],
-            )
-        )
+        if not product:
+            continue
 
         volume = number(
-            get_column(
+            get_cell(
                 row,
-                [
-                    "حجم معامله",
-                ],
+                mapping,
+                "volume",
             )
         )
 
-        base_price = number(
-            get_column(
+        base = number(
+            get_cell(
                 row,
-                [
-                    "قیمت پایه",
-                ],
+                mapping,
+                "base",
             )
         )
 
-        base_vat = number(
-            get_column(
+        avg = number(
+            get_cell(
                 row,
-                [
-                    "قیمت پایه (با مالیات)",
-                    "پایه با مالیات",
-                ],
-            )
-        )
-
-        avg_price = number(
-            get_column(
-                row,
-                [
-                    "قیمت میانگین",
-                    "میانگین قیمت",
-                ],
+                mapping,
+                "avg",
             )
         )
 
         avg_vat = number(
-            get_column(
+            get_cell(
                 row,
-                [
-                    "قیمت میانگین (با مالیات)",
-                    "میانگین با مالیات",
-                ],
+                mapping,
+                "avg_vat",
             )
         )
 
         competition = number(
-            get_column(
+            get_cell(
                 row,
-                [
-                    "درصد رقابت",
-                    "رقابت",
-                ],
+                mapping,
+                "competition",
             )
         )
 
-        if not product:
-
-            continue
+        producer = get_cell(
+            row,
+            mapping,
+            "producer",
+        )
 
         if volume is None:
-
             continue
 
         if volume <= 0:
-
             continue
 
-        if avg_price is None:
-
+        if avg is None:
             continue
+
+        # اگر سایت درصد رقابت نداده باشد،
+        # خودمان دقیقاً از قیمت پایه و معامله حساب می‌کنیم.
+        if (
+            competition is None
+            and base is not None
+            and base > 0
+        ):
+
+            competition = (
+                (avg - base)
+                / base
+                * 100
+            )
 
         records.append(
             {
                 "product": product,
                 "producer": producer,
-                "volume_offer": volume_offer,
                 "volume": volume,
-                "base_price": base_price,
-                "base_vat": base_vat,
-                "avg_price": avg_price,
+                "base": base,
+                "avg": avg,
                 "avg_vat": avg_vat,
                 "competition": competition,
             }
         )
 
+    print(
+        "VALID TRANSACTIONS:",
+        len(records),
+    )
+
     return records
 
 
 # =========================================================
-# PRODUCT MATCH
+# MATCH PRODUCT
 # =========================================================
 
-def match_group(product, group_name):
+def match_group(
+    product,
+    group_name,
+):
 
-    product_lower = product.lower()
+    product = product.lower()
 
-    rules = PRODUCT_GROUPS[group_name]
+    rules = PRODUCT_GROUPS[
+        group_name
+    ]
 
     for rule in rules:
 
-        if rule.lower() not in product_lower:
+        if rule.lower() not in product:
 
             return False
 
     for bad in EXCLUDE_WORDS:
 
-        if bad.lower() in product_lower:
+        if bad.lower() in product:
 
             return False
 
@@ -792,62 +879,49 @@ def match_group(product, group_name):
 # WEIGHTED AVERAGE
 # =========================================================
 
-def weighted_average(records, field):
+def weighted_average(
+    records,
+    field,
+):
 
-    numerator = 0
-
-    denominator = 0
+    total_value = 0
+    total_volume = 0
 
     for record in records:
 
-        volume = record.get("volume")
+        volume = record.get(
+            "volume"
+        )
 
-        value = record.get(field)
+        value = record.get(
+            field
+        )
 
         if (
             volume is None
             or value is None
-            or volume <= 0
         ):
 
             continue
 
-        numerator += (
+        total_value += (
             volume * value
         )
 
-        denominator += volume
+        total_volume += volume
 
-    if denominator <= 0:
+    if total_volume <= 0:
 
         return None
 
     return (
-        numerator
-        / denominator
-    )
-
-
-def total_volume(records):
-
-    return sum(
-        r["volume"]
-        for r in records
-        if r["volume"] is not None
-    )
-
-
-def total_offer_volume(records):
-
-    return sum(
-        r["volume_offer"]
-        for r in records
-        if r["volume_offer"] is not None
+        total_value
+        / total_volume
     )
 
 
 # =========================================================
-# ANALYSIS
+# ANALYZE GROUP
 # =========================================================
 
 def analyze_group(
@@ -859,27 +933,19 @@ def analyze_group(
 
         return None
 
-    volume = total_volume(
-        records
-    )
-
-    offer_volume = total_offer_volume(
-        records
+    total_volume = sum(
+        r["volume"]
+        for r in records
     )
 
     base = weighted_average(
         records,
-        "base_price",
+        "base",
     )
 
     avg = weighted_average(
         records,
-        "avg_price",
-    )
-
-    base_vat = weighted_average(
-        records,
-        "base_vat",
+        "avg",
     )
 
     avg_vat = weighted_average(
@@ -887,46 +953,24 @@ def analyze_group(
         "avg_vat",
     )
 
-    competition = weighted_average(
-        records,
-        "competition",
-    )
-
     if avg is None:
 
         return None
-
-    calculated_comp = None
 
     if (
         base is not None
         and base > 0
     ):
 
-        calculated_comp = (
+        competition = (
             (avg - base)
             / base
             * 100
         )
 
-    # اگر درصد رقابت منبع وجود دارد،
-    # اولویت با محاسبه مستقیم قیمت پایه/معامله است.
-    if calculated_comp is not None:
-
-        final_comp = calculated_comp
-
     else:
 
-        final_comp = competition
-
-    difference = None
-
-    if (
-        base is not None
-        and avg is not None
-    ):
-
-        difference = avg - base
+        competition = None
 
     producers = sorted(
         set(
@@ -939,52 +983,42 @@ def analyze_group(
     return {
         "group": group_name,
         "records": records,
-        "volume": volume,
-        "offer_volume": offer_volume,
+        "volume": total_volume,
         "base": base,
-        "base_vat": base_vat,
         "avg": avg,
         "avg_vat": avg_vat,
-        "difference": difference,
-        "competition": final_comp,
-        "source_competition": competition,
-        "calculated_competition": calculated_comp,
+        "competition": competition,
         "producers": producers,
     }
 
 
 # =========================================================
-# MARKET SIGNAL
+# SIGNAL
 # =========================================================
 
-def market_signal(competition):
+def signal(
+    competition
+):
 
     if competition is None:
 
         return (
             "⚪",
-            "اطلاعات کافی نیست",
-        )
-
-    if competition >= 10:
-
-        return (
-            "🔴",
-            "رقابت بسیار سنگین",
+            "قابل ارزیابی نیست",
         )
 
     if competition >= 5:
 
         return (
             "🟢",
-            "رقابت قوی",
+            "تقاضای قوی",
         )
 
     if competition >= 2:
 
         return (
             "🟢",
-            "رقابت متوسط",
+            "تقاضای مناسب",
         )
 
     if competition > 0:
@@ -1001,352 +1035,248 @@ def market_signal(competition):
 
 
 # =========================================================
-# MARKET ANALYSIS TEXT
-# =========================================================
-
-def make_analysis_text(
-    analysis,
-):
-
-    competition = analysis["competition"]
-
-    difference = analysis["difference"]
-
-    avg = analysis["avg"]
-
-    base = analysis["base"]
-
-    if (
-        competition is None
-        or base is None
-        or avg is None
-    ):
-
-        return (
-            "اطلاعات کافی برای محاسبه "
-            "میزان رقابت وجود ندارد."
-        )
-
-    if competition >= 10:
-
-        return (
-            f"قیمت معامله به‌طور میانگین "
-            f"{format_number(abs(difference))} ریال "
-            "بالاتر از قیمت پایه قرار گرفت و "
-            "رقابت بسیار سنگینی ثبت شد. "
-            "این سطح رقابت نشان‌دهنده تقاضای "
-            "قوی برای این گروه کالایی است."
-        )
-
-    if competition >= 5:
-
-        return (
-            f"قیمت معامله به‌طور میانگین "
-            f"{format_number(abs(difference))} ریال "
-            "بالاتر از قیمت پایه قرار گرفت. "
-            "رقابت بالای ثبت‌شده نشان می‌دهد "
-            "تقاضا نسبت به عرضه در سطح مناسبی قرار دارد."
-        )
-
-    if competition >= 2:
-
-        return (
-            f"قیمت معامله به‌طور میانگین "
-            f"{format_number(abs(difference))} ریال "
-            "بالاتر از قیمت پایه قرار گرفت. "
-            "رقابت مثبت اما کنترل‌شده بوده است."
-        )
-
-    if competition > 0:
-
-        return (
-            f"قیمت معامله حدود "
-            f"{format_number(abs(difference))} ریال "
-            "بالاتر از قیمت پایه ثبت شد؛ "
-            "بنابراین رقابت محدود بوده است."
-        )
-
-    return (
-        "قیمت معامله در سطح قیمت پایه "
-        "انجام شده و رقابتی بالاتر از پایه "
-        "ثبت نشده است."
-    )
-
-
-# =========================================================
-# BUILD TELEGRAM MESSAGE
+# BUILD ONE COMBINED POST
 # =========================================================
 
 def build_message(
-    analysis,
+    analyses,
     today,
 ):
 
-    group = analysis["group"]
+    lines = []
 
-    volume = analysis["volume"]
+    lines.append(
+        "📊 <b>گزارش تحلیلی معاملات بورس کالا</b>"
+    )
 
-    offer_volume = analysis["offer_volume"]
+    lines.append(
+        f"📆 {today}"
+    )
 
-    base = analysis["base"]
+    lines.append("")
 
-    base_vat = analysis["base_vat"]
+    lines.append(
+        "🔎 <b>خلاصه بازار فولاد</b>"
+    )
 
-    avg = analysis["avg"]
+    lines.append(
+        "قیمت‌ها بر اساس معاملات ثبت‌شده "
+        "و میانگین وزنی حجم معاملات محاسبه شده‌اند."
+    )
 
-    avg_vat = analysis["avg_vat"]
+    lines.append("")
 
-    difference = analysis["difference"]
+    for analysis in analyses:
 
-    competition = analysis["competition"]
+        group = analysis["group"]
+        volume = analysis["volume"]
+        base = analysis["base"]
+        avg = analysis["avg"]
+        avg_vat = analysis["avg_vat"]
+        competition = analysis["competition"]
 
-    producers = analysis["producers"]
-
-    signal_icon, signal_text = (
-        market_signal(
+        icon, status = signal(
             competition
         )
-    )
 
-    message = []
+        if (
+            base is not None
+            and avg is not None
+        ):
 
-    message.append(
-        f"📊 <b>تحلیل معاملات {group}</b>"
-    )
-
-    message.append("")
-
-    message.append(
-        f"📅 <b>تاریخ:</b> {today}"
-    )
-
-    message.append("")
-
-    # -----------------------------------------------------
-    # VOLUME
-    # -----------------------------------------------------
-
-    if offer_volume > 0:
-
-        message.append(
-            f"📦 <b>حجم عرضه:</b> "
-            f"{format_number(offer_volume)} تن"
-        )
-
-    message.append(
-        f"🔨 <b>حجم معامله:</b> "
-        f"{format_number(volume)} تن"
-    )
-
-    if offer_volume > 0:
-
-        sell_ratio = (
-            volume
-            / offer_volume
-            * 100
-        )
-
-        message.append(
-            f"📌 <b>نسبت معامله به عرضه:</b> "
-            f"{sell_ratio:.1f}%"
-        )
-
-    message.append("")
-
-    # -----------------------------------------------------
-    # PRICE
-    # -----------------------------------------------------
-
-    if base is not None:
-
-        message.append(
-            f"💰 <b>قیمت پایه:</b> "
-            f"{format_number(base)} ریال"
-        )
-
-    if avg is not None:
-
-        message.append(
-            f"🔨 <b>قیمت معامله:</b> "
-            f"{format_number(avg)} ریال"
-        )
-
-    if difference is not None:
-
-        if difference > 0:
-
-            sign = "+"
-
-        elif difference < 0:
-
-            sign = "-"
+            difference = avg - base
 
         else:
 
-            sign = ""
+            difference = None
 
-        message.append(
-            f"📈 <b>اختلاف با پایه:</b> "
-            f"{sign}{format_number(abs(difference))} ریال"
+        lines.append(
+            f"━━━━━━━━━━━━━━"
         )
 
-    if competition is not None:
-
-        message.append(
-            f"🔥 <b>رقابت:</b> "
-            f"{competition:.2f}%"
+        lines.append(
+            f"🏷 <b>{group}</b>"
         )
 
-    message.append("")
-
-    # -----------------------------------------------------
-    # VAT
-    # -----------------------------------------------------
-
-    if base_vat is not None:
-
-        message.append(
-            f"🧾 <b>پایه با مالیات:</b> "
-            f"{format_number(base_vat)} ریال"
+        lines.append(
+            f"📦 حجم معامله: "
+            f"<b>{format_number(volume)}</b> تن"
         )
 
-    if avg_vat is not None:
+        if base is not None:
 
-        message.append(
-            f"🧾 <b>معامله با مالیات:</b> "
-            f"{format_number(avg_vat)} ریال"
-        )
-
-    message.append("")
-
-    # -----------------------------------------------------
-    # SIGNAL
-    # -----------------------------------------------------
-
-    message.append(
-        f"{signal_icon} <b>وضعیت بازار:</b> "
-        f"{signal_text}"
-    )
-
-    message.append("")
-
-    # -----------------------------------------------------
-    # ANALYSIS
-    # -----------------------------------------------------
-
-    message.append(
-        "🧠 <b>تحلیل:</b>"
-    )
-
-    message.append(
-        make_analysis_text(
-            analysis
-        )
-    )
-
-    message.append("")
-
-    # -----------------------------------------------------
-    # PRODUCERS
-    # -----------------------------------------------------
-
-    if producers:
-
-        if len(producers) <= 5:
-
-            names = "، ".join(
-                producers
+            lines.append(
+                f"💰 قیمت پایه: "
+                f"<b>{format_number(base)}</b> ریال"
             )
 
-            message.append(
-                f"🏭 <b>تولیدکنندگان:</b> "
-                f"{names}"
+        lines.append(
+            f"🔨 قیمت معامله: "
+            f"<b>{format_number(avg)}</b> ریال"
+        )
+
+        if avg_vat is not None:
+
+            lines.append(
+                f"🧾 قیمت معامله با مالیات: "
+                f"<b>{format_number(avg_vat)}</b> ریال"
+            )
+
+        if competition is not None:
+
+            lines.append(
+                f"📈 میزان رقابت: "
+                f"<b>{competition:.2f}%</b>"
+            )
+
+        if difference is not None:
+
+            lines.append(
+                f"🔺 افزایش نسبت به پایه: "
+                f"<b>{format_number(difference)}</b> ریال"
+            )
+
+        lines.append(
+            f"{icon} وضعیت تقاضا: <b>{status}</b>"
+        )
+
+        lines.append("")
+
+    # =====================================================
+    # MARKET INTERPRETATION
+    # =====================================================
+
+    lines.append(
+        "🧠 <b>جمع‌بندی تحلیلی</b>"
+    )
+
+    valid = [
+        x
+        for x in analyses
+        if x["competition"] is not None
+    ]
+
+    if valid:
+
+        strongest = max(
+            valid,
+            key=lambda x:
+            x["competition"]
+        )
+
+        weakest = min(
+            valid,
+            key=lambda x:
+            x["competition"]
+        )
+
+        lines.append(
+            f"• بیشترین رقابت: "
+            f"<b>{strongest['group']}</b> "
+            f"با {strongest['competition']:.2f}%"
+        )
+
+        lines.append(
+            f"• کمترین رقابت: "
+            f"<b>{weakest['group']}</b> "
+            f"با {weakest['competition']:.2f}%"
+        )
+
+        positive = [
+            x
+            for x in valid
+            if x["competition"] > 0
+        ]
+
+        if positive:
+
+            lines.append(
+                "• در گروه‌های دارای رقابت، "
+                "قیمت معامله بالاتر از قیمت پایه "
+                "تعیین شده است."
             )
 
         else:
 
-            message.append(
-                f"🏭 <b>تعداد تولیدکنندگان:</b> "
-                f"{len(producers)}"
+            lines.append(
+                "• در گروه‌های بررسی‌شده "
+                "رقابت معناداری بالاتر از پایه "
+                "ثبت نشده است."
             )
 
-    message.append("")
+    lines.append("")
 
-    # -----------------------------------------------------
-    # COST WARNING
-    # -----------------------------------------------------
-
-    message.append(
-        "💡 <b>نکته:</b> قیمت معامله، "
-        "قیمت واقعی ثبت‌شده در معاملات است؛ "
-        "قیمت تمام‌شده نهایی فقط پس از اضافه‌شدن "
-        "هزینه‌های قطعی و قابل استناد محاسبه می‌شود."
+    lines.append(
+        "💡 <b>نکته مهم:</b> "
+        "قیمت «تمام‌شده نهایی» شامل مالیات، "
+        "هزینه کارگزاری، انبار، حمل و سایر "
+        "هزینه‌ها فقط در صورت وجود داده معتبر "
+        "محاسبه می‌شود؛ هیچ عددی حدسی وارد گزارش نمی‌شود."
     )
 
-    message.append("")
+    lines.append("")
 
-    message.append(
+    lines.append(
         "━━━━━━━━━━━━━━"
     )
 
-    message.append(
-        "🏭 آروند آرون استیل"
+    lines.append(
+        "🏭 <b>آروند آرون استیل</b>"
     )
 
-    message.append(
+    lines.append(
         "👤 مدیریت: افشین آورزمانی"
     )
 
-    message.append(
+    lines.append(
         "📞 021-22122239"
     )
 
-    message.append(
+    lines.append(
         "🆔 @arvand_aron_steel"
     )
 
-    return "\n".join(message)
+    return "\n".join(
+        lines
+    )
 
 
 # =========================================================
 # SIGNATURE
 # =========================================================
 
-def analysis_signature(
-    analysis,
+def make_signature(
+    analyses,
     today,
 ):
 
-    raw = (
-        today
-        + "|"
-        + analysis["group"]
-        + "|"
-        + str(
-            round(
-                analysis["volume"],
-                4,
-            )
+    parts = [today]
+
+    for a in analyses:
+
+        parts.extend(
+            [
+                a["group"],
+                str(
+                    round(
+                        a["volume"],
+                        3,
+                    )
+                ),
+                str(
+                    round(
+                        a["avg"],
+                        3,
+                    )
+                ),
+            ]
         )
-        + "|"
-        + str(
-            round(
-                analysis["avg"],
-                4,
-            )
-        )
-        + "|"
-        + str(
-            round(
-                analysis["competition"] or 0,
-                4,
-            )
-        )
-    )
+
+    raw = "|".join(parts)
 
     return hashlib.sha256(
         raw.encode("utf-8")
-    ).hexdigest()[:24]
+    ).hexdigest()[:32]
 
 
 # =========================================================
@@ -1374,6 +1304,10 @@ def main():
         len(history),
     )
 
+    # -----------------------------------------------------
+    # DOWNLOAD
+    # -----------------------------------------------------
+
     html = download_page()
 
     if not html:
@@ -1385,38 +1319,41 @@ def main():
         return
 
     # -----------------------------------------------------
-    # FIND TABLE
+    # TABLES
     # -----------------------------------------------------
 
-    table = find_transaction_table(
+    tables = read_tables(
         html
     )
 
-    if table is None:
+    if not tables:
 
-        print()
         print(
-            "TRANSACTION TABLE NOT FOUND."
+            "NO HTML TABLE FOUND."
         )
 
+        return
+
+    transaction_table = (
+        find_transaction_table(
+            tables
+        )
+    )
+
+    if transaction_table is None:
+
         print(
-            "NO POST WILL BE SENT."
+            "TRANSACTION TABLE NOT FOUND."
         )
 
         return
 
     # -----------------------------------------------------
-    # PARSE
+    # TRANSACTIONS
     # -----------------------------------------------------
 
-    records = parse_rows(
-        table
-    )
-
-    print()
-    print(
-        "VALID TRANSACTION ROWS:",
-        len(records),
+    records = parse_transactions(
+        transaction_table
     )
 
     if not records:
@@ -1438,13 +1375,25 @@ def main():
     print("GROUP ANALYSIS")
     print("=" * 70)
 
-    for group_name in PRODUCT_GROUPS:
+    # اولویت
+    priority = [
+        "شمش بلوم 5SP",
+        "شمش بلوم 3SP",
+        "بیلت",
+        "اسلب",
+        "میلگرد",
+        "ورق گرم",
+        "ورق سرد",
+        "ورق گالوانیزه",
+    ]
+
+    for group_name in priority:
 
         group_records = [
-            record
-            for record in records
+            r
+            for r in records
             if match_group(
-                record["product"],
+                r["product"],
                 group_name,
             )
         ]
@@ -1458,7 +1407,7 @@ def main():
             group_records,
         )
 
-        if not analysis:
+        if analysis is None:
 
             continue
 
@@ -1468,8 +1417,7 @@ def main():
 
         print()
         print(
-            "GROUP:",
-            group_name,
+            group_name
         )
 
         print(
@@ -1497,6 +1445,10 @@ def main():
             analysis["competition"],
         )
 
+    # -----------------------------------------------------
+    # NO STEEL
+    # -----------------------------------------------------
+
     if not analyses:
 
         print()
@@ -1506,117 +1458,82 @@ def main():
 
         return
 
+    # حداکثر 5 گروه برای اینکه پست بیش از حد طولانی نشود
+    analyses = analyses[:5]
+
     # -----------------------------------------------------
-    # PRIORITY
+    # SIGNATURE
     # -----------------------------------------------------
 
-    priority = {
-        "شمش بلوم 5SP": 1,
-        "شمش بلوم 3SP": 2,
-        "بیلت": 3,
-        "اسلب": 4,
-        "میلگرد": 5,
-        "ورق گرم": 6,
-        "ورق سرد": 7,
-        "ورق گالوانیزه": 8,
-    }
-
-    analyses.sort(
-        key=lambda x:
-        priority.get(
-            x["group"],
-            99,
-        )
+    signature = make_signature(
+        analyses,
+        today,
     )
 
+    print()
+    print(
+        "SIGNATURE:",
+        signature,
+    )
+
+    if signature in history:
+
+        print(
+            "THIS ANALYSIS WAS ALREADY SENT."
+        )
+
+        return
+
     # -----------------------------------------------------
-    # TELEGRAM
+    # BUILD
     # -----------------------------------------------------
+
+    message = build_message(
+        analyses,
+        today,
+    )
 
     print()
     print("=" * 70)
-    print("TELEGRAM")
+    print("SENDING TELEGRAM")
     print("=" * 70)
 
-    sent = 0
+    print(
+        message
+    )
 
-    for analysis in analyses:
+    # -----------------------------------------------------
+    # SEND
+    # -----------------------------------------------------
 
-        if sent >= MAX_POSTS_PER_RUN:
+    success = send_telegram(
+        message
+    )
 
-            break
+    if success:
 
-        signature = analysis_signature(
-            analysis,
-            today,
+        history.add(
+            signature
         )
 
-        if signature in history:
-
-            print(
-                "ALREADY SENT:",
-                analysis["group"],
-            )
-
-            continue
-
-        message = build_message(
-            analysis,
-            today,
+        save_history(
+            history
         )
 
         print(
-            "SENDING:",
-            analysis["group"],
+            "POST SENT SUCCESSFULLY."
         )
 
-        success = send_telegram(
-            message
+    else:
+
+        print(
+            "POST FAILED."
         )
 
-        if success:
 
-            history.add(
-                signature
-            )
-
-            sent += 1
-
-            print(
-                "SENT OK:",
-                analysis["group"],
-            )
-
-        else:
-
-            print(
-                "SEND FAILED:",
-                analysis["group"],
-            )
-
-    save_history(
-        history
-    )
-
-    print()
-    print("=" * 70)
-
-    print(
-        "SENT THIS RUN:",
-        sent,
-    )
-
-    print(
-        "HISTORY:",
-        len(history),
-    )
-
-    print("=" * 70)
-
-    print(
-        "BOURSE ANALYTIC BOT FINISHED"
-    )
-
+# =========================================================
+# RUN
+# =========================================================
 
 if __name__ == "__main__":
 
