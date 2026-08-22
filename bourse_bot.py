@@ -1,76 +1,32 @@
-import os
 import requests
 
-# =========================================================
-# تنظیمات
-# =========================================================
-
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHANNEL_ID = os.environ["CHANNEL_ID"]
-
-TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
-
-# =========================================================
-# ارسال پیام به کانال
-# =========================================================
-
-def send_message(text):
-
-    try:
-
-        response = requests.post(
-            f"{TELEGRAM_URL}/sendMessage",
-            data={
-                "chat_id": CHANNEL_ID,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True
-            },
-            timeout=30
-        )
-
-        print("Telegram:", response.status_code)
-
-        if not response.ok:
-            print(response.text)
-
-        return response.ok
-
-    except Exception as e:
-
-        print("Telegram error:", e)
-
-        return False
-
-
-# =========================================================
-# تست ربات
-# =========================================================
+URL = "https://www.ime.co.ir/offer-stat.html"
 
 def main():
 
-    print("========================================")
-    print("Starting Arvand Aron Steel Bourse Bot...")
-    print("========================================")
+    print("در حال اتصال به بورس کالا...")
 
-    test_message = """
-🏭 <b>ربات بورس کالا</b>
+    try:
+        response = requests.get(
+            URL,
+            timeout=30,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
 
-✅ ربات با موفقیت اجرا شد.
+        print("Status:", response.status_code)
+        print("Size:", len(response.text))
 
-📊 سیستم دریافت اطلاعات عرضه و معاملات بورس کالا در حال آماده‌سازی است.
+        print("\n--- شروع اطلاعات دریافت شده ---\n")
 
-━━━━━━━━━━━━━━
-🏭 آروند آرون استیل
-👤 مدیریت: افشین آورزمانی
-📞 021-22122239
-🆔 @arvand_aron_steel
-"""
+        print(response.text[:3000])
 
-    send_message(test_message)
+        print("\n--- پایان تست ---")
 
-    print("Bot finished.")
+    except Exception as e:
+
+        print("ERROR:", e)
 
 
 if __name__ == "__main__":
