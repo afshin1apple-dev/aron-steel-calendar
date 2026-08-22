@@ -68,8 +68,10 @@ def get_announcements():
         print("SIZE:", len(response.content))
 
         if response.status_code != 200:
+
             print("\n❌ API جواب 200 نداد.")
             print(response.text[:3000])
+
             return []
 
         data = response.json()
@@ -85,23 +87,27 @@ def get_announcements():
     except requests.exceptions.Timeout:
 
         print("\n❌ TIMEOUT")
+
         return []
 
     except requests.exceptions.RequestException as e:
 
         print("\n❌ REQUEST ERROR:")
         print(e)
+
         return []
 
     except json.JSONDecodeError:
 
         print("\n❌ پاسخ JSON نیست.")
+
         return []
 
     except Exception as e:
 
         print("\n❌ ERROR:")
         print(e)
+
         return []
 
 
@@ -116,7 +122,9 @@ def show_summary(items):
     print("=" * 70)
 
     if not items:
+
         print("هیچ رکوردی دریافت نشد.")
+
         return
 
     print("تعداد کل عرضه‌ها:", len(items))
@@ -128,7 +136,8 @@ def show_summary(items):
         date = item.get("offerDateRaw")
 
         if date:
-            dates.append(date)
+
+            dates.append(str(date))
 
     if dates:
 
@@ -147,6 +156,7 @@ def sort_by_date(items):
         value = item.get("offerDateRaw")
 
         if not value:
+
             return "00000000"
 
         return str(value)
@@ -170,7 +180,10 @@ def show_latest(items, count=10):
 
     sorted_items = sort_by_date(items)
 
-    for index, item in enumerate(sorted_items[:count], 1):
+    for index, item in enumerate(
+        sorted_items[:count],
+        1
+    ):
 
         print("\n" + "-" * 70)
 
@@ -184,6 +197,11 @@ def show_latest(items, count=10):
         print(
             "تاریخ عرضه:",
             item.get("offerDate")
+        )
+
+        print(
+            "offerDateRaw:",
+            item.get("offerDateRaw")
         )
 
         print(
@@ -258,6 +276,7 @@ def find_steel(items):
     print("=" * 70)
 
     keywords = [
+
         "فولاد",
         "میلگرد",
         "تیرآهن",
@@ -272,7 +291,11 @@ def find_steel(items):
         "اسلب",
         "گندله",
         "آهن اسفنجی",
-        "کویل"
+        "کویل",
+        "کنسانتره",
+        "تختال",
+        "سنگ آهن",
+
     ]
 
     steel_items = []
@@ -280,11 +303,13 @@ def find_steel(items):
     for item in items:
 
         text = " ".join([
+
             str(item.get("productName") or ""),
             str(item.get("symbol") or ""),
             str(item.get("producer") or ""),
             str(item.get("supplier") or ""),
             str(item.get("hall") or ""),
+
         ])
 
         text = text.lower()
@@ -312,6 +337,11 @@ def find_steel(items):
         print(f"#{index}")
 
         print(
+            "کد عرضه:",
+            item.get("offerCode")
+        )
+
+        print(
             "تاریخ:",
             item.get("offerDate")
         )
@@ -322,8 +352,18 @@ def find_steel(items):
         )
 
         print(
+            "نماد:",
+            item.get("symbol")
+        )
+
+        print(
             "عرضه کننده:",
             item.get("supplier")
+        )
+
+        print(
+            "تولیدکننده:",
+            item.get("producer")
         )
 
         print(
@@ -392,15 +432,30 @@ def test_parameters():
 
         ("limit=10", "?limit=10"),
 
-        ("page=1&limit=10", "?page=1&limit=10"),
+        (
+            "page=1&limit=10",
+            "?page=1&limit=10"
+        ),
 
-        ("page=1&pageSize=10", "?page=1&pageSize=10"),
+        (
+            "page=1&pageSize=10",
+            "?page=1&pageSize=10"
+        ),
 
-        ("limit=100", "?limit=100"),
+        (
+            "limit=100",
+            "?limit=100"
+        ),
 
-        ("date=today", "?date=today"),
+        (
+            "date=today",
+            "?date=today"
+        ),
 
-        ("page=1&limit=100", "?page=1&limit=100"),
+        (
+            "page=1&limit=100",
+            "?page=1&limit=100"
+        ),
 
     ]
 
@@ -453,7 +508,139 @@ def test_parameters():
 
         except Exception as e:
 
-            print("ERROR:", e)
+            print(
+                "ERROR:",
+                e
+            )
+
+
+# =========================================================
+# بررسی صفحات API
+# =========================================================
+
+def test_pages():
+
+    print("\n" + "=" * 70)
+    print("TESTING API PAGES")
+    print("=" * 70)
+
+    for page in range(1, 11):
+
+        print("\n" + "-" * 70)
+
+        print(
+            f"PAGE {page}"
+        )
+
+        try:
+
+            response = requests.get(
+
+                API_URL,
+
+                params={
+                    "page": page,
+                    "limit": 10
+                },
+
+                headers=HEADERS,
+
+                timeout=30
+            )
+
+            print(
+                "STATUS:",
+                response.status_code
+            )
+
+            if response.status_code != 200:
+
+                print("❌ خطا")
+
+                continue
+
+            data = response.json()
+
+            items = data.get(
+                "data",
+                []
+            )
+
+            print(
+                "RECORDS:",
+                len(items)
+            )
+
+            if not items:
+
+                print(
+                    "❌ این صفحه خالی است."
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # اولین رکورد
+            # -------------------------------------------------
+
+            first = items[0]
+
+            print("\nاولین رکورد صفحه:")
+
+            print(
+                "کد عرضه:",
+                first.get("offerCode")
+            )
+
+            print(
+                "تاریخ:",
+                first.get("offerDate")
+            )
+
+            print(
+                "offerDateRaw:",
+                first.get("offerDateRaw")
+            )
+
+            print(
+                "کالا:",
+                first.get("productName")
+            )
+
+            # -------------------------------------------------
+            # آخرین رکورد
+            # -------------------------------------------------
+
+            last = items[-1]
+
+            print("\nآخرین رکورد صفحه:")
+
+            print(
+                "کد عرضه:",
+                last.get("offerCode")
+            )
+
+            print(
+                "تاریخ:",
+                last.get("offerDate")
+            )
+
+            print(
+                "offerDateRaw:",
+                last.get("offerDateRaw")
+            )
+
+            print(
+                "کالا:",
+                last.get("productName")
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ ERROR:",
+                e
+            )
 
 
 # =========================================================
@@ -463,47 +650,114 @@ def test_parameters():
 def main():
 
     print("\n")
-    print("=" * 70)
-    print("IBROKERS - BOURSE COMMODITY ANNOUNCEMENTS TEST")
+
     print("=" * 70)
 
+    print(
+        "IBROKERS - BOURSE COMMODITY "
+        "ANNOUNCEMENTS TEST"
+    )
+
+    print("=" * 70)
+
+    # -----------------------------------------------------
     # دریافت اطلاعات
+    # -----------------------------------------------------
+
     items = get_announcements()
 
     if not items:
 
-        print("\n❌ هیچ اطلاعاتی دریافت نشد.")
+        print(
+            "\n❌ هیچ اطلاعاتی دریافت نشد."
+        )
+
         return
 
+    # -----------------------------------------------------
     # خلاصه
+    # -----------------------------------------------------
+
     show_summary(items)
 
+    # -----------------------------------------------------
     # آخرین عرضه ها
+    # -----------------------------------------------------
+
     show_latest(
         items,
         count=10
     )
 
+    # -----------------------------------------------------
     # عرضه های فولادی
+    # -----------------------------------------------------
+
     steel_items = find_steel(items)
 
+    # -----------------------------------------------------
     # ذخیره اطلاعات
+    # -----------------------------------------------------
+
     save_json(items)
 
+    # -----------------------------------------------------
     # تست پارامترهای API
+    # -----------------------------------------------------
+
     test_parameters()
 
+    # -----------------------------------------------------
+    # تست صفحات API
+    # -----------------------------------------------------
+
+    test_pages()
+
+    # -----------------------------------------------------
+    # پایان
+    # -----------------------------------------------------
+
     print("\n" + "=" * 70)
-    print("TEST FINISHED")
+
+    print(
+        "TEST FINISHED"
+    )
+
     print("=" * 70)
 
-    print("\n✅ تست کامل شد.")
-    print("حالا خروجی بخش های زیر را برای من بفرست:")
-    print("1. SUMMARY")
-    print("2. LATEST 10 ANNOUNCEMENTS")
-    print("3. STEEL PRODUCTS")
-    print("4. TESTING API PARAMETERS")
+    print(
+        "\n✅ تست کامل شد."
+    )
 
+    print(
+        "بخش مهم برای ارسال:"
+    )
+
+    print(
+        "1. SUMMARY"
+    )
+
+    print(
+        "2. LATEST 10 ANNOUNCEMENTS"
+    )
+
+    print(
+        "3. STEEL PRODUCTS"
+    )
+
+    print(
+        "4. TESTING API PARAMETERS"
+    )
+
+    print(
+        "5. TESTING API PAGES"
+    )
+
+
+# =========================================================
+# اجرای برنامه
+# =========================================================
 
 if __name__ == "__main__":
+
     main()
