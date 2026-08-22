@@ -1,10 +1,9 @@
 import os
 import json
 import requests
-from datetime import datetime
 
 # =========================================================
-# CONFIG
+# SETTINGS
 # =========================================================
 
 API_URL = "https://www.ibrokers.ir/api/announcements"
@@ -14,31 +13,161 @@ CHANNEL_ID = os.environ["CHANNEL_ID"]
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
+HISTORY_FILE = "sent_offers.json"
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json",
 }
 
-# تعداد رکورد در هر درخواست
-LIMIT = 100
 
-# چند صفحه آخر API بررسی شود
-# با 234168 رکورد و limit=100 حدود 2342 صفحه داریم.
-# بررسی 5 صفحه آخر = حداکثر 500 رکورد آخر
-LAST_PAGES_TO_CHECK = 5
+# =========================================================
+# تاریخچه ارسال‌ها
+# =========================================================
 
-# فقط عرضه‌های سال‌های جدید بورس کالا
-# سال 1405 = سال جاری
-MIN_YEAR = 1405
+def load_history():
+
+    try:
+
+        if not os.path.exists(HISTORY_FILE):
+            return set()
+
+        with open(
+            HISTORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            return set()
+
+        return set(str(x) for x in data)
+
+    except Exception as e:
+
+        print("HISTORY LOAD ERROR:", repr(e))
+
+        return set()
+
+
+def save_history(history):
+
+    try:
+
+        with open(
+            HISTORY_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                sorted(list(history)),
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+
+        print("HISTORY SAVED:", len(history))
+
+    except Exception as e:
+
+        print("HISTORY SAVE ERROR:", repr(e))
 
 
 # =========================================================
-# کلمات مربوط به فولاد
+# دریافت اطلاعات بورس کالا
+# =========================================================
+
+def get_announcements(limit=100):
+
+    try:
+
+        response = requests.get(
+            API_URL,
+            params={
+                "page": 1,
+                "limit": limit
+            },
+            headers=HEADERS,
+            timeout=30
+        )
+
+        print("=" * 70)
+        print("iBROKERS API")
+        print("=" * 70)
+
+        print("STATUS:", response.status_code)
+        print("URL:", response.url)
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        if not data.get("success"):
+
+            print("API SUCCESS = FALSE")
+
+            print(
+                json.dumps(
+                    data,
+                    ensure_ascii=False,
+                    indent=2
+                )
+            )
+
+            return []
+
+        records = data.get("data", [])
+
+        print(
+            "TOTAL:",
+            data.get("pagination", {}).get("total")
+        )
+
+        print(
+            "RECORDS:",
+            len(records)
+        )
+
+        return records
+
+    except Exception as e:
+
+        print("=" * 70)
+        print("API ERROR")
+        print("=" * 70)
+
+        print(repr(e))
+
+        return []
+
+
+# =========================================================
+# دریافت مقدار واقعی از API
+# =========================================================
+
+def get_value(item, keys):
+
+    for key in keys:
+
+        value = item.get(key)
+
+        if value is not None and value != "":
+
+            return value
+
+    return None
+
+
+# =========================================================
+# تشخیص فولادی بودن
 # =========================================================
 
 STEEL_WORDS = [
+
     "میلگرد",
-    "میل گرد",
     "تیرآهن",
     "تیر آهن",
     "نبشی",
@@ -51,378 +180,78 @@ STEEL_WORDS = [
     "فولاد",
     "مفتول",
     "لوله",
-    "آهن اسفنجی",
-    "آهن اسفنجی بریکت",
-    "بریکت",
     "ضایعات فلزی",
     "ضایعات آهن",
-    "ضایعات فولادی",
-    "مقاطع فولادی",
-    "سبد میلگرد",
-    "سبد تیرآهن",
+    "آهن اسفنجی",
+    "بریکت",
 ]
 
 
-# =========================================================
-# دریافت یک صفحه از API
-# =========================================================
-
-def get_page(page, limit=LIMIT):
-
-    try:
-
-        response = requests.get(
-            API_URL,
-            params={
-                "page": page,
-                "limit": limit
-            },
-            headers=HEADERS,
-            timeout=30
-        )
-
-        print(
-            f"API PAGE {page} | "
-            f"STATUS={response.status_code}"
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        if not data.get("success"):
-
-            print(
-                f"API SUCCESS FALSE - PAGE {page}"
-            )
-
-            return [], {}
-
-        records = data.get("data", [])
-
-        pagination = data.get(
-            "pagination",
-            {}
-        )
-
-        return records, pagination
-
-    except Exception as e:
-
-        print(
-            f"API ERROR PAGE {page}:",
-            repr(e)
-        )
-
-        return [], {}
-
-
-# =========================================================
-# دریافت آخرین عرضه‌ها
-# =========================================================
-
-def get_latest_announcements():
-
-    print("=" * 70)
-    print("iBROKERS - FIND LATEST ANNOUNCEMENTS")
-    print("=" * 70)
-
-    # -----------------------------------------------------
-    # ابتدا صفحه اول را فقط برای گرفتن TOTAL می‌گیریم
-    # -----------------------------------------------------
-
-    first_records, pagination = get_page(
-        1,
-        LIMIT
-    )
-
-    if not pagination:
-
-        print("Pagination دریافت نشد.")
-
-        return []
-
-    total = pagination.get("total")
-
-    print("TOTAL:", total)
-
-    if not total:
-
-        print("TOTAL نامعتبر است.")
-
-        return []
-
-    total_pages = (
-        int(total) + LIMIT - 1
-    ) // LIMIT
-
-    print("TOTAL PAGES:", total_pages)
-
-    # -----------------------------------------------------
-    # صفحات انتهایی
-    # -----------------------------------------------------
-
-    start_page = max(
-        1,
-        total_pages - LAST_PAGES_TO_CHECK + 1
-    )
-
-    print(
-        "CHECK PAGES:",
-        start_page,
-        "TO",
-        total_pages
-    )
-
-    all_records = []
-
-    for page in range(
-        start_page,
-        total_pages + 1
-    ):
-
-        records, _ = get_page(
-            page,
-            LIMIT
-        )
-
-        if records:
-
-            all_records.extend(
-                records
-            )
-
-    # -----------------------------------------------------
-    # حذف تکراری‌ها
-    # -----------------------------------------------------
-
-    unique = {}
-
-    for item in all_records:
-
-        key = (
-            item.get("id")
-            or item.get("external_id")
-            or item.get("offerCode")
-        )
-
-        if key is not None:
-
-            unique[str(key)] = item
-
-    records = list(
-        unique.values()
-    )
-
-    print(
-        "LAST PAGE RECORDS:",
-        len(records)
-    )
-
-    return records
-
-
-# =========================================================
-# تبدیل اعداد فارسی به انگلیسی
-# =========================================================
-
-def normalize_digits(value):
-
-    if value is None:
-        return ""
-
-    value = str(value)
-
-    table = str.maketrans(
-        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
-        "01234567890123456789"
-    )
-
-    return value.translate(table)
-
-
-# =========================================================
-# تبدیل تاریخ شمسی به عدد قابل مقایسه
-# =========================================================
-
-def jalali_date_number(date):
-
-    if not date:
-        return 0
-
-    date = normalize_digits(date)
-
-    date = date.replace(
-        "-",
-        "/"
-    )
-
-    parts = date.split("/")
-
-    if len(parts) != 3:
-        return 0
-
-    try:
-
-        y = int(parts[0])
-        m = int(parts[1])
-        d = int(parts[2])
-
-        return (
-            y * 10000
-            + m * 100
-            + d
-        )
-
-    except:
-
-        return 0
-
-
-# =========================================================
-# پیدا کردن مقدار از کلیدها
-# =========================================================
-
-def get_value(item, keys):
-
-    for key in keys:
-
-        if key in item:
-
-            value = item.get(key)
-
-            if value not in [
-                None,
-                "",
-                "null"
-            ]:
-
-                return value
-
-    return None
-
-
-# =========================================================
-# تاریخ عرضه
-# =========================================================
-
-def get_offer_date(item):
-
-    return get_value(
-        item,
-        [
-            "offerDate",
-            "offer_date",
-            "date",
-            "announcementDate",
-            "announcement_date",
-        ]
-    )
-
-
-# =========================================================
-# تشخیص محصول فولادی
-# =========================================================
-
 def is_steel(item):
 
-    product = get_value(
-        item,
-        [
-            "productName",
-            "product_name",
-            "product",
-            "commodityName",
-            "commodity_name",
-            "commodity",
-            "title",
-            "name",
-        ]
-    )
-
-    if product:
-
-        product_text = str(
-            product
-        ).lower()
-
-        for word in STEEL_WORDS:
-
-            if word.lower() in product_text:
-
-                return True
-
-    # -----------------------------------------------------
-    # اگر در نام محصول نبود، کل رکورد بررسی شود
-    # -----------------------------------------------------
-
-    text = json.dumps(
-        item,
-        ensure_ascii=False
+    product = str(
+        get_value(
+            item,
+            [
+                "productName",
+                "product",
+                "commodityName",
+                "commodity",
+                "title",
+                "name"
+            ]
+        ) or ""
     ).lower()
 
     for word in STEEL_WORDS:
 
-        if word.lower() in text:
-
+        if word.lower() in product:
             return True
 
     return False
 
 
 # =========================================================
-# فقط داده‌های سال 1405 به بعد
+# شناسه یکتای عرضه
 # =========================================================
 
-def is_current_offer(item):
+def get_offer_id(item):
 
-    date = get_offer_date(
-        item
+    value = get_value(
+        item,
+        [
+            "offerCode",
+            "external_id",
+            "id"
+        ]
     )
 
-    number = jalali_date_number(
-        date
-    )
+    if value is None:
+        return None
 
-    if number == 0:
-
-        return False
-
-    year = number // 10000
-
-    return year >= MIN_YEAR
+    return str(value)
 
 
 # =========================================================
-# مرتب‌سازی تاریخ
+# تبدیل عدد به فارسی
 # =========================================================
 
-def sort_key(item):
-
-    date = get_offer_date(
-        item
-    )
-
-    return jalali_date_number(
-        date
-    )
-
-
-# =========================================================
-# فرمت عدد
-# =========================================================
-
-def format_number(value):
+def persian_number(value):
 
     if value is None:
         return "نامشخص"
 
-    value = str(value)
+    text = str(value)
 
-    if not value.strip():
-        return "نامشخص"
+    english = "0123456789"
+    persian = "۰۱۲۳۴۵۶۷۸۹"
 
-    return value
+    table = str.maketrans(
+        english,
+        persian
+    )
+
+    return text.translate(table)
 
 
 # =========================================================
@@ -435,18 +264,21 @@ def make_message(item):
         item,
         [
             "productName",
-            "product_name",
             "product",
             "commodityName",
-            "commodity_name",
             "commodity",
             "title",
-            "name",
+            "name"
         ]
     )
 
-    date = get_offer_date(
-        item
+    offer_date = get_value(
+        item,
+        [
+            "offerDate",
+            "offer_date",
+            "date"
+        ]
     )
 
     offer_code = get_value(
@@ -454,8 +286,8 @@ def make_message(item):
         [
             "offerCode",
             "offer_code",
-            "code",
             "external_id",
+            "id"
         ]
     )
 
@@ -464,19 +296,7 @@ def make_message(item):
         [
             "hall",
             "market",
-            "market_name",
-            "marketName",
-            "hall_name",
-            "hallName",
-        ]
-    )
-
-    producer = get_value(
-        item,
-        [
-            "producer",
-            "producer_name",
-            "producerName",
+            "marketName"
         ]
     )
 
@@ -484,14 +304,11 @@ def make_message(item):
         item,
         [
             "supplier",
-            "supplier_name",
             "supplierName",
+            "producer",
+            "producerName"
         ]
     )
-
-    # -----------------------------------------------------
-    # حجم واقعی API
-    # -----------------------------------------------------
 
     volume = get_value(
         item,
@@ -499,26 +316,23 @@ def make_message(item):
             "availableVolume",
             "availableVolumeRaw",
             "initVolume",
-            "volume",
-            "quantity",
-            "amount",
-            "offerVolume",
-            "offer_volume",
+            "volume"
         ]
     )
 
-    # -----------------------------------------------------
-    # قیمت پایه واقعی API
-    # -----------------------------------------------------
+    unit = get_value(
+        item,
+        [
+            "unit"
+        ]
+    )
 
     base_price = get_value(
         item,
         [
             "basePrice",
             "basePriceRaw",
-            "base_price",
-            "price",
-            "initPrice",
+            "base_price"
         ]
     )
 
@@ -526,163 +340,130 @@ def make_message(item):
         item,
         [
             "prepaymentPercent",
-            "prepaymentPercentRaw",
-        ]
-    )
-
-    unit = get_value(
-        item,
-        [
-            "unit",
+            "prepaymentPercentRaw"
         ]
     )
 
     settlement = get_value(
         item,
         [
-            "settlementType",
-            "settlement_type",
+            "settlementType"
         ]
     )
 
     contract = get_value(
         item,
         [
-            "contractType",
-            "contract_type",
+            "contractType"
         ]
     )
 
     delivery = get_value(
         item,
         [
-            "deliveryLocation",
-            "delivery_location",
+            "deliveryLocation"
         ]
     )
 
     status = get_value(
         item,
         [
-            "status",
+            "status"
         ]
     )
 
-    # -----------------------------------------------------
-    # مقادیر پیش‌فرض
-    # -----------------------------------------------------
+    # -------------------------
+    # مقدارهای پیش‌فرض
+    # -------------------------
 
-    if product is None:
-        product = "نامشخص"
+    product = product or "نامشخص"
+    offer_date = offer_date or "نامشخص"
+    offer_code = offer_code or "نامشخص"
+    hall = hall or "نامشخص"
+    supplier = supplier or "نامشخص"
 
-    if date is None:
-        date = "نامشخص"
-
-    if offer_code is None:
-        offer_code = "نامشخص"
-
-    if hall is None:
-        hall = "نامشخص"
-
-    if producer is None:
-        producer = supplier
-
-    if producer is None:
-        producer = "نامشخص"
+    # -------------------------
+    # حجم
+    # -------------------------
 
     if volume is None:
-        volume = "نامشخص"
+
+        volume_text = "نامشخص"
+
+    else:
+
+        volume_text = persian_number(volume)
+
+        if unit:
+            volume_text += f"\n⚖️ واحد: {unit}"
+
+    # -------------------------
+    # قیمت
+    # -------------------------
 
     if base_price is None:
-        base_price = "نامشخص"
 
-    # -----------------------------------------------------
-    # ساخت پیام
-    # -----------------------------------------------------
+        price_text = "نامشخص"
 
-    lines = [
-        "🏭 عرضه جدید بورس کالا",
-        "",
-        f"📦 محصول: {product}",
-        "",
-        f"📅 تاریخ عرضه: {date}",
-        "",
-        f"🔢 کد عرضه: {offer_code}",
-        "",
-        f"🏛 تالار: {hall}",
-        "",
-        f"🏭 عرضه‌کننده: {producer}",
-        "",
-        f"📊 حجم عرضه: {format_number(volume)}",
-    ]
+    else:
 
-    if unit:
-        lines.append(
-            f"📏 واحد: {unit}"
+        price_text = persian_number(base_price)
+
+    # -------------------------
+    # پیش پرداخت
+    # -------------------------
+
+    if prepayment is not None:
+
+        prepayment_text = persian_number(
+            prepayment
         )
 
-    lines.extend(
-        [
-            "",
-            f"💰 قیمت پایه: {format_number(base_price)}",
-        ]
-    )
+        if "%" not in str(prepayment_text):
+            prepayment_text += "%"
 
-    if prepayment:
-        lines.extend(
-            [
-                "",
-                f"💳 پیش‌پرداخت: {prepayment}",
-            ]
-        )
+    else:
 
-    if settlement:
-        lines.extend(
-            [
-                "",
-                f"💵 تسویه: {settlement}",
-            ]
-        )
+        prepayment_text = "نامشخص"
 
-    if contract:
-        lines.extend(
-            [
-                "",
-                f"📄 قرارداد: {contract}",
-            ]
-        )
+    # -------------------------
+    # پیام
+    # -------------------------
 
-    if delivery:
-        lines.extend(
-            [
-                "",
-                f"📍 محل تحویل: {delivery}",
-            ]
-        )
+    message = f"""🏭 عرضه جدید بورس کالا
 
-    if status:
-        lines.extend(
-            [
-                "",
-                f"📌 وضعیت: {status}",
-            ]
-        )
+📦 محصول: {product}
 
-    lines.extend(
-        [
-            "",
-            "━━━━━━━━━━━━━━",
-            "🏭 آروند آرون استیل",
-        ]
-    )
+📅 تاریخ عرضه: {offer_date}
 
-    return "\n".join(
-        lines
-    )
+🔢 کد عرضه: {offer_code}
+
+🏛 تالار: {hall}
+
+🏭 عرضه‌کننده: {supplier}
+
+📊 حجم عرضه: {volume_text}
+
+💰 قیمت پایه: {price_text}
+
+💳 پیش‌پرداخت: {prepayment_text}
+
+💵 تسویه: {settlement or "نامشخص"}
+
+📄 قرارداد: {contract or "نامشخص"}
+
+📍 محل تحویل: {delivery or "نامشخص"}
+
+📌 وضعیت: {status or "نامشخص"}
+
+━━━━━━━━━━━━━━
+🏭 آروند آرون استیل"""
+
+    return message
 
 
 # =========================================================
-# ارسال به تلگرام
+# ارسال تلگرام
 # =========================================================
 
 def send_telegram(message):
@@ -698,22 +479,30 @@ def send_telegram(message):
             timeout=30
         )
 
+        print("\n" + "=" * 70)
+        print("TELEGRAM")
+        print("=" * 70)
+
         print(
-            "TELEGRAM STATUS:",
+            "STATUS:",
             response.status_code
         )
-
-        if response.ok:
-
-            print(
-                "TELEGRAM OK"
-            )
-
-            return True
 
         print(
             response.text[:1000]
         )
+
+        if response.ok:
+
+            data = response.json()
+
+            if data.get("ok"):
+
+                print("TELEGRAM OK")
+
+                return True
+
+        print("TELEGRAM FAILED")
 
         return False
 
@@ -733,7 +522,29 @@ def send_telegram(message):
 
 def main():
 
-    records = get_latest_announcements()
+    print("\n")
+    print("=" * 70)
+    print("BOURSE BOT START")
+    print("=" * 70)
+
+    # -------------------------
+    # تاریخچه
+    # -------------------------
+
+    history = load_history()
+
+    print(
+        "SENT HISTORY:",
+        len(history)
+    )
+
+    # -------------------------
+    # دریافت API
+    # -------------------------
+
+    records = get_announcements(
+        limit=100
+    )
 
     if not records:
 
@@ -743,173 +554,116 @@ def main():
 
         return
 
-    print(
-        "\n" + "=" * 70
-    )
+    # -------------------------
+    # فولادی‌ها
+    # -------------------------
 
-    print(
-        "LATEST RECORDS"
-    )
-
-    print(
-        "=" * 70
-    )
-
-    # -----------------------------------------------------
-    # مرتب‌سازی از جدید به قدیم
-    # -----------------------------------------------------
-
-    records.sort(
-        key=sort_key,
-        reverse=True
-    )
-
-    # -----------------------------------------------------
-    # فقط عرضه‌های 1405 به بعد
-    # -----------------------------------------------------
-
-    current_records = []
+    steel_records = []
 
     for item in records:
 
-        if is_current_offer(item):
+        if is_steel(item):
 
-            current_records.append(
+            steel_records.append(
                 item
             )
 
-    print(
-        "CURRENT RECORDS:",
-        len(current_records)
-    )
-
-    # -----------------------------------------------------
-    # نمایش عرضه‌های جدید
-    # -----------------------------------------------------
-
-    for index, item in enumerate(
-        current_records[:30],
-        1
-    ):
-
-        product = get_value(
-            item,
-            [
-                "productName",
-                "product_name",
-                "product",
-                "commodityName",
-                "commodity",
-            ]
-        )
-
-        date = get_offer_date(
-            item
-        )
-
-        hall = get_value(
-            item,
-            [
-                "hall",
-                "market",
-                "marketName",
-            ]
-        )
-
-        print(
-            f"{index}. "
-            f"{date} | "
-            f"{product} | "
-            f"{hall}"
-        )
-
-    # -----------------------------------------------------
-    # فولادی‌ها
-    # -----------------------------------------------------
-
-    steel_records = [
-        item
-        for item in current_records
-        if is_steel(item)
-    ]
-
-    print(
-        "\n" + "=" * 70
-    )
+    print("\n" + "=" * 70)
 
     print(
         "STEEL RECORDS:",
         len(steel_records)
     )
 
-    print(
-        "=" * 70
-    )
+    print("=" * 70)
 
-    if not steel_records:
+    # -------------------------
+    # پیدا کردن اولین عرضه جدید
+    # -------------------------
+
+    new_offer = None
+
+    for item in steel_records:
+
+        offer_id = get_offer_id(item)
+
+        if not offer_id:
+
+            continue
+
+        if offer_id in history:
+
+            continue
+
+        new_offer = item
+
+        break
+
+    # -------------------------
+    # هیچ عرضه جدیدی نیست
+    # -------------------------
+
+    if new_offer is None:
 
         print(
-            "هیچ عرضه فولادی جدیدی پیدا نشد."
+            "\nهیچ عرضه فولادی جدیدی برای ارسال وجود ندارد."
         )
 
         return
 
-    # -----------------------------------------------------
-    # ارسال همه عرضه‌های فولادی
-    # -----------------------------------------------------
+    # -------------------------
+    # فقط یک ارسال
+    # -------------------------
 
-    sent = 0
+    offer_id = get_offer_id(
+        new_offer
+    )
 
-    for index, item in enumerate(
-        steel_records,
-        1
-    ):
+    print("\n")
+    print(
+        "ارسال فقط یک عرضه جدید:",
+        offer_id
+    )
+
+    message = make_message(
+        new_offer
+    )
+
+    print("\nMESSAGE:")
+    print(message)
+
+    # -------------------------
+    # ارسال
+    # -------------------------
+
+    success = send_telegram(
+        message
+    )
+
+    # -------------------------
+    # فقط در صورت موفقیت ذخیره شود
+    # -------------------------
+
+    if success:
+
+        history.add(
+            offer_id
+        )
+
+        save_history(
+            history
+        )
 
         print(
-            f"\nارسال عرضه فولادی "
-            f"{index} از "
-            f"{len(steel_records)}"
+            "\nعرضه با موفقیت ثبت شد."
         )
 
-        message = make_message(
-            item
-        )
+    else:
 
         print(
-            "\nMESSAGE:"
+            "\nارسال ناموفق بود؛ "
+            "عرضه در تاریخچه ذخیره نشد."
         )
-
-        print(
-            message
-        )
-
-        if send_telegram(
-            message
-        ):
-
-            sent += 1
-
-    print(
-        "\n" + "=" * 70
-    )
-
-    print(
-        "FINISHED"
-    )
-
-    print(
-        "STEEL:",
-        len(steel_records)
-    )
-
-    print(
-        "SENT:",
-        sent
-    )
-
-    print(
-        "=" * 70
-    )
 
 
 # =========================================================
