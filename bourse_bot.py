@@ -1,11 +1,14 @@
 import requests
+import re
 
 URL = "https://www.ibrokers.ir/"
 
 def main():
-    print("در حال تست منبع بورس کالا...")
+
+    print("در حال پیدا کردن API بورس کالا...")
 
     try:
+
         response = requests.get(
             URL,
             headers={
@@ -14,14 +17,41 @@ def main():
             timeout=30
         )
 
-        print("STATUS:", response.status_code)
-        print("SIZE:", len(response.content))
-        print("CONTENT-TYPE:", response.headers.get("content-type"))
+        html = response.text
 
-        print("\n--- RESPONSE ---")
-        print(response.text[:5000])
+        print("STATUS:", response.status_code)
+        print("SIZE:", len(html))
+
+        print("\n--- JAVASCRIPT FILES ---")
+
+        scripts = re.findall(
+            r'<script[^>]+src=["\']([^"\']+)["\']',
+            html,
+            re.I
+        )
+
+        for script in scripts:
+            print(script)
+
+        print("\n--- POSSIBLE API LINKS ---")
+
+        for pattern in [
+            r'https?://[^"\']+',
+            r'/api/[^"\']+',
+            r'/api/[^\'"]+'
+        ]:
+
+            matches = re.findall(
+                pattern,
+                html,
+                re.I
+            )
+
+            for item in matches:
+                print(item)
 
     except Exception as e:
+
         print("ERROR:", e)
 
 
