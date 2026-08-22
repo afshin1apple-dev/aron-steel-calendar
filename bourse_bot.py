@@ -1,6 +1,6 @@
 import requests
 import json
-from datetime import datetime
+from urllib.parse import urljoin
 
 
 # =========================================================
@@ -9,7 +9,7 @@ from datetime import datetime
 
 BASE_URL = "https://www.ibrokers.ir"
 
-API_URL = f"{BASE_URL}/api/announcements"
+CURRENT_API = f"{BASE_URL}/api/announcements"
 
 HEADERS = {
     "User-Agent": (
@@ -18,11 +18,12 @@ HEADERS = {
         "Chrome/139.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json,text/plain,*/*",
+    "Referer": f"{BASE_URL}/markets/physical/announcement",
 }
 
 
 # =========================================================
-# تبدیل عدد فارسی به انگلیسی
+# تبدیل اعداد
 # =========================================================
 
 def normalize_number(value):
@@ -32,12 +33,12 @@ def normalize_number(value):
 
     text = str(value)
 
-    persian_numbers = "۰۱۲۳۴۵۶۷۸۹"
-    arabic_numbers = "٠١٢٣٤٥٦٧٨٩"
+    persian = "۰۱۲۳۴۵۶۷۸۹"
+    arabic = "٠١٢٣٤٥٦٧٨٩"
 
     for i in range(10):
-        text = text.replace(persian_numbers[i], str(i))
-        text = text.replace(arabic_numbers[i], str(i))
+        text = text.replace(persian[i], str(i))
+        text = text.replace(arabic[i], str(i))
 
     text = text.replace(",", "")
     text = text.replace("٬", "")
@@ -46,436 +47,372 @@ def normalize_number(value):
 
 
 # =========================================================
-# دریافت اطلاعات API
+# درخواست GET
 # =========================================================
 
-def get_announcements():
-
-    print("\n" + "=" * 70)
-    print("GET ANNOUNCEMENTS")
-    print("=" * 70)
+def get_json(url, params=None):
 
     try:
 
         response = requests.get(
-            API_URL,
+            url,
+            params=params,
             headers=HEADERS,
             timeout=30
         )
 
+        print("URL:", response.url)
         print("STATUS:", response.status_code)
-        print("CONTENT-TYPE:", response.headers.get("content-type"))
         print("SIZE:", len(response.content))
+        print(
+            "CONTENT-TYPE:",
+            response.headers.get("content-type")
+        )
 
         if response.status_code != 200:
+            return None
 
-            print("\n❌ API جواب 200 نداد.")
-            print(response.text[:3000])
+        try:
+            return response.json()
 
-            return []
-
-        data = response.json()
-
-        print("\nSUCCESS:", data.get("success"))
-
-        announcements = data.get("data", [])
-
-        print("TOTAL RECORDS:", len(announcements))
-
-        return announcements
-
-    except requests.exceptions.Timeout:
-
-        print("\n❌ TIMEOUT")
-
-        return []
-
-    except requests.exceptions.RequestException as e:
-
-        print("\n❌ REQUEST ERROR:")
-        print(e)
-
-        return []
-
-    except json.JSONDecodeError:
-
-        print("\n❌ پاسخ JSON نیست.")
-
-        return []
+        except Exception:
+            return None
 
     except Exception as e:
 
-        print("\n❌ ERROR:")
-        print(e)
+        print("ERROR:", e)
 
-        return []
+        return None
 
 
 # =========================================================
-# نمایش اطلاعات کلی
+# تست API فعلی
 # =========================================================
 
-def show_summary(items):
+def test_current_api():
 
     print("\n" + "=" * 70)
-    print("SUMMARY")
+    print("CURRENT API")
     print("=" * 70)
 
-    if not items:
+    data = get_json(
+        CURRENT_API,
+        params={
+            "limit": 10
+        }
+    )
 
-        print("هیچ رکوردی دریافت نشد.")
+    if not data:
+
+        print("❌ پاسخی دریافت نشد.")
 
         return
 
-    print("تعداد کل عرضه‌ها:", len(items))
+    items = data.get("data", [])
 
-    dates = []
+    print("SUCCESS:", data.get("success"))
+    print("RECORDS:", len(items))
 
-    for item in items:
+    if items:
 
-        date = item.get("offerDateRaw")
-
-        if date:
-
-            dates.append(str(date))
-
-    if dates:
-
-        print("قدیمی‌ترین تاریخ:", min(dates))
-        print("جدیدترین تاریخ:", max(dates))
-
-
-# =========================================================
-# مرتب‌سازی بر اساس تاریخ عرضه
-# =========================================================
-
-def sort_by_date(items):
-
-    def get_date(item):
-
-        value = item.get("offerDateRaw")
-
-        if not value:
-
-            return "00000000"
-
-        return str(value)
-
-    return sorted(
-        items,
-        key=get_date,
-        reverse=True
-    )
-
-
-# =========================================================
-# نمایش چند عرضه جدید
-# =========================================================
-
-def show_latest(items, count=10):
-
-    print("\n" + "=" * 70)
-    print(f"LATEST {count} ANNOUNCEMENTS")
-    print("=" * 70)
-
-    sorted_items = sort_by_date(items)
-
-    for index, item in enumerate(
-        sorted_items[:count],
-        1
-    ):
-
-        print("\n" + "-" * 70)
-
-        print(f"#{index}")
+        print("\nFIRST RECORD:")
 
         print(
-            "کد عرضه:",
-            item.get("offerCode")
-        )
-
-        print(
-            "تاریخ عرضه:",
-            item.get("offerDate")
-        )
-
-        print(
-            "offerDateRaw:",
-            item.get("offerDateRaw")
-        )
-
-        print(
-            "کالا:",
-            item.get("productName")
-        )
-
-        print(
-            "نماد:",
-            item.get("symbol")
-        )
-
-        print(
-            "تالار:",
-            item.get("hall")
-        )
-
-        print(
-            "عرضه کننده:",
-            item.get("supplier")
-        )
-
-        print(
-            "تولیدکننده:",
-            item.get("producer")
-        )
-
-        print(
-            "حجم عرضه:",
-            item.get("availableVolume")
-        )
-
-        print(
-            "حداقل خرید:",
-            item.get("minimumOffer")
-        )
-
-        print(
-            "قیمت پایه:",
-            item.get("basePrice")
-        )
-
-        print(
-            "درصد پیش پرداخت:",
-            item.get("prepaymentPercent")
-        )
-
-        print(
-            "محل تحویل:",
-            item.get("deliveryLocation")
-        )
-
-        print(
-            "نوع تسویه:",
-            item.get("settlementType")
-        )
-
-        print(
-            "وضعیت:",
-            item.get("status")
-        )
-
-
-# =========================================================
-# پیدا کردن عرضه های فولادی
-# =========================================================
-
-def find_steel(items):
-
-    print("\n" + "=" * 70)
-    print("STEEL PRODUCTS")
-    print("=" * 70)
-
-    keywords = [
-
-        "فولاد",
-        "میلگرد",
-        "تیرآهن",
-        "ورق",
-        "شمش",
-        "بلوم",
-        "بیلت",
-        "آهن",
-        "نبشی",
-        "ناودانی",
-        "مفتول",
-        "اسلب",
-        "گندله",
-        "آهن اسفنجی",
-        "کویل",
-        "کنسانتره",
-        "تختال",
-        "سنگ آهن",
-
-    ]
-
-    steel_items = []
-
-    for item in items:
-
-        text = " ".join([
-
-            str(item.get("productName") or ""),
-            str(item.get("symbol") or ""),
-            str(item.get("producer") or ""),
-            str(item.get("supplier") or ""),
-            str(item.get("hall") or ""),
-
-        ])
-
-        text = text.lower()
-
-        for keyword in keywords:
-
-            if keyword.lower() in text:
-
-                steel_items.append(item)
-
-                break
-
-    print(
-        "تعداد عرضه های مرتبط با فولاد:",
-        len(steel_items)
-    )
-
-    for index, item in enumerate(
-        sort_by_date(steel_items)[:20],
-        1
-    ):
-
-        print("\n" + "-" * 60)
-
-        print(f"#{index}")
-
-        print(
-            "کد عرضه:",
-            item.get("offerCode")
-        )
-
-        print(
-            "تاریخ:",
-            item.get("offerDate")
-        )
-
-        print(
-            "کالا:",
-            item.get("productName")
-        )
-
-        print(
-            "نماد:",
-            item.get("symbol")
-        )
-
-        print(
-            "عرضه کننده:",
-            item.get("supplier")
-        )
-
-        print(
-            "تولیدکننده:",
-            item.get("producer")
-        )
-
-        print(
-            "حجم:",
-            item.get("availableVolume")
-        )
-
-        print(
-            "قیمت پایه:",
-            item.get("basePrice")
-        )
-
-        print(
-            "وضعیت:",
-            item.get("status")
-        )
-
-    return steel_items
-
-
-# =========================================================
-# ذخیره اطلاعات خام برای بررسی
-# =========================================================
-
-def save_json(items):
-
-    filename = "announcements.json"
-
-    try:
-
-        with open(
-            filename,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                items,
-                file,
+            json.dumps(
+                items[0],
                 ensure_ascii=False,
                 indent=2
             )
-
-        print("\n✅ اطلاعات در فایل ذخیره شد:")
-        print(filename)
-
-    except Exception as e:
-
-        print("\n❌ خطا در ذخیره فایل:")
-        print(e)
+        )
 
 
 # =========================================================
-# بررسی پارامترهای احتمالی API
+# تست پارامترهای تاریخ
 # =========================================================
 
-def test_parameters():
+def test_date_parameters():
 
     print("\n" + "=" * 70)
-    print("TESTING API PARAMETERS")
+    print("TEST DATE PARAMETERS")
     print("=" * 70)
 
     tests = [
 
-        ("page=1", "?page=1"),
+        {
+            "fromDate": "14050801",
+            "toDate": "14050831"
+        },
 
-        ("limit=10", "?limit=10"),
+        {
+            "startDate": "14050801",
+            "endDate": "14050831"
+        },
 
-        (
-            "page=1&limit=10",
-            "?page=1&limit=10"
-        ),
+        {
+            "dateFrom": "14050801",
+            "dateTo": "14050831"
+        },
 
-        (
-            "page=1&pageSize=10",
-            "?page=1&pageSize=10"
-        ),
+        {
+            "from": "14050801",
+            "to": "14050831"
+        },
 
-        (
-            "limit=100",
-            "?limit=100"
-        ),
+        {
+            "start": "14050801",
+            "end": "14050831"
+        },
 
-        (
-            "date=today",
-            "?date=today"
-        ),
+        {
+            "fromDate": "1405/08/01",
+            "toDate": "1405/08/31"
+        },
 
-        (
-            "page=1&limit=100",
-            "?page=1&limit=100"
-        ),
+        {
+            "startDate": "1405/08/01",
+            "endDate": "1405/08/31"
+        },
 
     ]
 
-    for name, query in tests:
+    for params in tests:
 
-        print("\n" + "-" * 60)
+        print("\n" + "-" * 70)
 
-        print("TEST:", name)
+        print("PARAMS:")
+        print(params)
+
+        data = get_json(
+            CURRENT_API,
+            params=params
+        )
+
+        if not data:
+
+            print("NO JSON")
+
+            continue
+
+        items = data.get(
+            "data",
+            []
+        )
+
+        print(
+            "RECORDS:",
+            len(items)
+        )
+
+        if items:
+
+            first = items[0]
+            last = items[-1]
+
+            print(
+                "FIRST:",
+                first.get("offerDate"),
+                first.get("offerCode"),
+                first.get("productName")
+            )
+
+            print(
+                "LAST:",
+                last.get("offerDate"),
+                last.get("offerCode"),
+                last.get("productName")
+            )
+
+
+# =========================================================
+# تست پارامترهای فیلتر
+# =========================================================
+
+def test_filter_parameters():
+
+    print("\n" + "=" * 70)
+    print("TEST FILTER PARAMETERS")
+    print("=" * 70)
+
+    tests = [
+
+        {
+            "limit": 10,
+            "year": 1405
+        },
+
+        {
+            "limit": 10,
+            "jalaliYear": 1405
+        },
+
+        {
+            "limit": 10,
+            "date": "1405"
+        },
+
+        {
+            "limit": 10,
+            "offerDate": "1405"
+        },
+
+        {
+            "limit": 10,
+            "group": "فولاد"
+        },
+
+        {
+            "limit": 10,
+            "category": "فولاد"
+        },
+
+        {
+            "limit": 10,
+            "productGroup": "فولاد"
+        },
+
+        {
+            "limit": 10,
+            "hall": "تالار صنعتی"
+        },
+
+    ]
+
+    for params in tests:
+
+        print("\n" + "-" * 70)
+
+        print("PARAMS:")
+        print(params)
+
+        data = get_json(
+            CURRENT_API,
+            params=params
+        )
+
+        if not data:
+
+            print("NO JSON")
+
+            continue
+
+        items = data.get(
+            "data",
+            []
+        )
+
+        print(
+            "RECORDS:",
+            len(items)
+        )
+
+        if items:
+
+            dates = []
+
+            for item in items:
+
+                value = item.get(
+                    "offerDateRaw"
+                )
+
+                if value:
+                    dates.append(
+                        str(value)
+                    )
+
+            if dates:
+
+                print(
+                    "MIN DATE:",
+                    min(dates)
+                )
+
+                print(
+                    "MAX DATE:",
+                    max(dates)
+                )
+
+
+# =========================================================
+# تست endpointهای احتمالی
+# =========================================================
+
+def test_possible_endpoints():
+
+    print("\n" + "=" * 70)
+    print("TEST POSSIBLE ENDPOINTS")
+    print("=" * 70)
+
+    endpoints = [
+
+        "/api/announcements",
+
+        "/api/announcement",
+
+        "/api/physical/announcements",
+
+        "/api/physical/announcement",
+
+        "/api/markets/physical/announcements",
+
+        "/api/markets/physical/announcement",
+
+        "/api/markets/physical",
+
+        "/api/markets/announcements",
+
+        "/api/offers",
+
+        "/api/offers/physical",
+
+        "/api/physical/offers",
+
+        "/api/market/announcements",
+
+        "/api/market/physical/announcements",
+
+    ]
+
+    for path in endpoints:
+
+        url = urljoin(
+            BASE_URL,
+            path
+        )
+
+        print("\n" + "-" * 70)
+
+        print(
+            "TEST:",
+            path
+        )
 
         try:
 
             response = requests.get(
-                API_URL + query,
+                url,
+                params={
+                    "limit": 5
+                },
                 headers=HEADERS,
-                timeout=20
+                timeout=15
             )
 
             print(
                 "STATUS:",
                 response.status_code
+            )
+
+            print(
+                "TYPE:",
+                response.headers.get(
+                    "content-type"
+                )
+            )
+
+            print(
+                "SIZE:",
+                len(response.content)
             )
 
             if response.status_code == 200:
@@ -484,27 +421,52 @@ def test_parameters():
 
                     data = response.json()
 
-                    records = data.get(
-                        "data",
-                        []
-                    )
+                    if isinstance(data, dict):
 
-                    print(
-                        "RECORDS:",
-                        len(records)
-                    )
+                        print(
+                            "KEYS:",
+                            list(data.keys())[:30]
+                        )
+
+                        items = data.get(
+                            "data",
+                            []
+                        )
+
+                        print(
+                            "DATA RECORDS:",
+                            len(items)
+                        )
+
+                        if items:
+
+                            print(
+                                "FIRST DATE:",
+                                items[0].get(
+                                    "offerDate"
+                                )
+                            )
+
+                            print(
+                                "FIRST PRODUCT:",
+                                items[0].get(
+                                    "productName"
+                                )
+                            )
+
+                    else:
+
+                        print(
+                            "JSON TYPE:",
+                            type(data).__name__
+                        )
 
                 except Exception:
 
                     print(
-                        "پاسخ JSON قابل خواندن نیست."
+                        "RESPONSE:",
+                        response.text[:500]
                     )
-
-            else:
-
-                print(
-                    response.text[:500]
-                )
 
         except Exception as e:
 
@@ -515,132 +477,41 @@ def test_parameters():
 
 
 # =========================================================
-# بررسی صفحات API
+# ذخیره گزارش
 # =========================================================
 
-def test_pages():
+def save_report():
 
-    print("\n" + "=" * 70)
-    print("TESTING API PAGES")
-    print("=" * 70)
+    report = {
 
-    for page in range(1, 11):
+        "test": "iBrokers API discovery",
 
-        print("\n" + "-" * 70)
+        "base_url": BASE_URL,
 
-        print(
-            f"PAGE {page}"
+        "current_api": CURRENT_API,
+
+        "timestamp": __import__(
+            "datetime"
+        ).datetime.utcnow().isoformat(),
+
+    }
+
+    with open(
+        "api_test_report.json",
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            report,
+            file,
+            ensure_ascii=False,
+            indent=2
         )
 
-        try:
-
-            response = requests.get(
-
-                API_URL,
-
-                params={
-                    "page": page,
-                    "limit": 10
-                },
-
-                headers=HEADERS,
-
-                timeout=30
-            )
-
-            print(
-                "STATUS:",
-                response.status_code
-            )
-
-            if response.status_code != 200:
-
-                print("❌ خطا")
-
-                continue
-
-            data = response.json()
-
-            items = data.get(
-                "data",
-                []
-            )
-
-            print(
-                "RECORDS:",
-                len(items)
-            )
-
-            if not items:
-
-                print(
-                    "❌ این صفحه خالی است."
-                )
-
-                continue
-
-            # -------------------------------------------------
-            # اولین رکورد
-            # -------------------------------------------------
-
-            first = items[0]
-
-            print("\nاولین رکورد صفحه:")
-
-            print(
-                "کد عرضه:",
-                first.get("offerCode")
-            )
-
-            print(
-                "تاریخ:",
-                first.get("offerDate")
-            )
-
-            print(
-                "offerDateRaw:",
-                first.get("offerDateRaw")
-            )
-
-            print(
-                "کالا:",
-                first.get("productName")
-            )
-
-            # -------------------------------------------------
-            # آخرین رکورد
-            # -------------------------------------------------
-
-            last = items[-1]
-
-            print("\nآخرین رکورد صفحه:")
-
-            print(
-                "کد عرضه:",
-                last.get("offerCode")
-            )
-
-            print(
-                "تاریخ:",
-                last.get("offerDate")
-            )
-
-            print(
-                "offerDateRaw:",
-                last.get("offerDateRaw")
-            )
-
-            print(
-                "کالا:",
-                last.get("productName")
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ ERROR:",
-                e
-            )
+    print(
+        "\n✅ api_test_report.json ساخته شد."
+    )
 
 
 # =========================================================
@@ -654,68 +525,40 @@ def main():
     print("=" * 70)
 
     print(
-        "IBROKERS - BOURSE COMMODITY "
-        "ANNOUNCEMENTS TEST"
+        "iBROKERS API DISCOVERY"
     )
 
     print("=" * 70)
 
     # -----------------------------------------------------
-    # دریافت اطلاعات
+    # API فعلی
     # -----------------------------------------------------
 
-    items = get_announcements()
-
-    if not items:
-
-        print(
-            "\n❌ هیچ اطلاعاتی دریافت نشد."
-        )
-
-        return
+    test_current_api()
 
     # -----------------------------------------------------
-    # خلاصه
+    # تست تاریخ
     # -----------------------------------------------------
 
-    show_summary(items)
+    test_date_parameters()
 
     # -----------------------------------------------------
-    # آخرین عرضه ها
+    # تست فیلترها
     # -----------------------------------------------------
 
-    show_latest(
-        items,
-        count=10
-    )
+    test_filter_parameters()
 
     # -----------------------------------------------------
-    # عرضه های فولادی
+    # تست endpointهای احتمالی
     # -----------------------------------------------------
 
-    steel_items = find_steel(items)
+    test_possible_endpoints()
 
     # -----------------------------------------------------
-    # ذخیره اطلاعات
+    # گزارش
     # -----------------------------------------------------
 
-    save_json(items)
-
-    # -----------------------------------------------------
-    # تست پارامترهای API
-    # -----------------------------------------------------
-
-    test_parameters()
-
-    # -----------------------------------------------------
-    # تست صفحات API
-    # -----------------------------------------------------
-
-    test_pages()
-
-    # -----------------------------------------------------
-    # پایان
-    # -----------------------------------------------------
+    save_report()
 
     print("\n" + "=" * 70)
 
@@ -725,37 +568,9 @@ def main():
 
     print("=" * 70)
 
-    print(
-        "\n✅ تست کامل شد."
-    )
-
-    print(
-        "بخش مهم برای ارسال:"
-    )
-
-    print(
-        "1. SUMMARY"
-    )
-
-    print(
-        "2. LATEST 10 ANNOUNCEMENTS"
-    )
-
-    print(
-        "3. STEEL PRODUCTS"
-    )
-
-    print(
-        "4. TESTING API PARAMETERS"
-    )
-
-    print(
-        "5. TESTING API PAGES"
-    )
-
 
 # =========================================================
-# اجرای برنامه
+# RUN
 # =========================================================
 
 if __name__ == "__main__":
