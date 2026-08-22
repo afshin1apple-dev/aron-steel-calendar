@@ -1,9 +1,9 @@
 import requests
 
-URL = "https://tts.ime.co.ir/"
+URL = "https://www.ibrokers.ir/"
 
 def main():
-    print("در حال اتصال به تابلو بورس کالا...")
+    print("در حال تست منبع بورس کالا...")
 
     try:
         response = requests.get(
