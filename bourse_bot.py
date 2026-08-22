@@ -1,158 +1,278 @@
 import requests
 import json
-
-URL = "https://www.ibrokers.ir/api/announcements"
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/139.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json,text/plain,*/*",
-    "Referer": "https://www.ibrokers.ir/markets/physical/announcement",
-}
+import time
 
 
-def test(params):
+# =========================================================
+# تنظیمات
+# =========================================================
 
-    print("\n" + "=" * 70)
-    print("PARAMS:")
-    print(params)
+API_URL = "https://www.ibrokers.ir/api/announcements"
+
+LIMIT = 10
+
+# آخرین صفحات موجود طبق API
+PAGES_TO_CHECK = [
+    23417,
+    23416,
+    23415,
+    23414,
+    23413,
+]
+
+
+# =========================================================
+# دریافت اطلاعات یک صفحه
+# =========================================================
+
+def get_page(page):
+
+    params = {
+        "page": page,
+        "limit": LIMIT
+    }
+
+    print("=" * 80)
+    print(f"PAGE: {page}")
+    print("=" * 80)
 
     try:
 
-        r = requests.get(
-            URL,
+        response = requests.get(
+            API_URL,
             params=params,
-            headers=HEADERS,
-            timeout=30
+            timeout=30,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
         )
 
         print("URL:")
-        print(r.url)
+        print(response.url)
 
-        print("STATUS:", r.status_code)
-        print("SIZE:", len(r.content))
+        print("STATUS:", response.status_code)
+        print("SIZE:", len(response.content))
 
-        if r.status_code != 200:
-            print(r.text[:500])
-            return
+        response.raise_for_status()
 
-        data = r.json()
+        result = response.json()
 
-        print("\nPAGINATION:")
-        print(
-            json.dumps(
-                data.get("pagination"),
-                ensure_ascii=False,
-                indent=2
-            )
-        )
+        # -------------------------------------------------
+        # Pagination
+        # -------------------------------------------------
 
-        print("\nFILTERS:")
-        print(
-            json.dumps(
-                data.get("filters"),
-                ensure_ascii=False,
-                indent=2
-            )
-        )
+        pagination = result.get("pagination", {})
 
-        items = data.get("data", [])
+        print()
+        print("PAGINATION:")
+        print(json.dumps(
+            pagination,
+            ensure_ascii=False,
+            indent=2
+        ))
 
-        print("\nRECORDS:", len(items))
+        # -------------------------------------------------
+        # Data
+        # -------------------------------------------------
 
-        for i, item in enumerate(items[:10], 1):
+        records = result.get("data", [])
+
+        print()
+        print("RECORDS:", len(records))
+        print()
+
+        if not records:
+            print("NO DATA")
+            return []
+
+        # -------------------------------------------------
+        # نمایش رکوردها
+        # -------------------------------------------------
+
+        for index, item in enumerate(records, 1):
+
+            print("-" * 80)
+
+            print("RECORD:", index)
 
             print(
-                f"{i}. "
-                f"DATE={item.get('offerDate')} | "
-                f"CODE={item.get('offerCode')} | "
-                f"PRODUCT={item.get('productName')} | "
-                f"HALL={item.get('hall')}"
+                "ID:",
+                item.get("id")
             )
+
+            print(
+                "OFFER CODE:",
+                item.get("offer_code")
+            )
+
+            print(
+                "DATE:",
+                item.get("date")
+            )
+
+            print(
+                "RAW DATE:",
+                item.get("raw_date")
+            )
+
+            print(
+                "PRODUCT:",
+                item.get("product")
+            )
+
+            print(
+                "SYMBOL:",
+                item.get("symbol")
+            )
+
+            print(
+                "HALL:",
+                item.get("hall")
+            )
+
+            print(
+                "PRODUCER:",
+                item.get("producer")
+            )
+
+            print(
+                "SUPPLIER:",
+                item.get("supplier")
+            )
+
+            print(
+                "VOLUME:",
+                item.get("volume")
+            )
+
+            print(
+                "VOLUME RAW:",
+                item.get("volume_raw")
+            )
+
+            print(
+                "BASE PRICE:",
+                item.get("base_price")
+            )
+
+            print(
+                "DELIVERY DATE:",
+                item.get("delivery_date")
+            )
+
+        return records
+
+    except requests.exceptions.Timeout:
+
+        print("ERROR: REQUEST TIMEOUT")
+
+    except requests.exceptions.ConnectionError as e:
+
+        print("ERROR: CONNECTION ERROR")
+        print(repr(e))
+
+    except requests.exceptions.HTTPError as e:
+
+        print("ERROR: HTTP ERROR")
+        print(repr(e))
+
+    except json.JSONDecodeError:
+
+        print("ERROR: INVALID JSON")
+        print(response.text[:1000])
 
     except Exception as e:
 
-        print("ERROR:", repr(e))
+        print("ERROR:")
+        print(repr(e))
 
+    return []
+
+
+# =========================================================
+# MAIN
+# =========================================================
 
 def main():
 
-    print("=" * 70)
-    print("iBROKERS DATE + PAGINATION DISCOVERY")
-    print("=" * 70)
+    print()
+    print("=" * 80)
+    print("iBROKERS - LATEST PAGES DISCOVERY")
+    print("=" * 80)
+    print()
 
-    # -----------------------------------------------------
-    # تست 1 - همان چیزی که الان داریم
-    # -----------------------------------------------------
+    all_records = []
 
-    test({
-        "limit": 10,
-        "start_date": "1405/08/01",
-        "end_date": "1405/08/31"
-    })
+    for page in PAGES_TO_CHECK:
 
-    # -----------------------------------------------------
-    # تست 2 - سال 1401 که می دانیم داده دارد
-    # -----------------------------------------------------
+        records = get_page(page)
 
-    test({
-        "limit": 10,
-        "start_date": "1401/07/01",
-        "end_date": "1401/07/31"
-    })
+        all_records.extend(records)
 
-    # -----------------------------------------------------
-    # تست 3 - فقط start_date
-    # -----------------------------------------------------
+        time.sleep(1)
 
-    test({
-        "limit": 10,
-        "start_date": "1401/07/01"
-    })
+        print()
+        print()
 
-    # -----------------------------------------------------
-    # تست 4 - فقط end_date
-    # -----------------------------------------------------
 
-    test({
-        "limit": 10,
-        "end_date": "1401/07/31"
-    })
+    # =====================================================
+    # خلاصه نهایی
+    # =====================================================
 
-    # -----------------------------------------------------
-    # تست 5 - صفحه 1
-    # -----------------------------------------------------
+    print()
+    print("=" * 80)
+    print("FINAL SUMMARY")
+    print("=" * 80)
 
-    test({
-        "page": 1,
-        "limit": 10
-    })
+    print("TOTAL RECORDS RECEIVED:", len(all_records))
 
-    # -----------------------------------------------------
-    # تست 6 - صفحه 2
-    # -----------------------------------------------------
+    print()
 
-    test({
-        "page": 2,
-        "limit": 10
-    })
+    if all_records:
 
-    # -----------------------------------------------------
-    # تست 7 - صفحه 100
-    # -----------------------------------------------------
+        print("DATES FOUND:")
 
-    test({
-        "page": 100,
-        "limit": 10
-    })
+        dates = []
 
-    print("\n" + "=" * 70)
+        for item in all_records:
+
+            date = item.get("date")
+
+            if date and date not in dates:
+                dates.append(date)
+
+        for date in dates:
+            print("-", date)
+
+        print()
+        print("PRODUCTS:")
+
+        for item in all_records:
+
+            product = item.get("product")
+
+            if product:
+                print(
+                    "-",
+                    item.get("date"),
+                    "|",
+                    product
+                )
+
+    else:
+
+        print("هیچ رکوردی دریافت نشد.")
+
+
+    print()
+    print("=" * 80)
     print("FINISHED")
-    print("=" * 70)
+    print("=" * 80)
 
+
+# =========================================================
+# اجرا
+# =========================================================
 
 if __name__ == "__main__":
     main()
