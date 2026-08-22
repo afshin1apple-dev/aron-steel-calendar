@@ -1,39 +1,120 @@
 import os
 import json
+import re
+import math
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 # =========================================================
 # SETTINGS
 # =========================================================
 
-API_URL = "https://www.ibrokers.ir/api/announcements"
-
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = os.environ["CHANNEL_ID"]
 
-TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+API_URL = "https://www.ibrokers.ir/api/announcements"
 
 HISTORY_FILE = "sent_history.json"
 
-# حداکثر تعداد پست در هر اجرا
-MAX_SEND = 5
+# چند صفحه آخر API بررسی شود
+# چون API از قدیمی به جدید مرتب شده است.
+LAST_PAGES_TO_CHECK = 10
 
-# چند صفحه از API بررسی شود
-MAX_PAGES = 10
+# حداکثر تعداد پست در هر اجرای ربات
+MAX_POSTS_PER_RUN = 10
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json",
-}
+# اگر بخواهیم فقط فولاد را بگیریم
+STEEL_KEYWORDS = [
+    "فولاد",
+    "آهن",
+    "میلگرد",
+    "تیرآهن",
+    "نبشی",
+    "ناودانی",
+    "ورق",
+    "اسلب",
+    "بلوم",
+    "بیلت",
+    "شمش",
+    "گندله",
+    "کنسانتره",
+    "آهن اسفنجی",
+    "DRI",
+    "HRC",
+    "CRC",
+    "تختال",
+    "کویل",
+    "رول",
+    "لوله",
+    "پروفیل",
+    "ضایعات",
+    "قراضه",
+    "سنگ آهن",
+]
+
+# مواردی که نباید به عنوان عرضه فولادی منتشر شوند
+EXCLUDE_KEYWORDS = [
+    "زعفران",
+    "پسته",
+    "برنج",
+    "گندم",
+    "جو",
+    "ذرت",
+    "شکر",
+    "روغن",
+    "نفت",
+    "قیر",
+    "خودرو",
+    "مس",
+    "آلومینیوم",
+    "روی",
+    "سرب",
+    "طلا",
+    "نقره",
+]
 
 
 # =========================================================
-# تبدیل میلادی به شمسی - بدون کتابخانه اضافی
+# TELEGRAM
+# =========================================================
+
+TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+
+def send_telegram(text):
+    url = f"{TELEGRAM_URL}/sendMessage"
+
+    payload = {
+        "chat_id": CHANNEL_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+    response = requests.post(
+        url,
+        json=payload,
+        timeout=30
+    )
+
+    if not response.ok:
+        print("TELEGRAM ERROR:", response.status_code)
+        print(response.text[:1000])
+        return False
+
+    return True
+
+
+# =========================================================
+# JALALI DATE
 # =========================================================
 
 def gregorian_to_jalali(gy, gm, gd):
+    """
+    تبدیل میلادی به شمسی
+    بدون نیاز به pytz یا کتابخانه خارجی
+    """
 
     g_days_in_month = [
         31, 28, 31, 30, 31, 30,
@@ -46,57 +127,44 @@ def gregorian_to_jalali(gy, gm, gd):
     ]
 
     gy2 = gy - 1600
-    jy = 979
-
-    if gy2 >= 0:
-        leap_adjust = gy2 // 400
-    else:
-        leap_adjust = (gy2 - 399) // 400
+    gm2 = gm - 1
+    gd2 = gd - 1
 
     g_day_no = (
         365 * gy2
         + (gy2 + 3) // 4
         - (gy2 + 99) // 100
         + (gy2 + 399) // 400
-        - 80
     )
 
-    for i in range(gm - 1):
+    for i in range(gm2):
         g_day_no += g_days_in_month[i]
 
-    if gm > 2 and (
-        gy % 4 == 0
-        and (gy % 100 != 0 or gy % 400 == 0)
+    if gm2 > 1 and (
+        gy % 4 == 0 and
+        (gy % 100 != 0 or gy % 400 == 0)
     ):
         g_day_no += 1
 
-    g_day_no += gd
+    g_day_no += gd2
 
-    j_day_no = g_day_no
+    j_day_no = g_day_no - 79
 
-    jy += 33 * (j_day_no // 12053)
-
+    j_np = j_day_no // 12053
     j_day_no %= 12053
 
-    jy += 4 * (j_day_no // 1461)
+    jy = 979 + 33 * j_np + 4 * (j_day_no // 1461)
 
     j_day_no %= 1461
 
     if j_day_no >= 366:
-
         jy += (j_day_no - 1) // 365
-
         j_day_no = (j_day_no - 1) % 365
 
-    i = 0
-
-    while (
-        i < 11
-        and j_day_no >= j_days_in_month[i]
-    ):
-
+    for i in range(11):
+        if j_day_no < j_days_in_month[i]:
+            break
         j_day_no -= j_days_in_month[i]
-        i += 1
 
     jm = i + 1
     jd = j_day_no + 1
@@ -104,16 +172,12 @@ def gregorian_to_jalali(gy, gm, gd):
     return jy, jm, jd
 
 
-# =========================================================
-# تاریخ امروز ایران
-# =========================================================
-
 def today_jalali():
+    """
+    ساعت ایران = UTC+3:30
+    """
 
-    # ایران در مرداد 1405 برابر UTC+3:30 است
-    iran_tz = timezone(
-        timedelta(hours=3, minutes=30)
-    )
+    iran_tz = timezone(timedelta(hours=3, minutes=30))
 
     now = datetime.now(iran_tz)
 
@@ -123,55 +187,410 @@ def today_jalali():
         now.day
     )
 
-    return f"{jy:04d}/{jm:02d}/{jd:02d}"
+    return jy, jm, jd
+
+
+def jalali_string(y, m, d):
+    return f"{y:04d}/{m:02d}/{d:02d}"
 
 
 # =========================================================
-# تبدیل تاریخ شمسی به عدد
+# NUMBER / TEXT HELPERS
 # =========================================================
 
-def jalali_to_number(date_string):
+def normalize_digits(value):
+    if value is None:
+        return ""
 
-    if not date_string:
-        return 0
+    text = str(value)
 
+    table = str.maketrans(
+        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+        "01234567890123456789"
+    )
+
+    return text.translate(table)
+
+
+def clean_text(value):
+    if value is None:
+        return ""
+
+    text = normalize_digits(value)
+
+    text = re.sub(r"<[^>]+>", " ", text)
+
+    text = text.replace("\\n", "\n")
+
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+def format_number(value):
+    if value is None:
+        return "-"
+
+    text = normalize_digits(value).strip()
+
+    if not text:
+        return "-"
+
+    # اعداد اعشاری
     try:
+        if "." in text:
+            number = float(text)
 
-        date_string = str(date_string)
+            if number.is_integer():
+                return f"{int(number):,}"
 
-        date_string = (
-            date_string
-            .replace("-", "/")
-            .replace(".", "/")
-            .strip()
-        )
+            return f"{number:,.2f}".rstrip("0").rstrip(".")
 
-        parts = date_string.split("/")
-
-        if len(parts) != 3:
-            return 0
-
-        year = int(parts[0])
-        month = int(parts[1])
-        day = int(parts[2])
-
-        return (
-            year * 10000
-            + month * 100
-            + day
-        )
+        if text.replace(",", "").isdigit():
+            return f"{int(text.replace(',', '')):,}"
 
     except Exception:
+        pass
 
+    return clean_text(value)
+
+
+# =========================================================
+# GENERIC FIELD FINDER
+# =========================================================
+
+def find_value(record, possible_names):
+    """
+    پیدا کردن مقدار از بین نام‌های مختلف فیلد.
+    چون API ممکن است نام فیلدها را تغییر دهد.
+    """
+
+    if not isinstance(record, dict):
+        return None
+
+    # حالت عادی
+    for name in possible_names:
+        if name in record:
+            value = record.get(name)
+
+            if value not in (None, ""):
+                return value
+
+    # حالت insensitive
+    lowered = {
+        str(k).lower(): v
+        for k, v in record.items()
+    }
+
+    for name in possible_names:
+        key = str(name).lower()
+
+        if key in lowered:
+            value = lowered[key]
+
+            if value not in (None, ""):
+                return value
+
+    return None
+
+
+# =========================================================
+# API DATA EXTRACTION
+# =========================================================
+
+def extract_records(data):
+    """
+    ساختار پاسخ API را به لیست رکورد تبدیل می‌کند.
+    """
+
+    if isinstance(data, list):
+        return data
+
+    if not isinstance(data, dict):
+        return []
+
+    possible_keys = [
+        "data",
+        "items",
+        "records",
+        "results",
+        "announcements",
+        "rows",
+        "content",
+    ]
+
+    for key in possible_keys:
+        value = data.get(key)
+
+        if isinstance(value, list):
+            return value
+
+        if isinstance(value, dict):
+            nested = extract_records(value)
+
+            if nested:
+                return nested
+
+    # بعضی APIها داده را داخل result می‌گذارند
+    result = data.get("result")
+
+    if isinstance(result, list):
+        return result
+
+    if isinstance(result, dict):
+        return extract_records(result)
+
+    return []
+
+
+def extract_total(data):
+    if not isinstance(data, dict):
+        return None
+
+    possible = [
+        "total",
+        "totalCount",
+        "total_count",
+        "count",
+    ]
+
+    for key in possible:
+        value = data.get(key)
+
+        if value is not None:
+            try:
+                return int(value)
+            except Exception:
+                pass
+
+    # nested
+    for key in ["data", "result"]:
+        value = data.get(key)
+
+        if isinstance(value, dict):
+            result = extract_total(value)
+
+            if result:
+                return result
+
+    return None
+
+
+# =========================================================
+# DATE EXTRACTION
+# =========================================================
+
+DATE_FIELDS = [
+    "date",
+    "announcementDate",
+    "announcement_date",
+    "publishDate",
+    "publish_date",
+    "releaseDate",
+    "release_date",
+    "offerDate",
+    "offer_date",
+    "tradeDate",
+    "trade_date",
+    "deliveryDate",
+    "delivery_date",
+    "startDate",
+    "start_date",
+    "createdAt",
+    "created_at",
+]
+
+
+def extract_date_strings(record):
+    result = []
+
+    if not isinstance(record, dict):
+        return result
+
+    for field in DATE_FIELDS:
+        value = find_value(record, [field])
+
+        if value is None:
+            continue
+
+        text = normalize_digits(str(value))
+
+        if text:
+            result.append(text)
+
+    # اگر API تاریخ را در هر فیلد دیگری هم گذاشته باشد
+    for key, value in record.items():
+
+        key_text = str(key).lower()
+
+        if any(
+            word in key_text
+            for word in [
+                "date",
+                "tarikh",
+                "تاریخ"
+            ]
+        ):
+            text = normalize_digits(str(value))
+
+            if text and text not in result:
+                result.append(text)
+
+    return result
+
+
+def parse_jalali_date(text):
+    """
+    از متن، تاریخ شمسی مثل:
+    1405/05/31
+    1405-05-31
+    1405/5/31
+    را پیدا می‌کند.
+    """
+
+    if not text:
+        return None
+
+    text = normalize_digits(str(text))
+
+    match = re.search(
+        r"(14\d{2})[/-](\d{1,2})[/-](\d{1,2})",
+        text
+    )
+
+    if not match:
+        return None
+
+    y = int(match.group(1))
+    m = int(match.group(2))
+    d = int(match.group(3))
+
+    return y, m, d
+
+
+def date_number(date_tuple):
+    if not date_tuple:
         return 0
 
+    y, m, d = date_tuple
+
+    return y * 10000 + m * 100 + d
+
+
+def record_date_number(record):
+    dates = extract_date_strings(record)
+
+    candidates = []
+
+    for text in dates:
+        parsed = parse_jalali_date(text)
+
+        if parsed:
+            candidates.append(date_number(parsed))
+
+    if not candidates:
+        return None
+
+    # جدیدترین تاریخ داخل رکورد
+    return max(candidates)
+
 
 # =========================================================
-# TODAY
+# STEEL FILTER
 # =========================================================
 
-TODAY = today_jalali()
-TODAY_NUMBER = jalali_to_number(TODAY)
+def record_full_text(record):
+    if not isinstance(record, dict):
+        return ""
+
+    values = []
+
+    for key, value in record.items():
+
+        if value is None:
+            continue
+
+        if isinstance(value, (dict, list)):
+            try:
+                values.append(
+                    json.dumps(
+                        value,
+                        ensure_ascii=False
+                    )
+                )
+            except Exception:
+                pass
+        else:
+            values.append(str(value))
+
+    return clean_text(" ".join(values))
+
+
+def is_steel(record):
+    text = record_full_text(record).lower()
+
+    # ابتدا موارد کاملاً غیرمرتبط حذف شوند
+    for keyword in EXCLUDE_KEYWORDS:
+        if keyword.lower() in text:
+            # اگر همزمان عبارت فولادی قوی وجود داشت،
+            # اجازه بدهیم بررسی ادامه پیدا کند.
+            strong_steel = [
+                "میلگرد",
+                "تیرآهن",
+                "شمش",
+                "اسلب",
+                "بیلت",
+                "بلوم",
+                "گندله",
+                "کنسانتره",
+                "آهن اسفنجی",
+                "فولاد"
+            ]
+
+            if not any(k.lower() in text for k in strong_steel):
+                return False
+
+    for keyword in STEEL_KEYWORDS:
+        if keyword.lower() in text:
+            return True
+
+    return False
+
+
+# =========================================================
+# RECORD ID
+# =========================================================
+
+def record_id(record):
+    possible = [
+        "id",
+        "ID",
+        "announcementId",
+        "announcement_id",
+        "offerId",
+        "offer_id",
+        "code",
+        "announcementCode",
+        "announcement_code",
+    ]
+
+    value = find_value(record, possible)
+
+    if value is not None:
+        return str(value)
+
+    # fallback
+    raw = json.dumps(
+        record,
+        ensure_ascii=False,
+        sort_keys=True
+    )
+
+    import hashlib
+
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()[:20]
 
 
 # =========================================================
@@ -179,13 +598,10 @@ TODAY_NUMBER = jalali_to_number(TODAY)
 # =========================================================
 
 def load_history():
-
     if not os.path.exists(HISTORY_FILE):
-
         return set()
 
     try:
-
         with open(
             HISTORY_FILE,
             "r",
@@ -195,469 +611,395 @@ def load_history():
             data = json.load(f)
 
         if isinstance(data, list):
-
-            return set(
-                str(x)
-                for x in data
-            )
-
-        return set()
+            return set(str(x) for x in data)
 
     except Exception as e:
+        print("HISTORY LOAD ERROR:", e)
 
-        print(
-            "HISTORY LOAD ERROR:",
-            repr(e)
-        )
-
-        return set()
+    return set()
 
 
 def save_history(history):
+    # تاریخچه را محدود می‌کنیم تا فایل بی‌نهایت بزرگ نشود
+    items = list(history)
 
-    try:
+    if len(items) > 5000:
+        items = items[-5000:]
 
-        with open(
-            HISTORY_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
+    with open(
+        HISTORY_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-            json.dump(
-                sorted(list(history)),
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-
-        return True
-
-    except Exception as e:
-
-        print(
-            "HISTORY SAVE ERROR:",
-            repr(e)
+        json.dump(
+            items,
+            f,
+            ensure_ascii=False,
+            indent=2
         )
-
-        return False
 
 
 # =========================================================
 # API
 # =========================================================
 
-def get_announcements(
-    page=1,
-    limit=100
-):
+def get_latest_pages():
+
+    print("=" * 70)
+    print("iBROKERS API")
+    print("=" * 70)
+
+    session = requests.Session()
+
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "(Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 "
+            "Chrome/120 Safari/537.36"
+        ),
+        "Accept": "application/json",
+    })
+
+    # -----------------------------------------------------
+    # اول فقط یک درخواست برای فهمیدن TOTAL
+    # -----------------------------------------------------
 
     try:
 
-        response = requests.get(
+        response = session.get(
             API_URL,
             params={
-                "page": page,
-                "limit": limit
+                "page": 1,
+                "limit": 100
             },
-            headers=HEADERS,
             timeout=30
         )
 
         print(
-            f"API PAGE {page} "
-            f"STATUS:",
+            "API PAGE 1 STATUS:",
             response.status_code
         )
 
         response.raise_for_status()
 
-        data = response.json()
-
-        if not data.get("success"):
-
-            print(
-                "API SUCCESS = FALSE"
-            )
-
-            return [], {}
-
-        records = data.get(
-            "data",
-            []
-        )
-
-        pagination = data.get(
-            "pagination",
-            {}
-        )
-
-        return (
-            records,
-            pagination
-        )
+        first_data = response.json()
 
     except Exception as e:
 
+        print("API ERROR:", e)
+
+        return []
+
+    first_records = extract_records(first_data)
+
+    total = extract_total(first_data)
+
+    if not total:
+        # اگر total موجود نبود، حداقل از تعداد رکوردها استفاده کن
+        total = len(first_records)
+
+    print("TOTAL:", total)
+
+    if total <= 0:
+        return []
+
+    total_pages = math.ceil(total / 100)
+
+    print("TOTAL PAGES:", total_pages)
+
+    # -----------------------------------------------------
+    # فقط آخرین صفحات
+    # -----------------------------------------------------
+
+    start_page = max(
+        1,
+        total_pages - LAST_PAGES_TO_CHECK + 1
+    )
+
+    pages = range(
+        total_pages,
+        start_page - 1,
+        -1
+    )
+
+    all_records = []
+
+    for page in pages:
+
+        if page == 1:
+            records = first_records
+
+        else:
+
+            try:
+
+                response = session.get(
+                    API_URL,
+                    params={
+                        "page": page,
+                        "limit": 100
+                    },
+                    timeout=30
+                )
+
+                print(
+                    f"API PAGE {page} STATUS:",
+                    response.status_code
+                )
+
+                response.raise_for_status()
+
+                data = response.json()
+
+                records = extract_records(data)
+
+            except Exception as e:
+
+                print(
+                    f"PAGE {page} ERROR:",
+                    e
+                )
+
+                continue
+
         print(
-            f"API PAGE {page} ERROR:",
-            repr(e)
+            f"PAGE {page}:",
+            len(records),
+            "records"
         )
 
-        return [], {}
+        all_records.extend(records)
+
+    return all_records
 
 
 # =========================================================
-# GET VALUE
+# ANNOUNCEMENT FIELDS
 # =========================================================
 
-def get_value(item, keys):
+def get_product(record):
 
-    for key in keys:
+    fields = [
+        "product",
+        "productName",
+        "product_name",
+        "commodity",
+        "commodityName",
+        "commodity_name",
+        "goods",
+        "goodsName",
+        "goods_name",
+        "title",
+        "name",
+        "itemName",
+        "item_name",
+    ]
 
-        if key in item:
-
-            value = item.get(key)
-
-            if value not in [
-                None,
-                "",
-                "null",
-                "None"
-            ]:
-
-                return value
-
-    return None
-
-
-# =========================================================
-# OFFER DATE
-# =========================================================
-
-def get_offer_date(item):
-
-    return get_value(
-        item,
-        [
-            "date",
-            "offer_date",
-            "announcement_date",
-            "offerDate",
-            "announcementDate",
-            "delivery_date",
-            "deliveryDate",
-            "offer_date_jalali",
-            "offerDateJalali",
-        ]
+    value = find_value(
+        record,
+        fields
     )
 
+    return clean_text(value)
 
-# =========================================================
-# OFFER CODE
-# =========================================================
 
-def get_offer_code(item):
+def get_supplier(record):
 
-    return get_value(
-        item,
-        [
-            "offer_code",
-            "offerCode",
-            "code",
-            "offer_id",
-            "offerId",
-            "id",
-        ]
+    fields = [
+        "seller",
+        "sellerName",
+        "seller_name",
+        "supplier",
+        "supplierName",
+        "supplier_name",
+        "producer",
+        "producerName",
+        "producer_name",
+        "company",
+        "companyName",
+        "company_name",
+        "offerer",
+        "offererName",
+    ]
+
+    value = find_value(
+        record,
+        fields
     )
 
+    return clean_text(value)
 
-# =========================================================
-# PRODUCT
-# =========================================================
 
-def get_product(item):
+def get_volume(record):
 
-    return get_value(
-        item,
-        [
-            "product",
-            "product_name",
-            "commodity",
-            "commodity_name",
-            "title",
-            "name",
-            "goods_name",
-            "productTitle",
-            "productName",
-            "commodityName",
-        ]
+    fields = [
+        "volume",
+        "quantity",
+        "amount",
+        "offerVolume",
+        "offer_volume",
+        "volumeTons",
+        "volume_tons",
+        "quantityTons",
+        "quantity_tons",
+        "amountTons",
+        "amount_tons",
+    ]
+
+    value = find_value(
+        record,
+        fields
     )
 
-
-# =========================================================
-# STEEL WORDS
-# =========================================================
-
-STEEL_WORDS = [
-
-    "میلگرد",
-    "تیرآهن",
-    "تیر آهن",
-    "نبشی",
-    "ناودانی",
-    "ورق",
-    "شمش",
-    "بلوم",
-    "بیلت",
-    "اسلب",
-    "فولاد",
-    "مفتول",
-    "لوله",
-    "ضایعات فلزی",
-    "ضایعات آهن",
-    "ضایعات فولادی",
-    "آهن",
-    "کلاف",
-    "ریل",
-    "چدن",
-
-]
+    return format_number(value)
 
 
-# =========================================================
-# IS STEEL
-# =========================================================
+def get_price(record):
 
-def is_steel(item):
+    fields = [
+        "price",
+        "basePrice",
+        "base_price",
+        "priceBase",
+        "price_base",
+        "basePriceRial",
+        "base_price_rial",
+        "offerPrice",
+        "offer_price",
+    ]
 
-    text = json.dumps(
-        item,
-        ensure_ascii=False
-    ).lower()
+    value = find_value(
+        record,
+        fields
+    )
 
-    for word in STEEL_WORDS:
+    return format_number(value)
 
-        if word.lower() in text:
 
-            return True
+def get_symbol(record):
 
-    return False
+    fields = [
+        "symbol",
+        "ticker",
+        "code",
+        "commodityCode",
+        "commodity_code",
+        "symbolCode",
+        "symbol_code",
+    ]
+
+    value = find_value(
+        record,
+        fields
+    )
+
+    return clean_text(value)
+
+
+def get_delivery_date(record):
+
+    fields = [
+        "deliveryDate",
+        "delivery_date",
+        "delivery",
+        "settlementDate",
+        "settlement_date",
+        "offerDate",
+        "offer_date",
+    ]
+
+    value = find_value(
+        record,
+        fields
+    )
+
+    return clean_text(value)
 
 
 # =========================================================
 # MESSAGE
 # =========================================================
 
-def make_message(item):
+def build_message(record, today):
 
-    product = get_product(item)
+    product = get_product(record)
+    supplier = get_supplier(record)
+    volume = get_volume(record)
+    price = get_price(record)
+    symbol = get_symbol(record)
+    delivery = get_delivery_date(record)
 
-    date = get_offer_date(item)
+    rid = record_id(record)
 
-    offer_code = get_offer_code(item)
+    message = []
 
-    hall = get_value(
-        item,
-        [
-            "hall",
-            "market",
-            "market_name",
-            "marketName",
-            "hall_name",
-            "hallName",
-        ]
-    )
-
-    producer = get_value(
-        item,
-        [
-            "producer",
-            "producer_name",
-            "producerName",
-            "supplier",
-            "supplier_name",
-            "supplierName",
-        ]
-    )
-
-    volume = get_value(
-        item,
-        [
-            "volume",
-            "quantity",
-            "amount",
-            "offer_volume",
-            "offerVolume",
-        ]
-    )
-
-    unit = get_value(
-        item,
-        [
-            "unit",
-            "unit_name",
-            "unitName",
-        ]
-    )
-
-    base_price = get_value(
-        item,
-        [
-            "base_price",
-            "basePrice",
-            "price",
-            "base_price_value",
-            "basePriceValue",
-        ]
-    )
-
-    prepayment = get_value(
-        item,
-        [
-            "prepayment",
-            "prePayment",
-            "prepayment_percent",
-            "prepaymentPercent",
-        ]
-    )
-
-    payment = get_value(
-        item,
-        [
-            "payment",
-            "payment_type",
-            "paymentType",
-            "settlement",
-            "settlement_type",
-            "settlementType",
-        ]
-    )
-
-    contract = get_value(
-        item,
-        [
-            "contract",
-            "contract_type",
-            "contractType",
-        ]
-    )
-
-    delivery = get_value(
-        item,
-        [
-            "delivery",
-            "delivery_place",
-            "deliveryPlace",
-            "delivery_location",
-            "deliveryLocation",
-        ]
-    )
-
-    status = get_value(
-        item,
-        [
-            "status",
-            "offer_status",
-            "offerStatus",
-        ]
-    )
-
-    product = product or "نامشخص"
-    date = date or "نامشخص"
-    offer_code = offer_code or "نامشخص"
-    hall = hall or "نامشخص"
-    producer = producer or "نامشخص"
-    volume = volume or "نامشخص"
-    unit = unit or "نامشخص"
-    base_price = base_price or "نامشخص"
-    prepayment = prepayment or "نامشخص"
-    payment = payment or "نامشخص"
-    contract = contract or "نامشخص"
-    delivery = delivery or "نامشخص"
-    status = status or "نامشخص"
-
-    return f"""🏭 عرضه جدید بورس کالا
-
-📦 محصول: {product}
-
-📅 تاریخ عرضه: {date}
-
-🔢 کد عرضه: {offer_code}
-
-🏛 تالار: {hall}
-
-🏭 عرضه‌کننده: {producer}
-
-📊 حجم عرضه: {volume}
-
-⚖️ واحد: {unit}
-
-💰 قیمت پایه: {base_price}
-
-💳 پیش‌پرداخت: {prepayment}
-
-💵 تسویه: {payment}
-
-📄 قرارداد: {contract}
-
-📍 محل تحویل: {delivery}
-
-📌 وضعیت: {status}
-
-━━━━━━━━━━━━━━
-🏭 آروند آرون استیل
-"""
-
-
-# =========================================================
-# TELEGRAM
-# =========================================================
-
-def send_telegram(message):
-
-    try:
-
-        response = requests.post(
-            TELEGRAM_URL,
-            json={
-                "chat_id": CHANNEL_ID,
-                "text": message
-            },
-            timeout=30
+    message.append("🏭 <b>عرضه جدید بورس کالا</b>")
+    message.append("")
+    
+    if product:
+        message.append(
+            f"📦 <b>کالا:</b> {product}"
         )
 
-        print(
-            "TELEGRAM STATUS:",
-            response.status_code
+    if symbol:
+        message.append(
+            f"🔖 <b>نماد:</b> {symbol}"
         )
 
-        if response.ok:
-
-            result = response.json()
-
-            if result.get("ok"):
-
-                print(
-                    "TELEGRAM OK"
-                )
-
-                return True
-
-        print(
-            "TELEGRAM ERROR:",
-            response.text[:1000]
+    if supplier:
+        message.append(
+            f"🏢 <b>عرضه‌کننده:</b> {supplier}"
         )
 
-        return False
-
-    except Exception as e:
-
-        print(
-            "TELEGRAM ERROR:",
-            repr(e)
+    if volume != "-":
+        message.append(
+            f"⚖️ <b>حجم عرضه:</b> {volume}"
         )
 
-        return False
+    if price != "-":
+        message.append(
+            f"💰 <b>قیمت پایه:</b> {price}"
+        )
+
+    if delivery:
+        message.append(
+            f"📅 <b>تاریخ عرضه/تحویل:</b> {delivery}"
+        )
+
+    message.append("")
+    message.append(
+        f"📆 <b>تاریخ بررسی:</b> {today}"
+    )
+
+    message.append("")
+    message.append(
+        "━━━━━━━━━━━━━━"
+    )
+
+    message.append(
+        "🏭 آروند آرون استیل"
+    )
+
+    message.append(
+        "👤 مدیریت: افشین آورزمانی"
+    )
+
+    message.append(
+        "📞 021-22122239"
+    )
+
+    message.append(
+        "🆔 @arvand_aron_steel"
+    )
+
+    message.append("")
+    message.append(
+        f"🆔 <code>{rid}</code>"
+    )
+
+    return "\n".join(message)
 
 
 # =========================================================
@@ -671,15 +1013,18 @@ def main():
     print("BOURSE BOT START")
     print("=" * 70)
 
-    print(
-        "TODAY:",
-        TODAY
+    jy, jm, jd = today_jalali()
+
+    today = jalali_string(
+        jy,
+        jm,
+        jd
     )
 
-    print(
-        "TODAY NUMBER:",
-        TODAY_NUMBER
-    )
+    today_num = jy * 10000 + jm * 100 + jd
+
+    print("TODAY:", today)
+    print("TODAY NUMBER:", today_num)
 
     history = load_history()
 
@@ -689,140 +1034,105 @@ def main():
     )
 
     # -----------------------------------------------------
-    # دریافت صفحات
+    # دریافت آخرین صفحات
     # -----------------------------------------------------
 
-    all_records = []
-
-    for page in range(
-        1,
-        MAX_PAGES + 1
-    ):
-
-        records, pagination = get_announcements(
-            page=page,
-            limit=100
-        )
-
-        if not records:
-
-            break
-
-        all_records.extend(
-            records
-        )
-
-        print(
-            f"PAGE {page}: "
-            f"{len(records)} records"
-        )
-
-        # اگر صفحه کمتر از 100 رکورد داشت
-        if len(records) < 100:
-
-            break
+    records = get_latest_pages()
 
     print()
     print("=" * 70)
     print(
-        "TOTAL DOWNLOADED:",
-        len(all_records)
+        "LATEST RECORDS DOWNLOADED:",
+        len(records)
     )
     print("=" * 70)
 
+    if not records:
+
+        print(
+            "هیچ رکوردی از API دریافت نشد."
+        )
+
+        return
+
     # -----------------------------------------------------
-    # بررسی عرضه ها
+    # حذف رکوردهای تکراری
+    # -----------------------------------------------------
+
+    unique = {}
+
+    for record in records:
+
+        if not isinstance(record, dict):
+            continue
+
+        rid = record_id(record)
+
+        unique[rid] = record
+
+    records = list(unique.values())
+
+    print(
+        "UNIQUE RECORDS:",
+        len(records)
+    )
+
+    # -----------------------------------------------------
+    # فیلتر تاریخ
     # -----------------------------------------------------
 
     candidates = []
 
-    seen_codes = set()
+    date_found = 0
 
-    for item in all_records:
+    for record in records:
 
-        # فقط فولادی
-        if not is_steel(item):
+        rid = record_id(record)
 
+        record_date = record_date_number(
+            record
+        )
+
+        if record_date is None:
             continue
 
-        offer_code = get_offer_code(
-            item
-        )
+        date_found += 1
 
-        if offer_code is None:
-
+        # فقط امروز و آینده
+        if record_date < today_num:
             continue
 
-        offer_code = str(
-            offer_code
-        )
-
-        # جلوگیری از تکرار
-        if offer_code in seen_codes:
-
-            continue
-
-        seen_codes.add(
-            offer_code
-        )
-
-        offer_date = get_offer_date(
-            item
-        )
-
-        offer_number = jalali_to_number(
-            offer_date
-        )
-
-        # تاریخ نامعتبر
-        if offer_number == 0:
-
-            print(
-                "SKIP INVALID DATE:",
-                offer_code,
-                offer_date
-            )
-
-            continue
-
-        # عرضه قدیمی
-        if offer_number < TODAY_NUMBER:
-
-            print(
-                "SKIP OLD:",
-                offer_code,
-                offer_date
-            )
-
+        # فولادی
+        if not is_steel(record):
             continue
 
         # قبلاً ارسال شده
-        if offer_code in history:
-
-            print(
-                "SKIP SENT:",
-                offer_code
-            )
-
+        if rid in history:
             continue
 
         candidates.append(
-            item
+            (
+                record_date,
+                rid,
+                record
+            )
         )
 
-    # -----------------------------------------------------
-    # مرتب سازی
-    # -----------------------------------------------------
-
+    # جدیدترین‌ها اول
     candidates.sort(
-        key=lambda item:
-        jalali_to_number(
-            get_offer_date(item)
+        key=lambda x: (
+            x[0],
+            x[1]
         )
     )
 
     print()
     print("=" * 70)
+    print(
+        "DATE FIELDS FOUND:",
+        date_found
+    )
+
     print(
         "NEW STEEL CANDIDATES:",
         len(candidates)
@@ -830,30 +1140,19 @@ def main():
     print("=" * 70)
 
     # -----------------------------------------------------
-    # هیچ عرضه جدید
+    # اگر چیزی نیست
     # -----------------------------------------------------
 
     if not candidates:
 
         print(
-            "هیچ عرضه فولادی جدیدی "
-            "برای ارسال وجود ندارد."
+            "هیچ عرضه فولادی جدیدی برای ارسال وجود ندارد."
         )
 
+        # تاریخچه را هم ذخیره کن
+        save_history(history)
+
         return
-
-    # -----------------------------------------------------
-    # فقط MAX_SEND
-    # -----------------------------------------------------
-
-    send_list = candidates[
-        :MAX_SEND
-    ]
-
-    print(
-        "WILL SEND:",
-        len(send_list)
-    )
 
     # -----------------------------------------------------
     # ارسال
@@ -861,37 +1160,30 @@ def main():
 
     sent_count = 0
 
-    for index, item in enumerate(
-        send_list,
-        1
-    ):
+    for record_date, rid, record in candidates:
 
-        offer_code = str(
-            get_offer_code(item)
-        )
+        if sent_count >= MAX_POSTS_PER_RUN:
+            print(
+                "MAX POSTS PER RUN REACHED:",
+                MAX_POSTS_PER_RUN
+            )
+            break
 
-        print()
-        print("=" * 70)
-        print(
-            f"ارسال عرضه "
-            f"{index} از "
-            f"{len(send_list)}"
-        )
-        print(
-            "CODE:",
-            offer_code
-        )
-        print("=" * 70)
-
-        message = make_message(
-            item
-        )
+        product = get_product(record)
 
         print(
-            "\nMESSAGE:"
+            "SENDING:",
+            rid,
+            "|",
+            product,
+            "|",
+            record_date
         )
 
-        print(message)
+        message = build_message(
+            record,
+            today
+        )
 
         success = send_telegram(
             message
@@ -899,40 +1191,44 @@ def main():
 
         if success:
 
-            history.add(
-                offer_code
+            print(
+                "SENT OK:",
+                rid
             )
 
-            save_history(
-                history
-            )
+            history.add(rid)
 
             sent_count += 1
-
-            print(
-                "HISTORY SAVED:",
-                len(history)
-            )
 
         else:
 
             print(
-                "ارسال ناموفق بود."
+                "SEND FAILED:",
+                rid
             )
+
+    # -----------------------------------------------------
+    # Save
+    # -----------------------------------------------------
+
+    save_history(history)
 
     print()
     print("=" * 70)
     print(
-        "FINISHED - SENT:",
+        "SENT THIS RUN:",
         sent_count
     )
+
+    print(
+        "HISTORY TOTAL:",
+        len(history)
+    )
+
+    print("=" * 70)
+    print("BOURSE BOT FINISHED")
     print("=" * 70)
 
 
-# =========================================================
-# START
-# =========================================================
-
 if __name__ == "__main__":
-
     main()
