@@ -23,11 +23,12 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 HISTORY_FILE = "news_history.json"
 
 MAX_POSTS_PER_RUN = 2
+
 MIN_NEWS_SCORE = 10
 
 
 # =========================================================
-# اطلاعات آروند آرون استیل
+# اطلاعات شرکت
 # =========================================================
 
 COMPANY_FOOTER = """
@@ -56,23 +57,23 @@ FEEDS = [
     },
 
     {
-        "name": "دلار در بازار ایران",
+        "name": "دلار و بازار ایران",
         "url": "https://www.tgju.org/rss"
     },
 
     {
-        "name": "طلا ایران و جهان",
-        "url": "https://www.tgju.org/rss"
+        "name": "بنزین و انرژی ایران",
+        "url": "https://www.irna.ir/rss"
     },
 
     {
-        "name": "بنزین ایران",
-        "url": "https://www.tabnak.ir/fa/rss/allnews"
+        "name": "طلا و بازار جهانی",
+        "url": "https://www.tgju.org/rss"
     },
 
     {
         "name": "اخبار جنگ ایران و آمریکا",
-        "url": "https://www.tabnak.ir/fa/rss/allnews"
+        "url": "https://www.irna.ir/rss"
     }
 ]
 
@@ -83,112 +84,52 @@ FEEDS = [
 
 IRAN_ECONOMY_KEYWORDS = [
 
-    "iran",
-    "iranian",
-    "iran's",
-    "tehran",
-    "iran economy",
-    "iranian economy",
-
     "ایران",
     "ایرانی",
     "تهران",
     "اقتصاد ایران",
     "اقتصاد داخلی",
 
-    "central bank of iran",
-    "central bank",
     "بانک مرکزی",
-
-    "currency center",
-    "exchange center",
     "مرکز مبادله",
-
-    "interest rate",
     "نرخ بهره",
-
-    "inflation",
     "تورم",
-
-    "liquidity",
     "نقدینگی",
 
-    "ministry of industry",
-    "ministry of industry mine trade",
     "وزارت صمت",
     "صمت",
 
-    "customs",
     "گمرک",
-
-    "import",
-    "imports",
     "واردات",
-
-    "export",
-    "exports",
     "صادرات",
 
-    "tax",
-    "taxes",
     "مالیات",
-
-    "commodity exchange",
-    "iran commodity exchange",
     "بورس کالا",
-
-    "tehran stock exchange",
-    "stock exchange",
+    "بورس تهران",
     "بورس",
 
-    "electricity shortage",
-    "power shortage",
-    "gas shortage",
-    "power restriction",
-    "gas restriction",
-    "industrial electricity",
-    "industrial gas",
+    "دولت",
+    "مجلس",
+    "وزارت اقتصاد",
 
-    "محدودیت برق",
-    "قطعی برق",
-    "برق صنایع",
-    "محدودیت گاز",
-    "گاز صنایع"
+    "economic",
+    "iran",
+    "iranian",
+    "tehran",
+
+    "central bank",
+    "inflation",
+    "interest rate",
+
+    "iran economy"
 ]
 
 
 # =========================================================
-# فولاد و بازار آهن
+# فولاد و آهن
 # =========================================================
 
 STEEL_KEYWORDS = [
-
-    "steel",
-    "steel price",
-    "steel prices",
-    "steelmaker",
-    "steel mill",
-    "steelmaking",
-    "steel production",
-    "steel output",
-    "steel exports",
-    "steel imports",
-
-    "iron ore",
-    "iron ore price",
-    "iron ore prices",
-
-    "rebar",
-    "billet",
-    "slab",
-    "scrap steel",
-    "steel scrap",
-
-    "coking coal",
-    "coke",
-    "hot rolled",
-    "cold rolled",
-    "stainless steel",
 
     "فولاد",
     "بازار فولاد",
@@ -200,6 +141,7 @@ STEEL_KEYWORDS = [
     "آهن",
     "بازار آهن",
     "قیمت آهن",
+
     "میلگرد",
     "شمش",
     "سنگ آهن",
@@ -207,9 +149,28 @@ STEEL_KEYWORDS = [
     "قراضه",
     "کک",
     "زغال سنگ",
+
     "ورق",
     "تیرآهن",
-    "آهن اسفنجی"
+    "آهن اسفنجی",
+
+    "steel",
+    "steel price",
+    "steel prices",
+    "steel production",
+    "steel exports",
+    "steel imports",
+
+    "iron ore",
+    "iron ore price",
+
+    "rebar",
+    "billet",
+    "slab",
+    "scrap steel",
+    "coking coal",
+    "hot rolled",
+    "cold rolled"
 ]
 
 
@@ -219,105 +180,23 @@ STEEL_KEYWORDS = [
 
 CURRENCY_KEYWORDS = [
 
-    "dollar",
-    "usd",
-    "rial",
-    "iranian rial",
-    "exchange rate",
-    "currency",
-
     "دلار",
     "نرخ دلار",
+    "دلار آزاد",
+    "دلار بازار آزاد",
     "ارز",
     "نرخ ارز",
     "ریال",
-
     "تتر",
-    "usdt",
-    "سکه",
-    "طلا",
-    "طلای ۱۸ عیار"
-]
+    "مرکز مبادله",
+    "دلار توافقی",
 
-
-# =========================================================
-# تحریم و تجارت مرتبط با ایران
-# =========================================================
-
-SANCTIONS_KEYWORDS = [
-
-    "sanction",
-    "sanctions",
-    "iran sanctions",
-    "sanctions on iran",
-
-    "tariff",
-    "tariffs",
-    "trade war",
-    "export ban",
-    "import ban",
-    "embargo",
-
-    "تحریم",
-    "تحریم‌ها",
-    "تحریم ایران",
-    "تعرفه",
-    "محدودیت صادرات",
-    "محدودیت واردات"
-]
-
-
-# =========================================================
-# جنگ ایران و آمریکا
-# =========================================================
-
-WAR_KEYWORDS = [
-
-    "iran war",
-    "iran us war",
-    "iran u.s. war",
-    "iran united states",
-    "iran america",
-    "iran american",
-    "iran us",
-    "iran u.s.",
-
-    "iran attack",
-    "iran attacks",
-    "iran strike",
-    "iran strikes",
-
-    "us attack iran",
-    "us strikes iran",
-    "america attack iran",
-    "american attack iran",
-
-    "missile",
-    "missiles",
-    "military",
-    "military strike",
-    "airstrike",
-    "air strikes",
-    "attack",
-    "attacks",
-    "conflict",
-
-    "حمله به ایران",
-    "حمله آمریکا",
-    "حمله امریکا",
-    "ایران و آمریکا",
-    "ایران و امریکا",
-    "جنگ ایران و آمریکا",
-    "جنگ ایران و امریکا",
-    "درگیری ایران و آمریکا",
-    "درگیری ایران و امریکا",
-    "حمله",
-    "موشک",
-    "موشکی",
-    "حمله هوایی",
-    "حملات هوایی",
-    "درگیری",
-    "جنگ"
+    "usd",
+    "dollar",
+    "iranian rial",
+    "exchange rate",
+    "currency",
+    "tether"
 ]
 
 
@@ -327,27 +206,24 @@ WAR_KEYWORDS = [
 
 FUEL_KEYWORDS = [
 
-    "gasoline",
-    "gasoline price",
-    "petrol",
-    "fuel",
-    "fuel price",
-    "fuel prices",
-
     "بنزین",
     "قیمت بنزین",
-    "سوخت",
-    "قیمت سوخت",
     "سهمیه بنزین",
     "کارت سوخت",
-    "نرخ بنزین",
-
-    "oil",
-    "crude",
-    "energy",
+    "سوخت",
+    "گازوئیل",
     "نفت",
-    "نفت خام",
-    "انرژی"
+    "پمپ بنزین",
+    "جایگاه سوخت",
+
+    "بنزین ایران",
+    "سوخت ایران",
+
+    "gasoline",
+    "fuel",
+    "iran fuel",
+    "iran gasoline",
+    "petrol"
 ]
 
 
@@ -357,23 +233,82 @@ FUEL_KEYWORDS = [
 
 GOLD_KEYWORDS = [
 
-    "gold",
-    "gold price",
-    "gold prices",
-    "gold market",
-    "gold futures",
-
     "طلا",
-    "قیمت طلا",
     "طلای جهانی",
     "طلای ۱۸ عیار",
     "طلای آبشده",
     "سکه",
     "سکه امامی",
+    "اونس طلا",
 
-    "ons",
-    "ounce",
-    "اونس"
+    "gold",
+    "gold price",
+    "gold prices",
+    "gold ounce",
+    "xau"
+]
+
+
+# =========================================================
+# جنگ ایران و آمریکا
+# =========================================================
+
+WAR_KEYWORDS = [
+
+    "ایران و آمریکا",
+    "ایران آمریکا",
+    "جنگ ایران و آمریکا",
+    "درگیری ایران و آمریکا",
+    "حمله آمریکا به ایران",
+    "حمله ایران به آمریکا",
+
+    "ایران و اسرائیل",
+    "ایران اسرائیل",
+    "جنگ ایران و اسرائیل",
+    "درگیری ایران و اسرائیل",
+
+    "آمریکا",
+    "واشنگتن",
+    "پنتاگون",
+    "حمله",
+    "حملات",
+    "موشک",
+    "موشکی",
+    "درگیری نظامی",
+    "تنش نظامی",
+    "تنش منطقه‌ای",
+
+    "iran usa",
+    "iran us",
+    "iran united states",
+    "iran war",
+    "iran conflict",
+    "iran israel",
+    "israel iran",
+    "us iran",
+    "military conflict",
+    "attack",
+    "missile",
+    "pentagon"
+]
+
+
+# =========================================================
+# تحریم
+# =========================================================
+
+SANCTIONS_KEYWORDS = [
+
+    "تحریم",
+    "تحریم‌ها",
+    "تحریم ایران",
+    "تحریم آمریکا",
+    "رفع تحریم",
+
+    "sanction",
+    "sanctions",
+    "iran sanctions",
+    "us sanctions"
 ]
 
 
@@ -383,31 +318,30 @@ GOLD_KEYWORDS = [
 
 GLOBAL_KEYWORDS = [
 
-    "china",
-    "chinese",
-    "beijing",
-    "china steel",
-    "china steel demand",
-
     "چین",
     "فولاد چین",
+    "اقتصاد چین",
+    "تقاضای چین",
 
-    "commodity",
-    "commodities",
+    "china",
+    "chinese",
+    "china steel",
 
-    "copper",
+    "نفت",
+    "انرژی",
+    "کامودیتی",
     "مس",
 
-    "stimulus",
-    "china stimulus",
-
-    "تحریک اقتصادی",
-    "محرک اقتصادی"
+    "oil",
+    "energy",
+    "commodity",
+    "commodities",
+    "copper"
 ]
 
 
 # =========================================================
-# کلمات عمومی ضعیف
+# کلمات ضعیف
 # =========================================================
 
 WEAK_KEYWORDS = [
@@ -416,13 +350,10 @@ WEAK_KEYWORDS = [
     "economic",
     "market",
     "markets",
-    "metal",
-    "metals",
     "industry",
     "industrial",
     "business",
     "finance",
-    "financial",
 
     "اقتصاد",
     "بازار",
@@ -437,10 +368,7 @@ WEAK_KEYWORDS = [
 
 def load_history():
 
-    if not os.path.exists(
-        HISTORY_FILE
-    ):
-
+    if not os.path.exists(HISTORY_FILE):
         return []
 
     try:
@@ -515,9 +443,7 @@ def clean_text(text):
 
 def normalize_text(text):
 
-    text = clean_text(
-        text
-    ).lower()
+    text = clean_text(text).lower()
 
     text = text.replace(
         "‌",
@@ -540,28 +466,20 @@ def normalize_text(text):
         text
     )
 
-    return text
+    return text.strip()
 
 
 # =========================================================
 # بررسی کلمه
 # =========================================================
 
-def contains_keyword(
-    text,
-    keyword
-):
+def contains_keyword(text, keyword):
 
-    text = normalize_text(
-        text
-    )
+    text = normalize_text(text)
 
-    keyword = normalize_text(
-        keyword
-    )
+    keyword = normalize_text(keyword)
 
     if not keyword:
-
         return False
 
     if " " in keyword:
@@ -578,10 +496,7 @@ def contains_keyword(
 # پیدا کردن کلمات
 # =========================================================
 
-def find_hits(
-    text,
-    keywords
-):
+def find_hits(text, keywords):
 
     hits = []
 
@@ -592,15 +507,13 @@ def find_hits(
             keyword
         ):
 
-            hits.append(
-                keyword
-            )
+            hits.append(keyword)
 
     return hits
 
 
 # =========================================================
-# امتیاز خبر
+# امتیازدهی خبر
 # =========================================================
 
 def score_news(
@@ -615,41 +528,39 @@ def score_news(
         description
     )
 
-    score = 0
-
-    iran_hits = find_hits(
+    iran = find_hits(
         text,
         IRAN_ECONOMY_KEYWORDS
     )
 
-    steel_hits = find_hits(
+    steel = find_hits(
         text,
         STEEL_KEYWORDS
     )
 
-    currency_hits = find_hits(
+    currency = find_hits(
         text,
         CURRENCY_KEYWORDS
     )
 
-    sanctions_hits = find_hits(
-        text,
-        SANCTIONS_KEYWORDS
-    )
-
-    war_hits = find_hits(
-        text,
-        WAR_KEYWORDS
-    )
-
-    fuel_hits = find_hits(
+    fuel = find_hits(
         text,
         FUEL_KEYWORDS
     )
 
-    gold_hits = find_hits(
+    gold = find_hits(
         text,
         GOLD_KEYWORDS
+    )
+
+    war = find_hits(
+        text,
+        WAR_KEYWORDS
+    )
+
+    sanctions = find_hits(
+        text,
+        SANCTIONS_KEYWORDS
     )
 
     global_hits = find_hits(
@@ -657,235 +568,140 @@ def score_news(
         GLOBAL_KEYWORDS
     )
 
-    weak_hits = find_hits(
+    weak = find_hits(
         text,
         WEAK_KEYWORDS
     )
 
-
-    # اقتصاد ایران
-    score += (
-        len(iran_hits) * 5
-    )
+    score = 0
 
 
     # فولاد
-    score += (
-        len(steel_hits) * 4
-    )
+    score += len(steel) * 6
 
 
-    # ارز
-    score += (
-        len(currency_hits) * 3
-    )
+    # اقتصاد ایران
+    score += len(iran) * 5
 
 
-    # تحریم
-    score += (
-        len(sanctions_hits) * 3
-    )
-
-
-    # جنگ ایران آمریکا
-    score += (
-        len(war_hits) * 5
-    )
+    # دلار
+    score += len(currency) * 5
 
 
     # بنزین
-    score += (
-        len(fuel_hits) * 4
-    )
+    score += len(fuel) * 5
 
 
     # طلا
-    score += (
-        len(gold_hits) * 4
-    )
+    score += len(gold) * 5
+
+
+    # جنگ
+    score += len(war) * 6
+
+
+    # تحریم
+    score += len(sanctions) * 4
 
 
     # بازار جهانی
-    score += (
-        len(global_hits) * 2
-    )
+    score += len(global_hits) * 2
 
 
-    # ایران + فولاد
-    if (
-        iran_hits
-        and steel_hits
-    ):
+    # -----------------------------------------------------
+    # ترکیب‌های مهم
+    # -----------------------------------------------------
 
-        score += 10
-
-
-    # ایران + ارز
-    if (
-        iran_hits
-        and currency_hits
-    ):
-
-        score += 8
-
-
-    # ایران + تحریم
-    if (
-        iran_hits
-        and sanctions_hits
-    ):
-
-        score += 8
-
-
-    # ایران + جنگ
-    if (
-        iran_hits
-        and war_hits
-    ):
-
+    if iran and steel:
         score += 12
 
-
-    # ایران + بنزین
-    if (
-        iran_hits
-        and fuel_hits
-    ):
-
+    if iran and currency:
         score += 10
 
+    if iran and fuel:
+        score += 10
 
-    # ایران + طلا
-    if (
-        iran_hits
-        and gold_hits
-    ):
+    if iran and gold:
+        score += 8
 
+    if iran and war:
+        score += 15
+
+    if iran and sanctions:
+        score += 10
+
+    if steel and currency:
+        score += 8
+
+    if steel and fuel:
+        score += 6
+
+    if steel and gold:
+        score += 5
+
+    if global_hits and steel:
+        score += 7
+
+    if war and sanctions:
         score += 8
 
 
-    # چین + فولاد
-    if (
-        global_hits
-        and steel_hits
-    ):
+    # -----------------------------------------------------
+    # منابع تخصصی
+    # -----------------------------------------------------
 
-        score += 6
-
-
-    # انرژی با ایران یا فولاد
-    energy_hits = find_hits(
-        text,
-        [
-            "oil",
-            "crude",
-            "energy",
-            "نفت",
-            "انرژی"
-        ]
-    )
-
-    if (
-        energy_hits
-        and (
-            iran_hits
-            or steel_hits
-        )
-    ):
-
+    if source == "فولادبان":
         score += 5
 
-
-    # منابع تخصصی
     if source in [
-        "فولادبان",
-        "اخبار اقتصادی داخلی",
-        "دلار در بازار ایران",
-        "طلا ایران و جهان"
+        "دلار و بازار ایران",
+        "طلا و بازار جهانی"
     ]:
+        score += 4
 
-        score += 2
 
+    # -----------------------------------------------------
+    # خبرهای کاملاً عمومی حذف شوند
+    # -----------------------------------------------------
 
-    # خبر عمومی بدون ارتباط
     if (
-        not iran_hits
-        and not steel_hits
-        and not war_hits
-        and not fuel_hits
-        and not gold_hits
+        not iran
+        and not steel
+        and not currency
+        and not fuel
+        and not gold
+        and not war
+        and not sanctions
     ):
 
-        score -= 12
+        score -= 20
 
 
-    # فقط کلمات ضعیف
     if (
-        weak_hits
-        and not iran_hits
-        and not steel_hits
-        and not currency_hits
-        and not sanctions_hits
-        and not war_hits
-        and not fuel_hits
-        and not gold_hits
+        weak
+        and not iran
+        and not steel
+        and not currency
+        and not fuel
+        and not gold
+        and not war
+        and not sanctions
     ):
 
         score = 0
 
 
     return {
-
-        "score":
-            score,
-
-        "iran_hits":
-            iran_hits,
-
-        "steel_hits":
-            steel_hits,
-
-        "currency_hits":
-            currency_hits,
-
-        "sanctions_hits":
-            sanctions_hits,
-
-        "war_hits":
-            war_hits,
-
-        "fuel_hits":
-            fuel_hits,
-
-        "gold_hits":
-            gold_hits,
-
-        "global_hits":
-            global_hits
+        "score": score,
+        "iran": iran,
+        "steel": steel,
+        "currency": currency,
+        "fuel": fuel,
+        "gold": gold,
+        "war": war,
+        "sanctions": sanctions,
+        "global": global_hits
     }
-
-
-# =========================================================
-# مرتبط بودن
-# =========================================================
-
-def is_relevant(
-    title,
-    description,
-    source
-):
-
-    analysis = score_news(
-        title,
-        description,
-        source
-    )
-
-    return (
-        analysis["score"]
-        >= MIN_NEWS_SCORE
-    )
 
 
 # =========================================================
@@ -906,14 +722,12 @@ def make_news_id(
 
     return (
         "title:" +
-        normalize_text(
-            title
-        )
+        normalize_text(title)
     )
 
 
 # =========================================================
-# خبر تکراری
+# تشخیص خبر مشابه
 # =========================================================
 
 def is_duplicate_title(
@@ -922,13 +736,10 @@ def is_duplicate_title(
 ):
 
     new_words = set(
-        normalize_text(
-            title
-        ).split()
+        normalize_text(title).split()
     )
 
     if len(new_words) < 5:
-
         return False
 
 
@@ -941,32 +752,25 @@ def is_duplicate_title(
 
             continue
 
-
         if not old_id.startswith(
             "title:"
         ):
 
             continue
 
-
         old_title = old_id[6:]
-
 
         old_words = set(
             old_title.split()
         )
 
-
         if not old_words:
-
             continue
-
 
         common = len(
             new_words &
             old_words
         )
-
 
         similarity = (
             common /
@@ -975,7 +779,6 @@ def is_duplicate_title(
                 len(old_words)
             )
         )
-
 
         if similarity >= 0.70:
 
@@ -1001,13 +804,11 @@ def get_news():
             feed_info["name"]
         )
 
-
         try:
 
             feed = feedparser.parse(
                 feed_info["url"]
             )
-
 
             if not feed.entries:
 
@@ -1019,7 +820,7 @@ def get_news():
                 continue
 
 
-            for item in feed.entries[:30]:
+            for item in feed.entries[:40]:
 
                 title = clean_text(
                     item.get(
@@ -1028,14 +829,12 @@ def get_news():
                     )
                 )
 
-
                 description = clean_text(
                     item.get(
                         "summary",
                         ""
                     )
                 )
-
 
                 link = item.get(
                     "link",
@@ -1044,7 +843,6 @@ def get_news():
 
 
                 if not title:
-
                     continue
 
 
@@ -1080,7 +878,6 @@ def get_news():
 
 
                 if news_id in history:
-
                     continue
 
 
@@ -1110,15 +907,18 @@ def get_news():
                         news_id,
 
                     "score":
-                        analysis["score"]
+                        analysis["score"],
+
+                    "analysis":
+                        analysis
+
                 })
 
 
         except Exception as e:
 
             print(
-                f"Feed error "
-                f"{feed_info['name']}: {e}"
+                f"Feed error {feed_info['name']}: {e}"
             )
 
 
@@ -1133,34 +933,63 @@ def get_news():
 
 
 # =========================================================
-# ترجمه تیتر
+# تشخیص ایرانی بودن خبر
 # =========================================================
 
-def translate_title(
-    title
-):
+def is_iranian_news(news):
 
-    # اگر تیتر فارسی است،
-    # اصلاً ترجمه نکن.
-
-    persian_chars = len(
-        re.findall(
-            r"[\u0600-\u06FF]",
-            title
-        )
+    text = (
+        news["title"] +
+        " " +
+        news["description"]
     )
 
-    if persian_chars >= 3:
+    analysis = news["analysis"]
 
-        return title
+    if (
+        analysis["iran"]
+        or analysis["fuel"]
+        or analysis["currency"]
+        or analysis["war"]
+    ):
 
+        return True
+
+
+    iran_words = [
+
+        "ایران",
+        "ایرانی",
+        "تهران",
+        "دولت",
+        "وزارت",
+        "مجلس",
+
+        "iran",
+        "iranian",
+        "tehran"
+    ]
+
+    return any(
+        contains_keyword(
+            text,
+            word
+        )
+        for word in iran_words
+    )
+
+
+# =========================================================
+# ترجمه فقط برای اخبار خارجی
+# =========================================================
+
+def translate_title(title):
 
     try:
 
         encoded_title = quote(
             title
         )
-
 
         url = (
             "https://translate.googleapis.com/"
@@ -1172,23 +1001,17 @@ def translate_title(
             f"&q={encoded_title}"
         )
 
-
         response = requests.get(
             url,
             timeout=20
         )
 
-
         if response.status_code != 200:
-
             return title
-
 
         data = response.json()
 
-
         translated_parts = []
-
 
         for part in data[0]:
 
@@ -1201,24 +1024,18 @@ def translate_title(
                     part[0]
                 )
 
-
         translated = "".join(
             translated_parts
         )
-
 
         translated = clean_text(
             translated
         )
 
-
         if not translated:
-
             return title
 
-
         return translated
-
 
     except Exception as e:
 
@@ -1235,9 +1052,12 @@ def translate_title(
 # =========================================================
 
 def impact_analysis(
-    title,
-    description
+    news
 ):
+
+    title = news["title"]
+
+    description = news["description"]
 
     text = normalize_text(
         title +
@@ -1245,76 +1065,52 @@ def impact_analysis(
         description
     )
 
+    analysis = news["analysis"]
+
 
     positive_words = [
-
-        "steel price rise",
-        "steel prices rise",
-        "steel prices increase",
-
-        "iron ore rise",
-        "iron ore prices rise",
-
-        "strong demand",
-        "demand increase",
-
-        "production cut",
-        "supply cut",
-
-        "stimulus",
-        "china stimulus",
-
-        "tariff",
-        "sanction",
-        "sanctions",
-
-        "oil rise",
-        "oil prices rise",
-
-        "dollar falls",
-        "weaker dollar",
-        "weak dollar",
-
-        "export restriction",
 
         "افزایش قیمت",
         "افزایش تقاضا",
         "کاهش تولید",
         "کاهش عرضه",
-        "محرک اقتصادی",
-        "رشد قیمت"
+        "رشد قیمت",
+        "افزایش نرخ",
+        "افزایش دلار",
+        "افزایش طلا",
+
+        "قیمت صعود کرد",
+        "رشد کرد",
+        "صعود",
+
+        "stimulus",
+        "strong demand",
+        "production cut",
+        "supply cut",
+        "price rise",
+        "prices rise"
     ]
 
 
     negative_words = [
 
-        "steel price fall",
-        "steel prices fall",
-        "steel prices decrease",
-
-        "iron ore fall",
-        "iron ore prices fall",
-
-        "weak demand",
-        "demand falls",
-
-        "oversupply",
-        "production increase",
-
-        "recession",
-
-        "dollar rises",
-        "strong dollar",
-
-        "china property slump",
-        "construction slowdown",
-
         "کاهش قیمت",
         "کاهش تقاضا",
         "افزایش تولید",
         "مازاد عرضه",
-        "رکود",
-        "افت قیمت"
+        "افت قیمت",
+        "کاهش نرخ",
+        "کاهش دلار",
+        "افت طلا",
+
+        "قیمت کاهش یافت",
+        "افت کرد",
+
+        "weak demand",
+        "oversupply",
+        "production increase",
+        "price fall",
+        "prices fall"
     ]
 
 
@@ -1336,10 +1132,29 @@ def impact_analysis(
     )
 
 
+    # جنگ و بنزین و اقتصاد
     if (
-        positive
-        and not negative
+        analysis["war"]
+        or analysis["fuel"]
+        or analysis["iran"]
     ):
+
+        if positive and not negative:
+
+            return (
+                "🟢 اثر احتمالی بر بازار: افزایشی\n"
+                "این خبر می‌تواند بر انتظارات بازار اثر افزایشی داشته باشد."
+            )
+
+        if negative and not positive:
+
+            return (
+                "🔴 اثر احتمالی بر بازار: کاهشی\n"
+                "این خبر می‌تواند بر انتظارات بازار اثر کاهشی داشته باشد."
+            )
+
+
+    if positive and not negative:
 
         return (
             "🟢 اثر احتمالی بر بازار فولاد: افزایش\n"
@@ -1347,10 +1162,7 @@ def impact_analysis(
         )
 
 
-    if (
-        negative
-        and not positive
-    ):
+    if negative and not positive:
 
         return (
             "🔴 اثر احتمالی بر بازار فولاد: کاهش\n"
@@ -1359,102 +1171,22 @@ def impact_analysis(
 
 
     return (
-        "🟡 اثر احتمالی بر بازار فولاد: خنثی / نامشخص\n"
-        "اثر مستقیم این خبر بر بازار فولاد فعلاً مشخص نیست."
+        "🟡 اثر احتمالی بر بازار: خنثی / نامشخص\n"
+        "اثر مستقیم این خبر بر بازار فعلاً مشخص نیست."
     )
 
 
 # =========================================================
-# عکس
+# ساخت جستجوی عکس
 # =========================================================
 
-def make_image_query(
-    news
-):
+def make_image_query(news):
 
-    title = news[
-        "title"
-    ].lower()
-
-    description = news[
-        "description"
-    ].lower()
-
-    text = (
-        title +
+    text = normalize_text(
+        news["title"] +
         " " +
-        description
+        news["description"]
     )
-
-
-    if (
-        "iron ore" in text
-        or "سنگ آهن" in text
-        or "سنگ‌آهن" in text
-    ):
-
-        return (
-            "iron ore mining "
-            "iron ore industry"
-        )
-
-
-    if (
-        "rebar" in text
-        or "میلگرد" in text
-    ):
-
-        return (
-            "steel rebar "
-            "construction steel"
-        )
-
-
-    if (
-        "billet" in text
-        or "شمش" in text
-    ):
-
-        return (
-            "steel billet "
-            "steel factory"
-        )
-
-
-    if (
-        "scrap" in text
-        or "قراضه" in text
-    ):
-
-        return (
-            "steel scrap "
-            "metal recycling"
-        )
-
-
-    if (
-        "gold" in text
-        or "طلا" in text
-        or "سکه" in text
-    ):
-
-        return (
-            "gold market "
-            "gold trading"
-        )
-
-
-    if (
-        "dollar" in text
-        or "usd" in text
-        or "دلار" in text
-        or "ارز" in text
-    ):
-
-        return (
-            "US dollar currency "
-            "financial market"
-        )
 
 
     if (
@@ -1464,92 +1196,97 @@ def make_image_query(
     ):
 
         return (
-            "gasoline fuel "
-            "Iran oil industry"
+            "Iran gasoline fuel station"
         )
 
 
     if (
-        "sanction" in text
-        or "تحریم" in text
+        "طلا" in text
+        or "gold" in text
+        or "سکه" in text
     ):
 
         return (
-            "international trade "
-            "global economy"
+            "gold financial market"
         )
 
 
     if (
-        "oil" in text
-        or "crude" in text
-        or "نفت" in text
+        "دلار" in text
+        or "usd" in text
+        or "تتر" in text
     ):
 
         return (
-            "oil refinery "
-            "oil market"
+            "US dollar currency market"
         )
 
 
     if (
-        "missile" in text
-        or "attack" in text
-        or "جنگ" in text
+        "جنگ" in text
         or "حمله" in text
         or "موشک" in text
+        or "war" in text
+        or "missile" in text
     ):
 
         return (
-            "Iran Middle East "
-            "military news"
+            "Iran military conflict Middle East"
         )
 
 
     if (
-        "china" in text
-        or "چین" in text
+        "سنگ آهن" in text
+        or "iron ore" in text
     ):
 
         return (
-            "China steel industry "
-            "Chinese factory"
+            "iron ore mining steel industry"
         )
 
 
     if (
-        "iran" in text
-        or "ایران" in text
-        or "tehran" in text
-        or "تهران" in text
+        "میلگرد" in text
+        or "rebar" in text
     ):
 
         return (
-            "Iran economy "
-            "Tehran financial market"
+            "steel rebar construction"
+        )
+
+
+    if (
+        "شمش" in text
+        or "billet" in text
+    ):
+
+        return (
+            "steel billet factory"
+        )
+
+
+    if (
+        "فولاد" in text
+        or "steel" in text
+    ):
+
+        return (
+            "steel factory steel industry"
         )
 
 
     return (
-        "steel industry "
-        "steel factory "
-        "metal market"
+        "Iran economy financial market"
     )
 
 
 # =========================================================
-# دریافت عکس Pexels
+# دریافت عکس
 # =========================================================
 
-def get_image(
-    query
-):
+def get_image(query):
 
     if not PEXELS_API_KEY:
-
-        print(
-            "Pexels API key not configured."
-        )
 
         return None
 
@@ -1557,7 +1294,6 @@ def get_image(
     try:
 
         headers = {
-
             "Authorization":
                 PEXELS_API_KEY
         }
@@ -1579,6 +1315,7 @@ def get_image(
 
                 "orientation":
                     "landscape"
+
             },
 
             timeout=20
@@ -1587,34 +1324,22 @@ def get_image(
 
         if response.status_code != 200:
 
-            print(
-                "Pexels status:",
-                response.status_code
-            )
-
             return None
 
 
-        data = response.json()
-
-
-        photos = data.get(
+        photos = response.json().get(
             "photos",
             []
         )
 
 
         if not photos:
-
             return None
 
 
-        selected_photo = random.choice(
+        return random.choice(
             photos
-        )
-
-
-        return selected_photo.get(
+        ).get(
             "src",
             {}
         ).get(
@@ -1633,12 +1358,10 @@ def get_image(
 
 
 # =========================================================
-# ارسال پیام
+# ارسال متن
 # =========================================================
 
-def send_message(
-    text
-):
+def send_message(text):
 
     try:
 
@@ -1655,7 +1378,8 @@ def send_message(
                     text,
 
                 "disable_web_page_preview":
-                    False
+                    True
+
             },
 
             timeout=30
@@ -1664,8 +1388,7 @@ def send_message(
 
         print(
             "Telegram:",
-            response.status_code,
-            response.text[:500]
+            response.status_code
         )
 
 
@@ -1707,6 +1430,7 @@ def send_photo(
 
                 "caption":
                     caption
+
             },
 
             timeout=40
@@ -1715,8 +1439,7 @@ def send_photo(
 
         print(
             "Telegram photo:",
-            response.status_code,
-            response.text[:500]
+            response.status_code
         )
 
 
@@ -1737,59 +1460,50 @@ def send_photo(
 # ساخت پست
 # =========================================================
 
-def make_post(
-    news
-):
+def make_post(news):
 
-    source = news[
-        "source"
-    ]
+    source = news["source"]
 
-    original_title = news[
-        "title"
-    ]
+    original_title = news["title"]
 
 
-    translated = translate_title(
-        original_title
-    )
+    # خبر ایرانی ترجمه نشود
+    if is_iranian_news(news):
+
+        title_text = original_title
+
+    else:
+
+        title_text = translate_title(
+            original_title
+        )
 
 
     impact = impact_analysis(
-
-        original_title,
-
-        news[
-            "description"
-        ]
-
+        news
     )
 
 
-    post = f"""
-📰 خبر اقتصادی و بازار
+    post = (
+        "📰 <b>خبر اقتصادی و بازار</b>\n\n"
 
-📰 منبع:
-{source}
+        f"📰 <b>منبع:</b>\n"
+        f"{source}\n\n"
 
-🔹 خبر:
-{original_title}
+        f"🔹 <b>خبر:</b>\n"
+        f"{title_text}\n\n"
 
-🇮🇷 ترجمه تیتر:
-{translated}
+        f"{impact}\n\n"
 
-{impact}
-"""
-
-
-    post += COMPANY_FOOTER
+        + COMPANY_FOOTER
+    )
 
 
     return post.strip()
 
 
 # =========================================================
-# MAIN
+# اجرای اصلی
 # =========================================================
 
 def main():
@@ -1819,7 +1533,7 @@ def main():
     if not news_items:
 
         print(
-            "No high-quality relevant news."
+            "No relevant news found."
         )
 
         return
@@ -1863,9 +1577,7 @@ def main():
         if image_url:
 
             success = send_photo(
-
                 image_url,
-
                 post
             )
 
