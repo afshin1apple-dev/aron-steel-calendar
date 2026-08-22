@@ -1,6 +1,6 @@
 import os
+import json
 import requests
-from datetime import datetime
 
 API_URL = "https://www.ibrokers.ir/api/announcements"
 
@@ -14,49 +14,89 @@ HEADERS = {
     "Accept": "application/json",
 }
 
+
 # =========================================================
-# گرفتن اطلاعات بورس کالا
+# دریافت اطلاعات از iBROKERS
 # =========================================================
 
 def get_announcements(limit=100):
+
     try:
-        r = requests.get(
+
+        response = requests.get(
             API_URL,
-            params={"page": 1, "limit": limit},
+            params={
+                "page": 1,
+                "limit": limit
+            },
             headers=HEADERS,
             timeout=30
         )
 
-        r.raise_for_status()
-        data = r.json()
+        print("=" * 70)
+        print("iBROKERS API")
+        print("=" * 70)
+
+        print("STATUS:", response.status_code)
+        print("URL:", response.url)
+
+        response.raise_for_status()
+
+        data = response.json()
 
         if not data.get("success"):
-            print("API success=False")
+            print("API SUCCESS = FALSE")
+            print(json.dumps(data, ensure_ascii=False, indent=2))
             return []
 
         records = data.get("data", [])
 
-        print("=" * 60)
-        print("iBROKERS")
-        print("STATUS:", r.status_code)
-        print("TOTAL:", data.get("pagination", {}).get("total"))
+        print("TOTAL:",
+              data.get("pagination", {}).get("total"))
+
         print("RECORDS:", len(records))
-        print("=" * 60)
+
+        # =====================================================
+        # نمایش ساختار واقعی رکورد
+        # =====================================================
+
+        if records:
+
+            print("\n" + "=" * 70)
+            print("FIRST RECORD - REAL API STRUCTURE")
+            print("=" * 70)
+
+            print(
+                json.dumps(
+                    records[0],
+                    ensure_ascii=False,
+                    indent=2
+                )
+            )
+
+            print("=" * 70)
 
         return records
 
     except Exception as e:
-        print("API ERROR:", e)
+
+        print("=" * 70)
+        print("API ERROR")
+        print("=" * 70)
+
+        print(repr(e))
+
         return []
 
 
 # =========================================================
-# تشخیص محصولات فولادی
+# تشخیص محصول فولادی
 # =========================================================
 
 STEEL_WORDS = [
     "میلگرد",
     "تیرآهن",
+    "تیر آهن",
     "نبشی",
     "ناودانی",
     "ورق",
@@ -72,9 +112,14 @@ STEEL_WORDS = [
 
 
 def is_steel(item):
-    text = str(item).lower()
+
+    text = json.dumps(
+        item,
+        ensure_ascii=False
+    ).lower()
 
     for word in STEEL_WORDS:
+
         if word.lower() in text:
             return True
 
@@ -82,59 +127,139 @@ def is_steel(item):
 
 
 # =========================================================
-# تبدیل اطلاعات به پیام تلگرام
+# پیدا کردن مقدار از بین کلیدهای احتمالی
+# =========================================================
+
+def get_value(item, keys):
+
+    for key in keys:
+
+        if key in item:
+
+            value = item.get(key)
+
+            if value not in [None, "", "null"]:
+
+                return value
+
+    return None
+
+
+# =========================================================
+# ساخت پیام
 # =========================================================
 
 def make_message(item):
 
-    product = (
-        item.get("product")
-        or item.get("product_name")
-        or item.get("commodity")
-        or item.get("title")
-        or "نامشخص"
+    product = get_value(
+        item,
+        [
+            "product",
+            "product_name",
+            "commodity",
+            "commodity_name",
+            "title",
+            "name",
+            "goods_name",
+            "productTitle",
+            "productName",
+            "commodityName",
+        ]
     )
 
-    date = (
-        item.get("date")
-        or item.get("offer_date")
-        or item.get("delivery_date")
-        or "نامشخص"
+    date = get_value(
+        item,
+        [
+            "date",
+            "offer_date",
+            "announcement_date",
+            "offerDate",
+            "announcementDate",
+            "delivery_date",
+            "deliveryDate",
+        ]
     )
 
-    offer_code = (
-        item.get("offer_code")
-        or item.get("offerCode")
-        or item.get("code")
-        or "نامشخص"
+    offer_code = get_value(
+        item,
+        [
+            "offer_code",
+            "offerCode",
+            "code",
+            "offer_id",
+            "offerId",
+        ]
     )
 
-    hall = (
-        item.get("hall")
-        or item.get("market_name")
-        or item.get("market")
-        or "نامشخص"
+    hall = get_value(
+        item,
+        [
+            "hall",
+            "market",
+            "market_name",
+            "marketName",
+            "hall_name",
+            "hallName",
+        ]
     )
 
-    producer = (
-        item.get("producer")
-        or item.get("supplier")
-        or "نامشخص"
+    producer = get_value(
+        item,
+        [
+            "producer",
+            "producer_name",
+            "producerName",
+            "supplier",
+            "supplier_name",
+            "supplierName",
+        ]
     )
 
-    volume = (
-        item.get("volume")
-        or item.get("quantity")
-        or "نامشخص"
+    volume = get_value(
+        item,
+        [
+            "volume",
+            "quantity",
+            "amount",
+            "offer_volume",
+            "offerVolume",
+        ]
     )
 
-    base_price = (
-        item.get("base_price")
-        or item.get("basePrice")
-        or "نامشخص"
+    base_price = get_value(
+        item,
+        [
+            "base_price",
+            "basePrice",
+            "price",
+            "base_price_value",
+            "basePriceValue",
+        ]
     )
 
-    message = f"""🏭 عرضه جدید بورس کالا
+    if product is None:
+        product = "نامشخص"
+
+    if date is None:
+        date = "نامشخص"
+
+    if offer_code is None:
+        offer_code = "نامشخص"
+
+    if hall is None:
+        hall = "نامشخص"
+
+    if producer is None:
+        producer = "نامشخص"
+
+    if volume is None:
+        volume = "نامشخص"
+
+    if base_price is None:
+        base_price = "نامشخص"
+
+    message = f"""
+🏭 عرضه جدید بورس کالا
 
 📦 محصول: {product}
 
@@ -151,20 +276,21 @@ def make_message(item):
 💰 قیمت پایه: {base_price}
 
 ━━━━━━━━━━━━━━
-آروند آرون استیل
+🏭 آروند آرون استیل
 """
 
-    return message
+    return message.strip()
 
 
 # =========================================================
-# ارسال تلگرام
+# ارسال پیام به تلگرام
 # =========================================================
 
 def send_telegram(message):
 
     try:
-        r = requests.post(
+
+        response = requests.post(
             TELEGRAM_URL,
             json={
                 "chat_id": CHANNEL_ID,
@@ -173,13 +299,19 @@ def send_telegram(message):
             timeout=30
         )
 
-        print("TELEGRAM:", r.status_code)
-        print(r.text[:500])
+        print("\n" + "=" * 70)
+        print("TELEGRAM")
+        print("=" * 70)
 
-        return r.ok
+        print("STATUS:", response.status_code)
+        print(response.text[:1000])
+
+        return response.ok
 
     except Exception as e:
-        print("TELEGRAM ERROR:", e)
+
+        print("TELEGRAM ERROR:", repr(e))
+
         return False
 
 
@@ -192,52 +324,102 @@ def main():
     records = get_announcements(100)
 
     if not records:
-        print("هیچ رکوردی دریافت نشد.")
+
+        print("\nهیچ رکوردی دریافت نشد.")
         return
 
-    print("\nآخرین عرضه‌ها:")
+    print("\n" + "=" * 70)
+    print("ANNOUNCEMENTS")
+    print("=" * 70)
 
     steel_records = []
 
-    for i, item in enumerate(records, 1):
+    for index, item in enumerate(records, 1):
 
-        product = (
-            item.get("product")
-            or item.get("product_name")
-            or item.get("commodity")
-            or item.get("title")
+        date = get_value(
+            item,
+            [
+                "date",
+                "offer_date",
+                "announcement_date",
+                "offerDate",
+                "announcementDate",
+                "delivery_date",
+                "deliveryDate",
+            ]
         )
 
-        date = (
-            item.get("date")
-            or item.get("offer_date")
-            or item.get("delivery_date")
+        product = get_value(
+            item,
+            [
+                "product",
+                "product_name",
+                "commodity",
+                "commodity_name",
+                "title",
+                "name",
+                "goods_name",
+                "productTitle",
+                "productName",
+                "commodityName",
+            ]
         )
 
-        hall = (
-            item.get("hall")
-            or item.get("market_name")
-            or item.get("market")
+        hall = get_value(
+            item,
+            [
+                "hall",
+                "market",
+                "market_name",
+                "marketName",
+                "hall_name",
+                "hallName",
+            ]
         )
 
         print(
-            f"{i}. DATE={date} | "
+            f"{index}. "
+            f"DATE={date} | "
             f"PRODUCT={product} | "
             f"HALL={hall}"
         )
 
-        if is_steel(str(item)):
+        if is_steel(item):
+
             steel_records.append(item)
 
-    print("\nفولادی‌ها:", len(steel_records))
+    print("\n" + "=" * 70)
+    print("STEEL RECORDS:", len(steel_records))
+    print("=" * 70)
 
-    # فعلاً فقط تست؛ اولین مورد فولادی ارسال شود
+    # =====================================================
+    # فعلاً فقط برای تست اولین رکورد فولادی ارسال می‌شود
+    # =====================================================
+
     if steel_records:
-        message = make_message(steel_records[0])
-        send_telegram(message)
-    else:
-        print("عرضه فولادی در 100 رکورد اول پیدا نشد.")
 
+        print("\nارسال اولین عرضه فولادی به تلگرام...")
+
+        message = make_message(
+            steel_records[0]
+        )
+
+        print("\nMESSAGE:")
+        print(message)
+
+        send_telegram(message)
+
+    else:
+
+        print(
+            "در 100 رکورد اول، عرضه فولادی پیدا نشد."
+        )
+
+
+# =========================================================
+# START
+# =========================================================
 
 if __name__ == "__main__":
+
     main()
