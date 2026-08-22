@@ -19,6 +19,9 @@ HISTORY_FILE = "sent_history.json"
 
 MAX_POSTS_PER_RUN = 10
 
+# فقط عرضه‌هایی که تاریخشان امروز یا آینده است
+ALLOW_TODAY_AND_FUTURE_ONLY = True
+
 
 # =========================================================
 # STEEL KEYWORDS
@@ -52,6 +55,8 @@ STEEL_KEYWORDS = [
     "سنگ آهن",
 ]
 
+
+# مواردی که به‌تنهایی نباید فولادی حساب شوند
 EXCLUDE_KEYWORDS = [
     "زعفران",
     "پسته",
@@ -99,20 +104,16 @@ def send_telegram(text):
             timeout=30
         )
 
-        if not response.ok:
+        if response.ok:
+            return True
 
-            print(
-                "TELEGRAM ERROR:",
-                response.status_code
-            )
+        print(
+            "TELEGRAM ERROR:",
+            response.status_code,
+            response.text[:500]
+        )
 
-            print(
-                response.text[:1000]
-            )
-
-            return False
-
-        return True
+        return False
 
     except Exception as e:
 
@@ -167,21 +168,13 @@ def gregorian_to_jalali(gy, gm, gd):
     j_np = j_day_no // 12053
     j_day_no %= 12053
 
-    jy = (
-        979
-        + 33 * j_np
-        + 4 * (j_day_no // 1461)
-    )
+    jy = 979 + 33 * j_np + 4 * (j_day_no // 1461)
 
     j_day_no %= 1461
 
     if j_day_no >= 366:
-
         jy += (j_day_no - 1) // 365
-
-        j_day_no = (
-            j_day_no - 1
-        ) % 365
+        j_day_no = (j_day_no - 1) % 365
 
     for i in range(11):
 
@@ -205,9 +198,7 @@ def today_jalali():
         )
     )
 
-    now = datetime.now(
-        iran_tz
-    )
+    now = datetime.now(iran_tz)
 
     return gregorian_to_jalali(
         now.year,
@@ -218,11 +209,12 @@ def today_jalali():
 
 def jalali_string(y, m, d):
 
-    return (
-        f"{y:04d}/"
-        f"{m:02d}/"
-        f"{d:02d}"
-    )
+    return f"{y:04d}/{m:02d}/{d:02d}"
+
+
+def jalali_number(y, m, d):
+
+    return y * 10000 + m * 100 + d
 
 
 # =========================================================
@@ -249,9 +241,7 @@ def clean_text(value):
     if value is None:
         return ""
 
-    text = normalize_digits(
-        value
-    )
+    text = normalize_digits(value)
 
     text = re.sub(
         r"<[^>]+>",
@@ -285,22 +275,24 @@ def format_number(value):
     if not text:
         return "-"
 
+    # اعداد فارسی با جداکننده
+    text = text.replace(
+        "٬",
+        ""
+    )
+
+    text = text.replace(
+        ",",
+        ""
+    )
+
     try:
 
-        clean = text.replace(
-            ",",
-            ""
-        ).replace(
-            "٬",
-            ""
-        )
+        if "." in text:
 
-        if "." in clean:
-
-            number = float(clean)
+            number = float(text)
 
             if number.is_integer():
-
                 return f"{int(number):,}"
 
             return (
@@ -309,23 +301,25 @@ def format_number(value):
                 .rstrip(".")
             )
 
-        if clean.isdigit():
+        if text.isdigit():
 
-            return f"{int(clean):,}"
+            return f"{int(text):,}"
 
     except Exception:
         pass
 
-    return clean_text(value)
+    return clean_text(
+        value
+    )
 
 
 # =========================================================
-# GENERIC FIELD FINDER
+# FIELD FINDER
 # =========================================================
 
 def find_value(
     record,
-    possible_names
+    names
 ):
 
     if not isinstance(
@@ -334,14 +328,12 @@ def find_value(
     ):
         return None
 
-    # exact
-    for name in possible_names:
+    # مستقیم
+    for name in names:
 
         if name in record:
 
-            value = record.get(
-                name
-            )
+            value = record.get(name)
 
             if value not in (
                 None,
@@ -349,15 +341,17 @@ def find_value(
             ):
                 return value
 
-    # insensitive
+    # بدون حساسیت به حروف
     lowered = {
         str(k).lower(): v
         for k, v in record.items()
     }
 
-    for name in possible_names:
+    for name in names:
 
-        key = str(name).lower()
+        key = str(
+            name
+        ).lower()
 
         if key in lowered:
 
@@ -373,7 +367,7 @@ def find_value(
 
 
 # =========================================================
-# API EXTRACTION
+# API RESPONSE
 # =========================================================
 
 def extract_records(data):
@@ -390,7 +384,7 @@ def extract_records(data):
     ):
         return []
 
-    possible_keys = [
+    for key in [
         "data",
         "items",
         "records",
@@ -398,13 +392,9 @@ def extract_records(data):
         "announcements",
         "rows",
         "content",
-    ]
+    ]:
 
-    for key in possible_keys:
-
-        value = data.get(
-            key
-        )
+        value = data.get(key)
 
         if isinstance(
             value,
@@ -457,7 +447,7 @@ def extract_total(data):
         "total",
         "totalCount",
         "total_count",
-        "count"
+        "count",
     ]:
 
         value = data.get(
@@ -467,7 +457,9 @@ def extract_total(data):
         if value is not None:
 
             try:
-                return int(value)
+                return int(
+                    value
+                )
 
             except Exception:
                 pass
@@ -497,185 +489,130 @@ def extract_total(data):
 
 
 # =========================================================
-# RECORD ID
+# DATE PARSER
 # =========================================================
 
-def record_id(record):
+def parse_jalali_date(value):
 
-    fields = [
-        "id",
-        "ID",
-        "announcementId",
-        "announcement_id",
-        "offerId",
-        "offer_id",
-        "code",
-        "announcementCode",
-        "announcement_code",
-    ]
+    if value is None:
+        return None
+
+    text = normalize_digits(
+        str(value)
+    )
+
+    # 1405/05/31
+    # 1405-05-31
+    # 14050531
+
+    match = re.search(
+        r"(14\d{2})[/-]?(\d{1,2})[/-]?(\d{1,2})",
+        text
+    )
+
+    if not match:
+        return None
+
+    y = int(
+        match.group(1)
+    )
+
+    m = int(
+        match.group(2)
+    )
+
+    d = int(
+        match.group(3)
+    )
+
+    # اعتبارسنجی ساده
+    if not (
+        1 <= m <= 12
+        and
+        1 <= d <= 31
+    ):
+        return None
+
+    return y, m, d
+
+
+def date_to_number(value):
+
+    parsed = parse_jalali_date(
+        value
+    )
+
+    if not parsed:
+        return None
+
+    y, m, d = parsed
+
+    return jalali_number(
+        y,
+        m,
+        d
+    )
+
+
+# =========================================================
+# IMPORTANT:
+# تاریخ واقعی عرضه را از فیلدهای واقعی API می‌خوانیم
+# =========================================================
+
+def get_offer_date(record):
 
     value = find_value(
         record,
-        fields
+        [
+            "offerDate",
+            "offer_date",
+            "offerDateRaw",
+            "offer_date_raw",
+        ]
     )
 
-    if value is not None:
-
-        return str(
-            value
-        )
-
-    raw = json.dumps(
-        record,
-        ensure_ascii=False,
-        sort_keys=True
-    )
-
-    return hashlib.sha256(
-        raw.encode("utf-8")
-    ).hexdigest()[:20]
-
-
-# =========================================================
-# FIELD EXTRACTION
-# =========================================================
-
-def get_product(record):
-
-    fields = [
-        "product",
-        "productName",
-        "product_name",
-        "commodity",
-        "commodityName",
-        "commodity_name",
-        "goods",
-        "goodsName",
-        "goods_name",
-        "title",
-        "name",
-        "itemName",
-        "item_name",
-    ]
-
-    return clean_text(
-        find_value(
-            record,
-            fields
-        )
-    )
-
-
-def get_supplier(record):
-
-    fields = [
-        "seller",
-        "sellerName",
-        "seller_name",
-        "supplier",
-        "supplierName",
-        "supplier_name",
-        "producer",
-        "producerName",
-        "producer_name",
-        "company",
-        "companyName",
-        "company_name",
-        "offerer",
-        "offererName",
-    ]
-
-    return clean_text(
-        find_value(
-            record,
-            fields
-        )
-    )
-
-
-def get_volume(record):
-
-    fields = [
-        "volume",
-        "quantity",
-        "amount",
-        "offerVolume",
-        "offer_volume",
-        "volumeTons",
-        "volume_tons",
-        "quantityTons",
-        "quantity_tons",
-        "amountTons",
-        "amount_tons",
-    ]
-
-    return format_number(
-        find_value(
-            record,
-            fields
-        )
-    )
-
-
-def get_price(record):
-
-    fields = [
-        "price",
-        "basePrice",
-        "base_price",
-        "priceBase",
-        "price_base",
-        "basePriceRial",
-        "base_price_rial",
-        "offerPrice",
-        "offer_price",
-    ]
-
-    return format_number(
-        find_value(
-            record,
-            fields
-        )
-    )
-
-
-def get_symbol(record):
-
-    fields = [
-        "symbol",
-        "ticker",
-        "commodityCode",
-        "commodity_code",
-        "symbolCode",
-        "symbol_code",
-    ]
-
-    return clean_text(
-        find_value(
-            record,
-            fields
-        )
+    return parse_jalali_date(
+        value
     )
 
 
 def get_delivery_date(record):
 
-    fields = [
-        "deliveryDate",
-        "delivery_date",
-        "delivery",
-        "settlementDate",
-        "settlement_date",
-        "offerDate",
-        "offer_date",
-    ]
-
-    return clean_text(
-        find_value(
-            record,
-            fields
-        )
+    value = find_value(
+        record,
+        [
+            "delivery_date",
+            "deliveryDate",
+        ]
     )
+
+    return parse_jalali_date(
+        value
+    )
+
+
+def get_relevant_date(record):
+
+    """
+    برای تشخیص جدید بودن عرضه:
+    تاریخ عرضه مهم‌تر از delivery_date است.
+    """
+
+    offer = get_offer_date(
+        record
+    )
+
+    if offer:
+        return offer
+
+    delivery = get_delivery_date(
+        record
+    )
+
+    if delivery:
+        return delivery
+
+    return None
 
 
 # =========================================================
@@ -692,29 +629,30 @@ def record_full_text(record):
 
     values = []
 
-    for key, value in record.items():
+    # فیلدهای مهم را عمداً اضافه می‌کنیم
+    important_fields = [
+        "productName",
+        "product",
+        "commodity",
+        "symbol",
+        "supplier",
+        "supplierName",
+        "producer",
+        "producerName",
+        "hall",
+        "description",
+    ]
 
-        if value is None:
-            continue
+    for field in important_fields:
 
-        if isinstance(
-            value,
-            (dict, list)
+        value = record.get(
+            field
+        )
+
+        if value not in (
+            None,
+            ""
         ):
-
-            try:
-
-                values.append(
-                    json.dumps(
-                        value,
-                        ensure_ascii=False
-                    )
-                )
-
-            except Exception:
-                pass
-
-        else:
 
             values.append(
                 str(value)
@@ -722,298 +660,84 @@ def record_full_text(record):
 
     return clean_text(
         " ".join(values)
-    )
+    ).lower()
 
 
 def is_steel(record):
 
     text = record_full_text(
         record
-    ).lower()
+    )
 
-    strong_steel = [
-        "میلگرد",
-        "تیرآهن",
-        "شمش",
-        "اسلب",
-        "بیلت",
-        "بلوم",
-        "گندله",
-        "کنسانتره",
-        "آهن اسفنجی",
-        "فولاد",
-        "ضایعات فلزی",
-        "قراضه",
-    ]
-
-    # اگر محصول فولادی مشخص دارد
-    for keyword in strong_steel:
-
-        if keyword.lower() in text:
-            return True
-
-    # سایر محصولات
-    for keyword in STEEL_KEYWORDS:
-
-        if keyword.lower() in text:
-            return True
+    if not text:
+        return False
 
     # موارد غیر فولادی
     for keyword in EXCLUDE_KEYWORDS:
 
         if keyword.lower() in text:
-            return False
+
+            strong = [
+                "میلگرد",
+                "تیرآهن",
+                "شمش",
+                "اسلب",
+                "بیلت",
+                "بلوم",
+                "گندله",
+                "کنسانتره",
+                "آهن اسفنجی",
+                "فولاد",
+            ]
+
+            if not any(
+                x.lower() in text
+                for x in strong
+            ):
+                return False
+
+    for keyword in STEEL_KEYWORDS:
+
+        if keyword.lower() in text:
+            return True
 
     return False
 
 
 # =========================================================
-# DEBUG DATE FIELDS
+# RECORD ID
 # =========================================================
 
-def print_record_fields(record):
+def record_id(record):
 
-    print()
-    print("--------------------------------------------------")
-    print("RECORD ID:", record_id(record))
-    print("PRODUCT:", get_product(record))
-    print("SUPPLIER:", get_supplier(record))
-    print("--------------------------------------------------")
-
-    for key, value in record.items():
-
-        try:
-
-            if isinstance(
-                value,
-                (dict, list)
-            ):
-
-                value_text = json.dumps(
-                    value,
-                    ensure_ascii=False
-                )
-
-            else:
-
-                value_text = str(
-                    value
-                )
-
-            print(
-                f"{key}: {value_text[:500]}"
-            )
-
-        except Exception:
-
-            print(
-                f"{key}: <UNPRINTABLE>"
-            )
-
-
-# =========================================================
-# API
-# =========================================================
-
-def get_latest_pages():
-
-    print("=" * 70)
-    print("iBROKERS API - DEBUG MODE")
-    print("=" * 70)
-
-    session = requests.Session()
-
-    session.headers.update({
-
-        "User-Agent":
-            "Mozilla/5.0 "
-            "(Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 "
-            "Chrome/120 Safari/537.36",
-
-        "Accept":
-            "application/json",
-
-    })
-
-    all_records = []
-
-    # چند مدل درخواست برای فهمیدن
-    # رفتار واقعی API
-
-    tests = [
-
-        {
-            "page": 1,
-            "limit": 100
-        },
-
-        {
-            "page": 1,
-            "limit": 100,
-            "sort": "desc"
-        },
-
-        {
-            "page": 1,
-            "limit": 100,
-            "sortBy": "id",
-            "sortOrder": "desc"
-        },
-
-        {
-            "page": 1,
-            "limit": 100,
-            "order": "desc"
-        },
-
-        {
-            "page": 1,
-            "pageSize": 100
-        },
-
-    ]
-
-    for number, params in enumerate(
-        tests,
-        1
-    ):
-
-        print()
-        print("=" * 70)
-        print(
-            "TEST:",
-            number
-        )
-        print(
-            "PARAMS:",
-            params
-        )
-        print("=" * 70)
-
-        try:
-
-            response = session.get(
-                API_URL,
-                params=params,
-                timeout=30
-            )
-
-            print(
-                "STATUS:",
-                response.status_code
-            )
-
-            print(
-                "URL:",
-                response.url
-            )
-
-            response.raise_for_status()
-
-            data = response.json()
-
-            records = extract_records(
-                data
-            )
-
-            print(
-                "RECORDS:",
-                len(records)
-            )
-
-            total = extract_total(
-                data
-            )
-
-            print(
-                "TOTAL:",
-                total
-            )
-
-            if records:
-
-                # چند رکورد اول
-                for record in records[:5]:
-
-                    print()
-                    print(
-                        "ID:",
-                        record_id(record)
-                    )
-
-                    print(
-                        "PRODUCT:",
-                        get_product(record)
-                    )
-
-                    print(
-                        "SUPPLIER:",
-                        get_supplier(record)
-                    )
-
-                    print(
-                        "VOLUME:",
-                        get_volume(record)
-                    )
-
-                    print(
-                        "PRICE:",
-                        get_price(record)
-                    )
-
-                # کل فیلدهای اولین رکورد
-                print()
-                print(
-                    "FULL FIRST RECORD FIELDS"
-                )
-
-                print_record_fields(
-                    records[0]
-                )
-
-                all_records.extend(
-                    records
-                )
-
-        except Exception as e:
-
-            print(
-                "REQUEST ERROR:",
-                repr(e)
-            )
-
-    # -----------------------------------------------------
-    # UNIQUE
-    # -----------------------------------------------------
-
-    unique = {}
-
-    for record in all_records:
-
-        if not isinstance(
-            record,
-            dict
-        ):
-            continue
-
-        unique[
-            record_id(record)
-        ] = record
-
-    result = list(
-        unique.values()
+    value = find_value(
+        record,
+        [
+            "id",
+            "offerCode",
+            "external_id",
+            "externalId",
+            "announcementId",
+            "announcement_id",
+        ]
     )
 
-    print()
-    print("=" * 70)
-    print(
-        "TOTAL UNIQUE RECORDS:",
-        len(result)
-    )
-    print("=" * 70)
+    if value is not None:
+        return str(
+            value
+        )
 
-    return result
+    raw = json.dumps(
+        record,
+        ensure_ascii=False,
+        sort_keys=True
+    )
+
+    return hashlib.sha256(
+        raw.encode(
+            "utf-8"
+        )
+    ).hexdigest()[:24]
 
 
 # =========================================================
@@ -1065,6 +789,7 @@ def save_history(history):
         history
     )
 
+    # محدود کردن حجم تاریخچه
     if len(items) > 5000:
 
         items = items[-5000:]
@@ -1081,6 +806,209 @@ def save_history(history):
             ensure_ascii=False,
             indent=2
         )
+
+
+# =========================================================
+# API DOWNLOAD
+# =========================================================
+
+def get_latest_records():
+
+    print()
+    print("=" * 70)
+    print("iBROKERS API")
+    print("=" * 70)
+
+    session = requests.Session()
+
+    session.headers.update({
+        "User-Agent":
+            "Mozilla/5.0 "
+            "(Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 "
+            "Chrome/120 Safari/537.36",
+
+        "Accept":
+            "application/json",
+    })
+
+    try:
+
+        response = session.get(
+            API_URL,
+            params={
+                "page": 1,
+                "limit": 100,
+            },
+            timeout=30
+        )
+
+        print(
+            "API STATUS:",
+            response.status_code
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+    except Exception as e:
+
+        print(
+            "API ERROR:",
+            e
+        )
+
+        return []
+
+    records = extract_records(
+        data
+    )
+
+    total = extract_total(
+        data
+    )
+
+    print(
+        "API TOTAL:",
+        total
+    )
+
+    print(
+        "RECORDS RECEIVED:",
+        len(records)
+    )
+
+    return records
+
+
+# =========================================================
+# FIELDS
+# =========================================================
+
+def get_product(record):
+
+    value = find_value(
+        record,
+        [
+            "productName",
+            "product_name",
+            "product",
+            "commodity",
+            "commodityName",
+            "commodity_name",
+            "goods",
+            "goodsName",
+            "itemName",
+            "title",
+            "name",
+        ]
+    )
+
+    return clean_text(
+        value
+    )
+
+
+def get_supplier(record):
+
+    value = find_value(
+        record,
+        [
+            "supplier",
+            "supplierName",
+            "supplier_name",
+            "seller",
+            "sellerName",
+            "seller_name",
+            "producer",
+            "producerName",
+            "producer_name",
+            "company",
+            "companyName",
+            "company_name",
+        ]
+    )
+
+    return clean_text(
+        value
+    )
+
+
+def get_volume(record):
+
+    value = find_value(
+        record,
+        [
+            "availableVolume",
+            "availableVolumeRaw",
+            "volume",
+            "quantity",
+            "amount",
+            "offerVolume",
+            "offer_volume",
+            "initVolume",
+            "init_volume",
+        ]
+    )
+
+    return format_number(
+        value
+    )
+
+
+def get_price(record):
+
+    value = find_value(
+        record,
+        [
+            "basePrice",
+            "basePriceRaw",
+            "base_price",
+            "price",
+            "offerPrice",
+            "offer_price",
+        ]
+    )
+
+    return format_number(
+        value
+    )
+
+
+def get_symbol(record):
+
+    value = find_value(
+        record,
+        [
+            "symbol",
+            "ticker",
+            "offerSymbol",
+            "commodityCode",
+            "commodity_code",
+        ]
+    )
+
+    return clean_text(
+        value
+    )
+
+
+def get_hall(record):
+
+    value = find_value(
+        record,
+        [
+            "hall",
+            "offerRing",
+            "tradingHall",
+            "trading_hall",
+        ]
+    )
+
+    return clean_text(
+        value
+    )
 
 
 # =========================================================
@@ -1112,7 +1040,15 @@ def build_message(
         record
     )
 
-    delivery = get_delivery_date(
+    hall = get_hall(
+        record
+    )
+
+    offer_date = get_offer_date(
+        record
+    )
+
+    delivery_date = get_delivery_date(
         record
     )
 
@@ -1146,6 +1082,12 @@ def build_message(
             f"🏢 <b>عرضه‌کننده:</b> {supplier}"
         )
 
+    if hall:
+
+        message.append(
+            f"🏛 <b>تالار:</b> {hall}"
+        )
+
     if volume != "-":
 
         message.append(
@@ -1158,10 +1100,22 @@ def build_message(
             f"💰 <b>قیمت پایه:</b> {price}"
         )
 
-    if delivery:
+    if offer_date:
 
         message.append(
-            f"📅 <b>تاریخ عرضه/تحویل:</b> {delivery}"
+            "📅 <b>تاریخ عرضه:</b> "
+            + jalali_string(
+                *offer_date
+            )
+        )
+
+    if delivery_date:
+
+        message.append(
+            "🚚 <b>تاریخ تحویل:</b> "
+            + jalali_string(
+                *delivery_date
+            )
         )
 
     message.append("")
@@ -1214,9 +1168,19 @@ def main():
     print("BOURSE BOT START")
     print("=" * 70)
 
+    # -----------------------------------------------------
+    # TODAY
+    # -----------------------------------------------------
+
     jy, jm, jd = today_jalali()
 
     today = jalali_string(
+        jy,
+        jm,
+        jd
+    )
+
+    today_num = jalali_number(
         jy,
         jm,
         jd
@@ -1226,6 +1190,15 @@ def main():
         "TODAY:",
         today
     )
+
+    print(
+        "TODAY NUMBER:",
+        today_num
+    )
+
+    # -----------------------------------------------------
+    # HISTORY
+    # -----------------------------------------------------
 
     history = load_history()
 
@@ -1238,12 +1211,12 @@ def main():
     # API
     # -----------------------------------------------------
 
-    records = get_latest_pages()
+    records = get_latest_records()
 
     print()
     print("=" * 70)
     print(
-        "TOTAL DOWNLOADED:",
+        "ANALYZING RECORDS:",
         len(records)
     )
     print("=" * 70)
@@ -1251,7 +1224,7 @@ def main():
     if not records:
 
         print(
-            "NO RECORDS"
+            "NO RECORDS FROM API"
         )
 
         return
@@ -1264,112 +1237,185 @@ def main():
 
     for record in records:
 
-        if isinstance(
+        if not isinstance(
             record,
             dict
         ):
-
-            unique[
-                record_id(record)
-            ] = record
-
-    records = list(
-        unique.values()
-    )
-
-    # -----------------------------------------------------
-    # STEEL
-    # -----------------------------------------------------
-
-    steel_records = []
-
-    for record in records:
-
-        if is_steel(
-            record
-        ):
-
-            steel_records.append(
-                record
-            )
-
-    print()
-    print("=" * 70)
-    print(
-        "STEEL RECORDS:",
-        len(steel_records)
-    )
-    print("=" * 70)
-
-    # -----------------------------------------------------
-    # نمایش فولادها
-    # -----------------------------------------------------
-
-    for record in steel_records[:20]:
-
-        print()
-        print(
-            "STEEL:",
-            record_id(record)
-        )
-
-        print(
-            "PRODUCT:",
-            get_product(record)
-        )
-
-        print(
-            "SUPPLIER:",
-            get_supplier(record)
-        )
-
-        print(
-            "PRICE:",
-            get_price(record)
-        )
-
-    # -----------------------------------------------------
-    # فقط مواردی که قبلاً ارسال نشده‌اند
-    # -----------------------------------------------------
-
-    candidates = []
-
-    for record in steel_records:
+            continue
 
         rid = record_id(
             record
         )
 
+        unique[rid] = record
+
+    records = list(
+        unique.values()
+    )
+
+    print(
+        "UNIQUE RECORDS:",
+        len(records)
+    )
+
+    # -----------------------------------------------------
+    # ANALYSIS
+    # -----------------------------------------------------
+
+    steel_count = 0
+    valid_date_count = 0
+    old_count = 0
+    already_sent_count = 0
+
+    candidates = []
+
+    for record in records:
+
+        rid = record_id(
+            record
+        )
+
+        # فولادی؟
+        if not is_steel(
+            record
+        ):
+            continue
+
+        steel_count += 1
+
+        # تاریخ واقعی عرضه
+        relevant_date = get_relevant_date(
+            record
+        )
+
+        if not relevant_date:
+
+            print(
+                "SKIP - NO VALID OFFER/DELIVERY DATE:",
+                rid,
+                get_product(record)
+            )
+
+            continue
+
+        valid_date_count += 1
+
+        record_date_num = jalali_number(
+            *relevant_date
+        )
+
+        # -------------------------------------------------
+        # مهم‌ترین فیلتر
+        # -------------------------------------------------
+
+        if (
+            ALLOW_TODAY_AND_FUTURE_ONLY
+            and
+            record_date_num < today_num
+        ):
+
+            old_count += 1
+
+            print(
+                "SKIP OLD:",
+                rid,
+                "|",
+                get_product(record),
+                "|",
+                jalali_string(
+                    *relevant_date
+                )
+            )
+
+            continue
+
+        # قبلاً ارسال شده؟
         if rid in history:
+
+            already_sent_count += 1
+
             continue
 
         candidates.append(
-            record
+            (
+                record_date_num,
+                rid,
+                record
+            )
         )
+
+    # -----------------------------------------------------
+    # SORT
+    # -----------------------------------------------------
+
+    candidates.sort(
+        key=lambda x: (
+            x[0],
+            x[1]
+        )
+    )
 
     print()
     print("=" * 70)
     print(
+        "STEEL RECORDS:",
+        steel_count
+    )
+
+    print(
+        "VALID DATE RECORDS:",
+        valid_date_count
+    )
+
+    print(
+        "OLD RECORDS BLOCKED:",
+        old_count
+    )
+
+    print(
         "ALREADY SENT:",
-        len(steel_records) -
-        len(candidates)
+        already_sent_count
     )
 
     print(
         "NEW STEEL CANDIDATES:",
         len(candidates)
     )
+
     print("=" * 70)
 
     # -----------------------------------------------------
-    # ارسال
+    # هیچ عرضه جدیدی نیست
+    # -----------------------------------------------------
+
+    if not candidates:
+
+        print(
+            "هیچ عرضه فولادی جدیدی برای ارسال وجود ندارد."
+        )
+
+        save_history(
+            history
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # SEND
     # -----------------------------------------------------
 
     sent_count = 0
 
-    for record in candidates:
+    for (
+        record_date,
+        rid,
+        record
+    ) in candidates:
 
-        if sent_count >= MAX_POSTS_PER_RUN:
+        if (
+            sent_count
+            >= MAX_POSTS_PER_RUN
+        ):
 
             print(
                 "MAX POSTS REACHED:",
@@ -1378,15 +1424,7 @@ def main():
 
             break
 
-        rid = record_id(
-            record
-        )
-
         product = get_product(
-            record
-        )
-
-        supplier = get_supplier(
             record
         )
 
@@ -1402,8 +1440,8 @@ def main():
         )
 
         print(
-            "SUPPLIER:",
-            supplier
+            "DATE:",
+            record_date
         )
 
         message = build_message(
@@ -1436,7 +1474,7 @@ def main():
             )
 
     # -----------------------------------------------------
-    # SAVE
+    # SAVE HISTORY
     # -----------------------------------------------------
 
     save_history(
