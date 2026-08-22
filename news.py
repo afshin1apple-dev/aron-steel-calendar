@@ -25,7 +25,7 @@ HISTORY_FILE = "news_history.json"
 # حداکثر تعداد خبر در هر اجرا
 MAX_POSTS_PER_RUN = 2
 
-# حداقل امتیاز لازم برای انتشار
+# حداقل امتیاز خبر
 MIN_NEWS_SCORE = 30
 
 
@@ -44,51 +44,49 @@ COMPANY_FOOTER = """
 
 # =========================================================
 # منابع خبری
-#
-# فقط منابع ایران‌محور
 # =========================================================
 
 FEEDS = [
 
     # =====================================================
-    # 1. فولادبان
+    # 1 - فولادبان
     # =====================================================
 
     {
-        "name": "Fooladban",
-        "url": "https://fooladban.com/feed/",
+        "name": "فولادبان",
+        "url": "https://fouladban.com/feed/",
         "category": "steel",
         "priority": 15
     },
 
     # =====================================================
-    # 2. اقتصادنیوز
+    # 2 - اقتصادنیوز
     # =====================================================
 
     {
-        "name": "Eghtesad News",
+        "name": "اقتصادنیوز",
         "url": "https://www.eghtesadnews.com/rss",
         "category": "iran_economy",
         "priority": 10
     },
 
     # =====================================================
-    # 3. تجارت نیوز
+    # 3 - تجارت‌نیوز
     # =====================================================
 
     {
-        "name": "Tejarat News",
+        "name": "تجارت‌نیوز",
         "url": "https://tejaratnews.com/feed/",
         "category": "iran_economy",
         "priority": 8
     },
 
     # =====================================================
-    # 4. اکوایران
+    # 4 - اکوایران
     # =====================================================
 
     {
-        "name": "EcoIran",
+        "name": "اکوایران",
         "url": "https://ecoiran.com/rss",
         "category": "iran_economy",
         "priority": 8
@@ -97,7 +95,7 @@ FEEDS = [
 
 
 # =========================================================
-# 🇮🇷 نشانه‌های ایران
+# 🇮🇷 کلمات مرتبط با ایران
 # =========================================================
 
 IRAN_KEYWORDS = [
@@ -106,29 +104,27 @@ IRAN_KEYWORDS = [
     "ایرانی",
     "تهران",
 
-    "Iran",
-    "Iranian",
-    "Tehran",
+    "iran",
+    "iranian",
+    "tehran",
 
     "ریال",
     "rial",
 
-    "بانک مرکزی",
+    "اقتصاد ایران",
+    "بازار ایران",
+    "اقتصاد داخلی",
+
+    "بانک مرکزی ایران",
     "central bank of iran",
 
     "دولت ایران",
-    "مجلس ایران",
-
-    "بازار ایران",
-    "اقتصاد ایران",
-
-    "Iran economy",
-    "Iranian economy"
+    "مجلس ایران"
 ]
 
 
 # =========================================================
-# 🏭 فولاد و بازار آهن ایران
+# 🏭 فولاد و بازار آهن
 # =========================================================
 
 STEEL_KEYWORDS = [
@@ -159,6 +155,7 @@ STEEL_KEYWORDS = [
     "گندله",
     "کنسانتره",
 
+    "ورق",
     "ورق فولادی",
     "ورق گرم",
     "ورق سرد",
@@ -191,6 +188,8 @@ STEEL_KEYWORDS = [
     "steel prices",
     "steel production",
     "steel exports",
+    "steel imports",
+
     "iron ore",
     "rebar",
     "billet",
@@ -207,8 +206,10 @@ CURRENCY_KEYWORDS = [
     "دلار",
     "قیمت دلار",
     "نرخ دلار",
+
     "دلار آزاد",
     "دلار تهران",
+    "دلار ایران",
 
     "بازار ارز",
     "بازار ارز ایران",
@@ -230,10 +231,7 @@ CURRENCY_KEYWORDS = [
     "دلار ارزان شد",
 
     "افزایش قیمت دلار",
-    "کاهش قیمت دلار",
-
-    "دلار ایران",
-    "دلار در ایران"
+    "کاهش قیمت دلار"
 ]
 
 
@@ -272,7 +270,7 @@ FUEL_KEYWORDS = [
 
 
 # =========================================================
-# 🪙 طلا ایران و جهان
+# 🪙 طلا در ایران
 # =========================================================
 
 GOLD_IRAN_KEYWORDS = [
@@ -304,10 +302,15 @@ GOLD_IRAN_KEYWORDS = [
 ]
 
 
+# =========================================================
+# 🌎 طلای جهانی
+# =========================================================
+
 GOLD_GLOBAL_KEYWORDS = [
 
     "اونس طلا",
     "اونس جهانی",
+
     "قیمت جهانی طلا",
     "طلای جهانی",
 
@@ -320,7 +323,7 @@ GOLD_GLOBAL_KEYWORDS = [
 
 
 # =========================================================
-# ⚔️ جنگ / تنش ایران و آمریکا
+# ⚔️ جنگ و تنش ایران و آمریکا
 # =========================================================
 
 WAR_KEYWORDS = [
@@ -418,7 +421,7 @@ ECONOMY_KEYWORDS = [
 
 
 # =========================================================
-# تاریخچه
+# تاریخچه اخبار
 # =========================================================
 
 def load_history():
@@ -532,7 +535,7 @@ def normalize_text(text):
 
 
 # =========================================================
-# بررسی کلمه
+# تشخیص کلمه
 # =========================================================
 
 def contains_keyword(
@@ -584,6 +587,28 @@ def find_hits(
             )
 
     return hits
+
+
+# =========================================================
+# تشخیص فارسی بودن تیتر
+# =========================================================
+
+def is_persian_text(text):
+
+    if not text:
+        return False
+
+    persian_chars = re.findall(
+        r"[\u0600-\u06FF]",
+        text
+    )
+
+    latin_chars = re.findall(
+        r"[A-Za-z]",
+        text
+    )
+
+    return len(persian_chars) >= len(latin_chars)
 
 
 # =========================================================
@@ -645,75 +670,48 @@ def detect_categories(
 
 
     if steel_hits:
-
-        categories.append(
-            "steel"
-        )
+        categories.append("steel")
 
     if currency_hits:
-
-        categories.append(
-            "currency"
-        )
+        categories.append("currency")
 
     if fuel_hits:
-
-        categories.append(
-            "fuel"
-        )
+        categories.append("fuel")
 
     if gold_iran_hits or gold_global_hits:
-
-        categories.append(
-            "gold"
-        )
+        categories.append("gold")
 
     if war_hits:
-
-        categories.append(
-            "war"
-        )
+        categories.append("war")
 
     if economy_hits:
-
-        categories.append(
-            "iran_economy"
-        )
+        categories.append("iran_economy")
 
 
     return {
 
-        "categories":
-            categories,
+        "categories": categories,
 
-        "steel_hits":
-            steel_hits,
+        "steel_hits": steel_hits,
 
-        "currency_hits":
-            currency_hits,
+        "currency_hits": currency_hits,
 
-        "fuel_hits":
-            fuel_hits,
+        "fuel_hits": fuel_hits,
 
-        "gold_iran_hits":
-            gold_iran_hits,
+        "gold_iran_hits": gold_iran_hits,
 
-        "gold_global_hits":
-            gold_global_hits,
+        "gold_global_hits": gold_global_hits,
 
-        "war_hits":
-            war_hits,
+        "war_hits": war_hits,
 
-        "economy_hits":
-            economy_hits,
+        "economy_hits": economy_hits,
 
-        "iran_hits":
-            iran_hits
+        "iran_hits": iran_hits
     }
 
 
 # =========================================================
-# امتیازدهی
+# امتیازدهی خبر
 # =========================================================
 
 def score_news(
@@ -735,38 +733,14 @@ def score_news(
 
     score = 0
 
-
-    steel_hits = analysis[
-        "steel_hits"
-    ]
-
-    currency_hits = analysis[
-        "currency_hits"
-    ]
-
-    fuel_hits = analysis[
-        "fuel_hits"
-    ]
-
-    gold_iran_hits = analysis[
-        "gold_iran_hits"
-    ]
-
-    gold_global_hits = analysis[
-        "gold_global_hits"
-    ]
-
-    war_hits = analysis[
-        "war_hits"
-    ]
-
-    economy_hits = analysis[
-        "economy_hits"
-    ]
-
-    iran_hits = analysis[
-        "iran_hits"
-    ]
+    steel_hits = analysis["steel_hits"]
+    currency_hits = analysis["currency_hits"]
+    fuel_hits = analysis["fuel_hits"]
+    gold_iran_hits = analysis["gold_iran_hits"]
+    gold_global_hits = analysis["gold_global_hits"]
+    war_hits = analysis["war_hits"]
+    economy_hits = analysis["economy_hits"]
+    iran_hits = analysis["iran_hits"]
 
 
     # =====================================================
@@ -815,6 +789,9 @@ def score_news(
 
         else:
 
+            # دلار جهانی یا آمریکا به تنهایی
+            # برای ما کاربرد ندارد
+
             return {
                 "score": 0,
                 **analysis
@@ -822,7 +799,7 @@ def score_news(
 
 
     # =====================================================
-    # ⛽ بنزین
+    # ⛽ بنزین ایران
     # =====================================================
 
     if fuel_hits:
@@ -867,7 +844,7 @@ def score_news(
 
 
     # =====================================================
-    # ⚔️ جنگ ایران و آمریکا
+    # ⚔️ ایران و آمریکا
     # =====================================================
 
     if war_hits:
@@ -914,18 +891,18 @@ def score_news(
 
 
     # =====================================================
-    # منبع تخصصی فولاد
+    # اولویت منبع
     # =====================================================
 
     source_bonus = {
 
-        "Fooladban": 15,
+        "فولادبان": 15,
 
-        "Eghtesad News": 10,
+        "اقتصادنیوز": 10,
 
-        "Tejarat News": 8,
+        "تجارت‌نیوز": 8,
 
-        "EcoIran": 8
+        "اکوایران": 8
     }
 
     score += source_bonus.get(
@@ -935,7 +912,7 @@ def score_news(
 
 
     # =====================================================
-    # اگر هیچ موضوع اصلی وجود ندارد
+    # هیچ موضوع اصلی وجود ندارد
     # =====================================================
 
     if not (
@@ -953,33 +930,10 @@ def score_news(
 
     return {
 
-        "score":
-            score,
+        "score": score,
 
         **analysis
     }
-
-
-# =========================================================
-# بررسی ارتباط
-# =========================================================
-
-def is_relevant(
-    title,
-    description,
-    source
-):
-
-    analysis = score_news(
-        title,
-        description,
-        source
-    )
-
-    return (
-        analysis["score"]
-        >= MIN_NEWS_SCORE
-    )
 
 
 # =========================================================
@@ -1007,7 +961,7 @@ def make_news_id(
 
 
 # =========================================================
-# بررسی تیتر مشابه
+# تشخیص خبر تکراری
 # =========================================================
 
 def is_duplicate_title(
@@ -1045,11 +999,9 @@ def is_duplicate_title(
 
         old_title = old_id[6:]
 
-
         old_words = set(
             old_title.split()
         )
-
 
         if not old_words:
 
@@ -1140,10 +1092,6 @@ def get_news():
                     continue
 
 
-                # =================================================
-                # امتیاز
-                # =================================================
-
                 analysis = score_news(
                     title,
                     description,
@@ -1220,9 +1168,9 @@ def get_news():
             )
 
 
-    # =========================================================
-    # اولویت‌بندی
-    # =========================================================
+    # =====================================================
+    # مهم‌ترین اخبار اول
+    # =====================================================
 
     results.sort(
         key=lambda x:
@@ -1236,11 +1184,24 @@ def get_news():
 
 # =========================================================
 # ترجمه تیتر
+#
+# فقط تیتر انگلیسی ترجمه می‌شود
 # =========================================================
 
-def translate_title(
-    title
-):
+def translate_title(title):
+
+    title = clean_text(
+        title
+    )
+
+
+    # اگر فارسی است، اصلاً ترجمه نکن
+    if is_persian_text(
+        title
+    ):
+
+        return title
+
 
     try:
 
@@ -1318,7 +1279,7 @@ def translate_title(
 
 
 # =========================================================
-# تحلیل اثر خبر
+# تحلیل اثر خبر روی بازار فولاد
 # =========================================================
 
 def impact_analysis(
@@ -1343,8 +1304,8 @@ def impact_analysis(
 
         "دلار گران شد",
 
-        "طلا افزایش",
-        "طلا صعود",
+        "افزایش قیمت طلا",
+        "رشد قیمت طلا",
 
         "افزایش قیمت بنزین",
 
@@ -1380,12 +1341,13 @@ def impact_analysis(
 
         "دلار ارزان شد",
 
-        "طلا کاهش",
-        "طلا افت",
+        "کاهش قیمت طلا",
+        "افت قیمت طلا",
 
         "کاهش قیمت بنزین",
 
         "آتش بس",
+        "آتش‌بس",
 
         "price fall",
         "price decrease",
@@ -1473,9 +1435,7 @@ def make_image_query(
         or "سنگ‌آهن" in text
     ):
 
-        return (
-            "iron ore mining"
-        )
+        return "iron ore mining"
 
 
     if (
@@ -1483,9 +1443,7 @@ def make_image_query(
         or "میلگرد" in text
     ):
 
-        return (
-            "steel rebar construction"
-        )
+        return "steel rebar construction"
 
 
     if (
@@ -1493,9 +1451,7 @@ def make_image_query(
         or "شمش" in text
     ):
 
-        return (
-            "steel billet factory"
-        )
+        return "steel billet factory"
 
 
     if (
@@ -1504,9 +1460,7 @@ def make_image_query(
         or "آهن" in text
     ):
 
-        return (
-            "steel factory steel industry"
-        )
+        return "steel factory steel industry"
 
 
     if (
@@ -1515,9 +1469,7 @@ def make_image_query(
         or "ارز" in text
     ):
 
-        return (
-            "US dollar currency market"
-        )
+        return "US dollar currency market"
 
 
     if (
@@ -1526,9 +1478,7 @@ def make_image_query(
         or "سکه" in text
     ):
 
-        return (
-            "gold bars gold market"
-        )
+        return "gold bars gold market"
 
 
     if (
@@ -1537,9 +1487,7 @@ def make_image_query(
         or "گازوئیل" in text
     ):
 
-        return (
-            "gas station fuel"
-        )
+        return "gas station fuel"
 
 
     if (
@@ -1549,18 +1497,14 @@ def make_image_query(
         or "attack" in text
     ):
 
-        return (
-            "Iran United States conflict"
-        )
+        return "Iran United States conflict"
 
 
-    return (
-        "Iran economy financial market"
-    )
+    return "Iran economy financial market"
 
 
 # =========================================================
-# دریافت عکس Pexels
+# دریافت عکس از Pexels
 # =========================================================
 
 def get_image(
@@ -1678,7 +1622,7 @@ def send_message(
                     text,
 
                 "disable_web_page_preview":
-                    False
+                    True
 
             },
 
@@ -1760,6 +1704,8 @@ def send_photo(
 
 # =========================================================
 # ساخت پست
+#
+# بدون لینک خبر
 # =========================================================
 
 def make_post(
@@ -1785,7 +1731,34 @@ def make_post(
     )
 
 
-    post = f"""
+    # =====================================================
+    # خبر فارسی
+    # =====================================================
+
+    if is_persian_text(
+        original_title
+    ):
+
+        post = f"""
+📰 خبر اقتصادی و بازار
+
+📰 منبع:
+{source}
+
+🔹 خبر:
+{original_title}
+
+{impact}
+"""
+
+
+    # =====================================================
+    # خبر انگلیسی
+    # =====================================================
+
+    else:
+
+        post = f"""
 📰 خبر اقتصادی و بازار
 
 📰 منبع:
@@ -1794,13 +1767,10 @@ def make_post(
 🔹 تیتر اصلی:
 {original_title}
 
-🇮🇷 ترجمه تیتر:
+🇮🇷 ترجمه:
 {translated}
 
 {impact}
-
-🔗 منبع:
-{news['link']}
 """
 
 
@@ -1825,7 +1795,7 @@ def main():
     )
 
     print(
-        "Iran-focused news filter"
+        "Iran-focused news system"
     )
 
     print(
@@ -1852,7 +1822,7 @@ def main():
 
 
     # =====================================================
-    # فقط مهم‌ترین خبرها
+    # فقط مهم‌ترین 2 خبر
     # =====================================================
 
     news_items = news_items[
@@ -1913,6 +1883,7 @@ def main():
             )
 
 
+            # ذخیره تیتر برای تشخیص مشابه
             history.append(
                 "title:" +
                 normalize_text(
@@ -1951,6 +1922,10 @@ def main():
         "========================================"
     )
 
+
+# =========================================================
+# شروع
+# =========================================================
 
 if __name__ == "__main__":
 
