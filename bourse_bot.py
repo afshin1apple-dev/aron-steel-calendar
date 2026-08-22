@@ -1,58 +1,40 @@
 import requests
-import re
 
-URL = "https://www.ibrokers.ir/"
+BASE_URL = "https://www.ibrokers.ir"
 
-def main():
+def test_api(path):
 
-    print("در حال پیدا کردن API بورس کالا...")
+    print("\n==============================")
+    print("TEST:", path)
+    print("==============================")
 
     try:
 
         response = requests.get(
-            URL,
+            BASE_URL + path,
             headers={
-                "User-Agent": "Mozilla/5.0"
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json"
             },
             timeout=30
         )
 
-        html = response.text
-
         print("STATUS:", response.status_code)
-        print("SIZE:", len(html))
+        print("CONTENT-TYPE:", response.headers.get("content-type"))
+        print("SIZE:", len(response.content))
 
-        print("\n--- JAVASCRIPT FILES ---")
-
-        scripts = re.findall(
-            r'<script[^>]+src=["\']([^"\']+)["\']',
-            html,
-            re.I
-        )
-
-        for script in scripts:
-            print(script)
-
-        print("\n--- POSSIBLE API LINKS ---")
-
-        for pattern in [
-            r'https?://[^"\']+',
-            r'/api/[^"\']+',
-            r'/api/[^\'"]+'
-        ]:
-
-            matches = re.findall(
-                pattern,
-                html,
-                re.I
-            )
-
-            for item in matches:
-                print(item)
+        print("\n--- DATA ---")
+        print(response.text[:10000])
 
     except Exception as e:
 
         print("ERROR:", e)
+
+
+def main():
+
+    test_api("/api/bazaar-stats")
+    test_api("/api/landing-stats")
 
 
 if __name__ == "__main__":
