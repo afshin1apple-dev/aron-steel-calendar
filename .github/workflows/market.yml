@@ -2,7 +2,12 @@ name: Daily Market
 
 on:
   schedule:
+    # اجرای اصلی — حدود ساعت ۸:۰۱ صبح ایران
     - cron: '31 4 * * *'
+
+    # اجرای پشتیبان — حدود ساعت ۸:۳۰ صبح ایران
+    - cron: '0 5 * * *'
+
   workflow_dispatch:
 
 permissions:
@@ -13,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Get files
         uses: actions/checkout@v4
 
@@ -22,19 +28,37 @@ jobs:
           python-version: '3.12'
 
       - name: Install packages
-        run: pip install requests beautifulsoup4
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
 
       - name: Run market bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: python market.py
+        run: |
+          echo "======================================"
+          echo "Starting Daily Market"
+          echo "UTC time:"
+          date -u
+          echo "Iran time:"
+          TZ=Asia/Tehran date
+          echo "======================================"
+
+          python market.py
+
+          echo "======================================"
+          echo "Market bot finished"
+          echo "======================================"
 
       - name: Save market history
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add market_history.json
+
           git commit -m "Update market history" || echo "No changes"
+
           git push
