@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 
 # =========================================================
-# تنظیمات
+# SETTINGS
 # =========================================================
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -22,13 +22,15 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 HISTORY_FILE = "news_history.json"
 
-MAX_POSTS_PER_RUN = 2
+# فقط خبرهای واقعاً مهم
+MIN_SCORE = 22
 
-MIN_NEWS_SCORE = 10
+# حداکثر خبر در هر اجرای ربات
+MAX_POSTS_PER_RUN = 3
 
 
 # =========================================================
-# اطلاعات شرکت
+# COMPANY
 # =========================================================
 
 COMPANY_FOOTER = """
@@ -41,7 +43,7 @@ COMPANY_FOOTER = """
 
 
 # =========================================================
-# منابع خبری
+# NEWS SOURCES
 # =========================================================
 
 FEEDS = [
@@ -52,145 +54,64 @@ FEEDS = [
     },
 
     {
-        "name": "اخبار اقتصادی داخلی",
+        "name": "اقتصادنیوز",
         "url": "https://www.eghtesadnews.com/rss"
     },
 
     {
-        "name": "دلار و بازار ایران",
+        "name": "TGJU",
         "url": "https://www.tgju.org/rss"
     },
 
     {
-        "name": "بنزین و انرژی ایران",
-        "url": "https://www.irna.ir/rss"
-    },
-
-    {
-        "name": "طلا و بازار جهانی",
-        "url": "https://www.tgju.org/rss"
-    },
-
-    {
-        "name": "اخبار جنگ ایران و آمریکا",
+        "name": "ایرنا",
         "url": "https://www.irna.ir/rss"
     }
 ]
 
 
 # =========================================================
-# اقتصاد داخلی ایران
+# IMPORTANT KEYWORDS
 # =========================================================
 
-IRAN_ECONOMY_KEYWORDS = [
-
-    "ایران",
-    "ایرانی",
-    "تهران",
-    "اقتصاد ایران",
-    "اقتصاد داخلی",
-
-    "بانک مرکزی",
-    "مرکز مبادله",
-    "نرخ بهره",
-    "تورم",
-    "نقدینگی",
-
-    "وزارت صمت",
-    "صمت",
-
-    "گمرک",
-    "واردات",
-    "صادرات",
-
-    "مالیات",
-    "بورس کالا",
-    "بورس تهران",
-    "بورس",
-
-    "دولت",
-    "مجلس",
-    "وزارت اقتصاد",
-
-    "economic",
-    "iran",
-    "iranian",
-    "tehran",
-
-    "central bank",
-    "inflation",
-    "interest rate",
-
-    "iran economy"
-]
-
-
-# =========================================================
-# فولاد و آهن
-# =========================================================
-
-STEEL_KEYWORDS = [
-
+STEEL = [
     "فولاد",
-    "بازار فولاد",
-    "قیمت فولاد",
-    "تولید فولاد",
-    "صادرات فولاد",
-    "واردات فولاد",
-
     "آهن",
-    "بازار آهن",
-    "قیمت آهن",
-
     "میلگرد",
     "شمش",
     "سنگ آهن",
     "سنگ‌آهن",
+    "آهن اسفنجی",
+    "ورق",
+    "تیرآهن",
     "قراضه",
     "کک",
     "زغال سنگ",
-
-    "ورق",
-    "تیرآهن",
-    "آهن اسفنجی",
-
+    "صادرات فولاد",
+    "واردات فولاد",
+    "تولید فولاد",
     "steel",
     "steel price",
     "steel prices",
-    "steel production",
-    "steel exports",
-    "steel imports",
-
     "iron ore",
-    "iron ore price",
-
     "rebar",
     "billet",
     "slab",
-    "scrap steel",
-    "coking coal",
-    "hot rolled",
-    "cold rolled"
+    "scrap",
+    "coking coal"
 ]
 
 
-# =========================================================
-# دلار و ارز ایران
-# =========================================================
-
-CURRENCY_KEYWORDS = [
-
+CURRENCY = [
     "دلار",
-    "نرخ دلار",
     "دلار آزاد",
-    "دلار بازار آزاد",
+    "نرخ دلار",
     "ارز",
     "نرخ ارز",
     "ریال",
     "تتر",
     "مرکز مبادله",
     "دلار توافقی",
-
     "usd",
     "dollar",
     "iranian rial",
@@ -200,170 +121,150 @@ CURRENCY_KEYWORDS = [
 ]
 
 
-# =========================================================
-# بنزین و انرژی ایران
-# =========================================================
-
-FUEL_KEYWORDS = [
-
-    "بنزین",
-    "قیمت بنزین",
-    "سهمیه بنزین",
-    "کارت سوخت",
-    "سوخت",
-    "گازوئیل",
-    "نفت",
-    "پمپ بنزین",
-    "جایگاه سوخت",
-
-    "بنزین ایران",
-    "سوخت ایران",
-
-    "gasoline",
-    "fuel",
-    "iran fuel",
-    "iran gasoline",
-    "petrol"
-]
-
-
-# =========================================================
-# طلا ایران و جهان
-# =========================================================
-
-GOLD_KEYWORDS = [
-
+GOLD = [
     "طلا",
     "طلای جهانی",
-    "طلای ۱۸ عیار",
-    "طلای آبشده",
+    "طلای ۱۸",
     "سکه",
-    "سکه امامی",
     "اونس طلا",
-
     "gold",
     "gold price",
     "gold prices",
-    "gold ounce",
-    "xau"
+    "gold ounce"
 ]
 
 
-# =========================================================
-# جنگ ایران و آمریکا
-# =========================================================
-
-WAR_KEYWORDS = [
-
-    "ایران و آمریکا",
-    "ایران آمریکا",
-    "جنگ ایران و آمریکا",
-    "درگیری ایران و آمریکا",
-    "حمله آمریکا به ایران",
-    "حمله ایران به آمریکا",
-
-    "ایران و اسرائیل",
-    "ایران اسرائیل",
-    "جنگ ایران و اسرائیل",
-    "درگیری ایران و اسرائیل",
-
-    "آمریکا",
-    "واشنگتن",
-    "پنتاگون",
-    "حمله",
-    "حملات",
-    "موشک",
-    "موشکی",
-    "درگیری نظامی",
-    "تنش نظامی",
-    "تنش منطقه‌ای",
-
-    "iran usa",
-    "iran us",
-    "iran united states",
-    "iran war",
-    "iran conflict",
-    "iran israel",
-    "israel iran",
-    "us iran",
-    "military conflict",
-    "attack",
-    "missile",
-    "pentagon"
+ENERGY = [
+    "بنزین",
+    "گازوئیل",
+    "سوخت",
+    "نفت",
+    "انرژی",
+    "قیمت نفت",
+    "gasoline",
+    "fuel",
+    "oil",
+    "energy"
 ]
 
 
-# =========================================================
-# تحریم
-# =========================================================
-
-SANCTIONS_KEYWORDS = [
-
+SANCTIONS = [
     "تحریم",
     "تحریم‌ها",
     "تحریم ایران",
     "تحریم آمریکا",
     "رفع تحریم",
-
     "sanction",
     "sanctions",
-    "iran sanctions",
-    "us sanctions"
+    "iran sanctions"
 ]
 
 
-# =========================================================
-# بازار جهانی
-# =========================================================
+WAR = [
+    "جنگ",
+    "درگیری",
+    "حمله",
+    "حملات",
+    "موشک",
+    "تنش نظامی",
+    "تنش منطقه‌ای",
+    "ایران و آمریکا",
+    "ایران آمریکا",
+    "ایران و اسرائیل",
+    "ایران اسرائیل",
+    "پنتاگون",
+    "واشنگتن",
+    "iran war",
+    "iran conflict",
+    "iran israel",
+    "us iran",
+    "attack",
+    "missile",
+    "pentagon",
+    "military conflict"
+]
 
-GLOBAL_KEYWORDS = [
 
+ECONOMY = [
+    "بانک مرکزی",
+    "مرکز مبادله",
+    "نرخ بهره",
+    "تورم",
+    "نقدینگی",
+    "وزارت صمت",
+    "وزارت اقتصاد",
+    "گمرک",
+    "صادرات",
+    "واردات",
+    "بورس کالا",
+    "بورس تهران",
+    "دولت",
+    "مجلس",
+    "central bank",
+    "interest rate",
+    "inflation"
+]
+
+
+CHINA = [
     "چین",
     "فولاد چین",
     "اقتصاد چین",
     "تقاضای چین",
-
     "china",
     "chinese",
-    "china steel",
-
-    "نفت",
-    "انرژی",
-    "کامودیتی",
-    "مس",
-
-    "oil",
-    "energy",
-    "commodity",
-    "commodities",
-    "copper"
+    "china steel"
 ]
 
 
 # =========================================================
-# کلمات ضعیف
+# STRONG IMPACT WORDS
 # =========================================================
 
-WEAK_KEYWORDS = [
+POSITIVE = [
+    "افزایش قیمت",
+    "رشد قیمت",
+    "افزایش نرخ",
+    "افزایش تقاضا",
+    "کاهش تولید",
+    "کاهش عرضه",
+    "صعود",
+    "صعود کرد",
+    "افزایش یافت",
+    "گران شد",
+    "افزایش دلار",
+    "افزایش طلا",
+    "production cut",
+    "supply cut",
+    "price rise",
+    "prices rise",
+    "strong demand"
+]
 
-    "economy",
-    "economic",
-    "market",
-    "markets",
-    "industry",
-    "industrial",
-    "business",
-    "finance",
 
-    "اقتصاد",
-    "بازار",
-    "صنعت",
-    "مالی"
+NEGATIVE = [
+    "کاهش قیمت",
+    "افت قیمت",
+    "کاهش نرخ",
+    "کاهش تقاضا",
+    "افزایش تولید",
+    "افزایش عرضه",
+    "افت",
+    "افت کرد",
+    "کاهش یافت",
+    "ارزان شد",
+    "کاهش دلار",
+    "کاهش طلا",
+    "oversupply",
+    "production increase",
+    "price fall",
+    "prices fall",
+    "weak demand"
 ]
 
 
 # =========================================================
-# تاریخچه
+# HISTORY
 # =========================================================
 
 def load_history():
@@ -377,9 +278,9 @@ def load_history():
             HISTORY_FILE,
             "r",
             encoding="utf-8"
-        ) as file:
+        ) as f:
 
-            return json.load(file)
+            return json.load(f)
 
     except Exception:
 
@@ -394,28 +295,25 @@ def save_history(history):
             HISTORY_FILE,
             "w",
             encoding="utf-8"
-        ) as file:
+        ) as f:
 
             json.dump(
-                history[-500:],
-                file,
+                history[-1000:],
+                f,
                 ensure_ascii=False,
                 indent=2
             )
 
     except Exception as e:
 
-        print(
-            "History save error:",
-            e
-        )
+        print("History error:", e)
 
 
 history = load_history()
 
 
 # =========================================================
-# تمیز کردن متن
+# TEXT
 # =========================================================
 
 def clean_text(text):
@@ -437,50 +335,25 @@ def clean_text(text):
     return text.strip()
 
 
-# =========================================================
-# نرمال‌سازی
-# =========================================================
-
-def normalize_text(text):
+def normalize(text):
 
     text = clean_text(text).lower()
 
-    text = text.replace(
-        "‌",
-        " "
-    )
+    text = text.replace("‌", " ")
+    text = text.replace("ي", "ی")
+    text = text.replace("ك", "ک")
 
-    text = text.replace(
-        "ي",
-        "ی"
-    )
-
-    text = text.replace(
-        "ك",
-        "ک"
-    )
-
-    text = re.sub(
+    return re.sub(
         r"\s+",
         " ",
         text
-    )
-
-    return text.strip()
+    ).strip()
 
 
-# =========================================================
-# بررسی کلمه
-# =========================================================
+def has_keyword(text, keyword):
 
-def contains_keyword(text, keyword):
-
-    text = normalize_text(text)
-
-    keyword = normalize_text(keyword)
-
-    if not keyword:
-        return False
+    text = normalize(text)
+    keyword = normalize(keyword)
 
     if " " in keyword:
 
@@ -492,310 +365,126 @@ def contains_keyword(text, keyword):
     ) is not None
 
 
-# =========================================================
-# پیدا کردن کلمات
-# =========================================================
+def hits(text, keywords):
 
-def find_hits(text, keywords):
-
-    hits = []
-
-    for keyword in keywords:
-
-        if contains_keyword(
-            text,
-            keyword
-        ):
-
-            hits.append(keyword)
-
-    return hits
+    return [
+        word
+        for word in keywords
+        if has_keyword(text, word)
+    ]
 
 
 # =========================================================
-# امتیازدهی خبر
+# SCORE
 # =========================================================
 
-def score_news(
-    title,
-    description,
-    source
-):
+def score_news(title, description, source):
 
-    text = (
-        title +
-        " " +
-        description
-    )
+    text = title + " " + description
 
-    iran = find_hits(
-        text,
-        IRAN_ECONOMY_KEYWORDS
-    )
+    steel = hits(text, STEEL)
+    currency = hits(text, CURRENCY)
+    gold = hits(text, GOLD)
+    energy = hits(text, ENERGY)
+    sanctions = hits(text, SANCTIONS)
+    war = hits(text, WAR)
+    economy = hits(text, ECONOMY)
+    china = hits(text, CHINA)
 
-    steel = find_hits(
-        text,
-        STEEL_KEYWORDS
-    )
-
-    currency = find_hits(
-        text,
-        CURRENCY_KEYWORDS
-    )
-
-    fuel = find_hits(
-        text,
-        FUEL_KEYWORDS
-    )
-
-    gold = find_hits(
-        text,
-        GOLD_KEYWORDS
-    )
-
-    war = find_hits(
-        text,
-        WAR_KEYWORDS
-    )
-
-    sanctions = find_hits(
-        text,
-        SANCTIONS_KEYWORDS
-    )
-
-    global_hits = find_hits(
-        text,
-        GLOBAL_KEYWORDS
-    )
-
-    weak = find_hits(
-        text,
-        WEAK_KEYWORDS
-    )
+    positive = hits(text, POSITIVE)
+    negative = hits(text, NEGATIVE)
 
     score = 0
 
-
-    # فولاد
+    # موضوعات اصلی
     score += len(steel) * 6
-
-
-    # اقتصاد ایران
-    score += len(iran) * 5
-
-
-    # دلار
     score += len(currency) * 5
+    score += len(gold) * 4
+    score += len(energy) * 5
+    score += len(sanctions) * 8
+    score += len(war) * 9
+    score += len(economy) * 4
+    score += len(china) * 4
 
+    # اثر قابل تشخیص
+    score += len(positive) * 7
+    score += len(negative) * 7
 
-    # بنزین
-    score += len(fuel) * 5
-
-
-    # طلا
-    score += len(gold) * 5
-
-
-    # جنگ
-    score += len(war) * 6
-
-
-    # تحریم
-    score += len(sanctions) * 4
-
-
-    # بازار جهانی
-    score += len(global_hits) * 2
-
-
-    # -----------------------------------------------------
-    # ترکیب‌های مهم
-    # -----------------------------------------------------
-
-    if iran and steel:
+    # ترکیب‌های خیلی مهم
+    if steel and currency:
         score += 12
 
-    if iran and currency:
-        score += 10
-
-    if iran and fuel:
-        score += 10
-
-    if iran and gold:
-        score += 8
-
-    if iran and war:
+    if steel and sanctions:
         score += 15
 
-    if iran and sanctions:
+    if steel and war:
+        score += 15
+
+    if currency and sanctions:
+        score += 12
+
+    if currency and war:
+        score += 15
+
+    if steel and china:
         score += 10
 
-    if steel and currency:
+    if energy and war:
+        score += 12
+
+    if economy and currency:
         score += 8
 
-    if steel and fuel:
-        score += 6
-
-    if steel and gold:
-        score += 5
-
-    if global_hits and steel:
-        score += 7
-
-    if war and sanctions:
-        score += 8
-
-
-    # -----------------------------------------------------
     # منابع تخصصی
-    # -----------------------------------------------------
-
     if source == "فولادبان":
-        score += 5
+        score += 8
 
-    if source in [
-        "دلار و بازار ایران",
-        "طلا و بازار جهانی"
-    ]:
-        score += 4
-
-
-    # -----------------------------------------------------
-    # خبرهای کاملاً عمومی حذف شوند
-    # -----------------------------------------------------
-
-    if (
-        not iran
-        and not steel
-        and not currency
-        and not fuel
-        and not gold
-        and not war
-        and not sanctions
-    ):
-
-        score -= 20
-
-
-    if (
-        weak
-        and not iran
-        and not steel
-        and not currency
-        and not fuel
-        and not gold
-        and not war
-        and not sanctions
-    ):
+    # اگر اثر مثبت یا منفی اصلاً پیدا نشده باشد
+    # خبر خنثی محسوب می‌شود
+    if not positive and not negative:
 
         score = 0
 
-
     return {
         "score": score,
-        "iran": iran,
         "steel": steel,
         "currency": currency,
-        "fuel": fuel,
         "gold": gold,
-        "war": war,
+        "energy": energy,
         "sanctions": sanctions,
-        "global": global_hits
+        "war": war,
+        "economy": economy,
+        "china": china,
+        "positive": positive,
+        "negative": negative
     }
 
 
 # =========================================================
-# شناسه خبر
+# DUPLICATE
 # =========================================================
 
-def make_news_id(
-    title,
-    link
-):
+def make_id(title, link):
 
     if link:
 
-        return (
-            "url:" +
-            link.strip().lower()
-        )
+        return "url:" + link.strip().lower()
 
-    return (
-        "title:" +
-        normalize_text(title)
-    )
+    return "title:" + normalize(title)
 
 
-# =========================================================
-# تشخیص خبر مشابه
-# =========================================================
+def duplicate(news_id):
 
-def is_duplicate_title(
-    title,
-    history
-):
-
-    new_words = set(
-        normalize_text(title).split()
-    )
-
-    if len(new_words) < 5:
-        return False
-
-
-    for old_id in history[-200:]:
-
-        if not isinstance(
-            old_id,
-            str
-        ):
-
-            continue
-
-        if not old_id.startswith(
-            "title:"
-        ):
-
-            continue
-
-        old_title = old_id[6:]
-
-        old_words = set(
-            old_title.split()
-        )
-
-        if not old_words:
-            continue
-
-        common = len(
-            new_words &
-            old_words
-        )
-
-        similarity = (
-            common /
-            max(
-                len(new_words),
-                len(old_words)
-            )
-        )
-
-        if similarity >= 0.70:
-
-            return True
-
-
-    return False
+    return news_id in history
 
 
 # =========================================================
-# دریافت اخبار
+# GET NEWS
 # =========================================================
 
 def get_news():
 
     results = []
-
 
     for feed_info in FEEDS:
 
@@ -810,30 +499,14 @@ def get_news():
                 feed_info["url"]
             )
 
-            if not feed.entries:
-
-                print(
-                    "No entries:",
-                    feed_info["name"]
-                )
-
-                continue
-
-
-            for item in feed.entries[:40]:
+            for item in feed.entries[:30]:
 
                 title = clean_text(
-                    item.get(
-                        "title",
-                        ""
-                    )
+                    item.get("title", "")
                 )
 
                 description = clean_text(
-                    item.get(
-                        "summary",
-                        ""
-                    )
+                    item.get("summary", "")
                 )
 
                 link = item.get(
@@ -841,10 +514,8 @@ def get_news():
                     ""
                 )
 
-
                 if not title:
                     continue
-
 
                 analysis = score_news(
                     title,
@@ -852,42 +523,23 @@ def get_news():
                     feed_info["name"]
                 )
 
-
                 print(
-                    "NEWS SCORE:",
+                    "SCORE:",
                     analysis["score"],
-                    "|",
-                    feed_info["name"],
                     "|",
                     title
                 )
 
-
-                if (
-                    analysis["score"]
-                    < MIN_NEWS_SCORE
-                ):
-
+                if analysis["score"] < MIN_SCORE:
                     continue
 
-
-                news_id = make_news_id(
+                news_id = make_id(
                     title,
                     link
                 )
 
-
-                if news_id in history:
+                if duplicate(news_id):
                     continue
-
-
-                if is_duplicate_title(
-                    title,
-                    history
-                ):
-
-                    continue
-
 
                 results.append({
 
@@ -911,98 +563,49 @@ def get_news():
 
                     "analysis":
                         analysis
-
                 })
-
 
         except Exception as e:
 
             print(
-                f"Feed error {feed_info['name']}: {e}"
+                "Feed error:",
+                feed_info["name"],
+                e
             )
 
-
     results.sort(
-        key=lambda x:
-            x["score"],
+        key=lambda x: x["score"],
         reverse=True
     )
-
 
     return results
 
 
 # =========================================================
-# تشخیص ایرانی بودن خبر
-# =========================================================
-
-def is_iranian_news(news):
-
-    text = (
-        news["title"] +
-        " " +
-        news["description"]
-    )
-
-    analysis = news["analysis"]
-
-    if (
-        analysis["iran"]
-        or analysis["fuel"]
-        or analysis["currency"]
-        or analysis["war"]
-    ):
-
-        return True
-
-
-    iran_words = [
-
-        "ایران",
-        "ایرانی",
-        "تهران",
-        "دولت",
-        "وزارت",
-        "مجلس",
-
-        "iran",
-        "iranian",
-        "tehran"
-    ]
-
-    return any(
-        contains_keyword(
-            text,
-            word
-        )
-        for word in iran_words
-    )
-
-
-# =========================================================
-# ترجمه فقط برای اخبار خارجی
+# TRANSLATION
 # =========================================================
 
 def translate_title(title):
 
     try:
 
-        encoded_title = quote(
-            title
-        )
-
         url = (
             "https://translate.googleapis.com/"
             "translate_a/single"
-            "?client=gtx"
-            "&sl=auto"
-            "&tl=fa"
-            "&dt=t"
-            f"&q={encoded_title}"
         )
 
         response = requests.get(
+
             url,
+
+            params={
+                "client": "gtx",
+                "sl": "auto",
+                "tl": "fa",
+                "dt": "t",
+                "q": title
+            },
+
             timeout=20
         )
 
@@ -1011,31 +614,14 @@ def translate_title(title):
 
         data = response.json()
 
-        translated_parts = []
+        result = ""
 
         for part in data[0]:
 
-            if (
-                part
-                and part[0]
-            ):
+            if part and part[0]:
+                result += part[0]
 
-                translated_parts.append(
-                    part[0]
-                )
-
-        translated = "".join(
-            translated_parts
-        )
-
-        translated = clean_text(
-            translated
-        )
-
-        if not translated:
-            return title
-
-        return translated
+        return clean_text(result) or title
 
     except Exception as e:
 
@@ -1048,309 +634,124 @@ def translate_title(title):
 
 
 # =========================================================
-# تحلیل اثر خبر
+# IMPACT
 # =========================================================
 
-def impact_analysis(
-    news
-):
-
-    title = news["title"]
-
-    description = news["description"]
-
-    text = normalize_text(
-        title +
-        " " +
-        description
-    )
+def impact(news):
 
     analysis = news["analysis"]
 
-
-    positive_words = [
-
-        "افزایش قیمت",
-        "افزایش تقاضا",
-        "کاهش تولید",
-        "کاهش عرضه",
-        "رشد قیمت",
-        "افزایش نرخ",
-        "افزایش دلار",
-        "افزایش طلا",
-
-        "قیمت صعود کرد",
-        "رشد کرد",
-        "صعود",
-
-        "stimulus",
-        "strong demand",
-        "production cut",
-        "supply cut",
-        "price rise",
-        "prices rise"
-    ]
-
-
-    negative_words = [
-
-        "کاهش قیمت",
-        "کاهش تقاضا",
-        "افزایش تولید",
-        "مازاد عرضه",
-        "افت قیمت",
-        "کاهش نرخ",
-        "کاهش دلار",
-        "افت طلا",
-
-        "قیمت کاهش یافت",
-        "افت کرد",
-
-        "weak demand",
-        "oversupply",
-        "production increase",
-        "price fall",
-        "prices fall"
-    ]
-
-
-    positive = any(
-        contains_keyword(
-            text,
-            word
-        )
-        for word in positive_words
-    )
-
-
-    negative = any(
-        contains_keyword(
-            text,
-            word
-        )
-        for word in negative_words
-    )
-
-
-    # جنگ و بنزین و اقتصاد
-    if (
-        analysis["war"]
-        or analysis["fuel"]
-        or analysis["iran"]
-    ):
-
-        if positive and not negative:
-
-            return (
-                "🟢 اثر احتمالی بر بازار: افزایشی\n"
-                "این خبر می‌تواند بر انتظارات بازار اثر افزایشی داشته باشد."
-            )
-
-        if negative and not positive:
-
-            return (
-                "🔴 اثر احتمالی بر بازار: کاهشی\n"
-                "این خبر می‌تواند بر انتظارات بازار اثر کاهشی داشته باشد."
-            )
-
+    positive = analysis["positive"]
+    negative = analysis["negative"]
 
     if positive and not negative:
 
-        return (
-            "🟢 اثر احتمالی بر بازار فولاد: افزایش\n"
-            "این خبر می‌تواند از قیمت یا انتظارات بازار حمایت کند."
-        )
+        main = "🟢 افزایشی"
 
+    elif negative and not positive:
 
-    if negative and not positive:
+        main = "🔴 کاهشی"
 
-        return (
-            "🔴 اثر احتمالی بر بازار فولاد: کاهش\n"
-            "این خبر می‌تواند بر قیمت یا تقاضای بازار فشار وارد کند."
-        )
-
-
-    return (
-        "🟡 اثر احتمالی بر بازار: خنثی / نامشخص\n"
-        "اثر مستقیم این خبر بر بازار فعلاً مشخص نیست."
-    )
-
-
-# =========================================================
-# ساخت جستجوی عکس
-# =========================================================
-
-def make_image_query(news):
-
-    text = normalize_text(
-        news["title"] +
-        " " +
-        news["description"]
-    )
-
-
-    if (
-        "بنزین" in text
-        or "gasoline" in text
-        or "fuel" in text
-    ):
-
-        return (
-            "Iran gasoline fuel station"
-        )
-
-
-    if (
-        "طلا" in text
-        or "gold" in text
-        or "سکه" in text
-    ):
-
-        return (
-            "gold financial market"
-        )
-
-
-    if (
-        "دلار" in text
-        or "usd" in text
-        or "تتر" in text
-    ):
-
-        return (
-            "US dollar currency market"
-        )
-
-
-    if (
-        "جنگ" in text
-        or "حمله" in text
-        or "موشک" in text
-        or "war" in text
-        or "missile" in text
-    ):
-
-        return (
-            "Iran military conflict Middle East"
-        )
-
-
-    if (
-        "سنگ آهن" in text
-        or "iron ore" in text
-    ):
-
-        return (
-            "iron ore mining steel industry"
-        )
-
-
-    if (
-        "میلگرد" in text
-        or "rebar" in text
-    ):
-
-        return (
-            "steel rebar construction"
-        )
-
-
-    if (
-        "شمش" in text
-        or "billet" in text
-    ):
-
-        return (
-            "steel billet factory"
-        )
-
-
-    if (
-        "فولاد" in text
-        or "steel" in text
-    ):
-
-        return (
-            "steel factory steel industry"
-        )
-
-
-    return (
-        "Iran economy financial market"
-    )
-
-
-# =========================================================
-# دریافت عکس
-# =========================================================
-
-def get_image(query):
-
-    if not PEXELS_API_KEY:
+    else:
 
         return None
 
+    steel = "🟡"
+    dollar = "🟡"
+    energy = "🟡"
+
+    if analysis["steel"]:
+        steel = main
+
+    if analysis["currency"] or analysis["sanctions"] or analysis["war"]:
+        dollar = "🟢" if positive else "🔴"
+
+    if analysis["energy"] or analysis["war"]:
+        energy = "🟢" if positive else "🔴"
+
+    return (
+        f"📊 <b>تأثیر کلی بازار:</b> {main}\n\n"
+        f"🏭 فولاد: {steel}\n"
+        f"💵 دلار: {dollar}\n"
+        f"🛢 انرژی: {energy}"
+    )
+
+
+# =========================================================
+# IMAGE
+# =========================================================
+
+def image_query(news):
+
+    analysis = news["analysis"]
+
+    if analysis["steel"]:
+        return "steel factory steel market"
+
+    if analysis["currency"]:
+        return "US dollar financial market"
+
+    if analysis["gold"]:
+        return "gold financial market"
+
+    if analysis["energy"]:
+        return "oil energy market"
+
+    if analysis["war"]:
+        return "Middle East military conflict"
+
+    return "Iran economy financial market"
+
+
+def get_image(news):
+
+    if not PEXELS_API_KEY:
+        return None
 
     try:
-
-        headers = {
-            "Authorization":
-                PEXELS_API_KEY
-        }
-
 
         response = requests.get(
 
             "https://api.pexels.com/v1/search",
 
-            headers=headers,
+            headers={
+                "Authorization":
+                    PEXELS_API_KEY
+            },
 
             params={
-
                 "query":
-                    query,
+                    image_query(news),
 
                 "per_page":
-                    20,
+                    15,
 
                 "orientation":
                     "landscape"
-
             },
 
             timeout=20
         )
 
-
         if response.status_code != 200:
-
             return None
-
 
         photos = response.json().get(
             "photos",
             []
         )
 
-
         if not photos:
             return None
 
-
         return random.choice(
             photos
-        ).get(
-            "src",
-            {}
-        ).get(
-            "large"
-        )
-
+        )["src"]["large"]
 
     except Exception as e:
 
         print(
-            "Pexels error:",
+            "Image error:",
             e
         )
 
@@ -1358,55 +759,7 @@ def get_image(query):
 
 
 # =========================================================
-# ارسال متن
-# =========================================================
-
-def send_message(text):
-
-    try:
-
-        response = requests.post(
-
-            f"{TELEGRAM_URL}/sendMessage",
-
-            data={
-
-                "chat_id":
-                    CHANNEL_ID,
-
-                "text":
-                    text,
-
-                "disable_web_page_preview":
-                    True
-
-            },
-
-            timeout=30
-        )
-
-
-        print(
-            "Telegram:",
-            response.status_code
-        )
-
-
-        return response.ok
-
-
-    except Exception as e:
-
-        print(
-            "Telegram error:",
-            e
-        )
-
-        return False
-
-
-# =========================================================
-# ارسال عکس
+# TELEGRAM
 # =========================================================
 
 def send_photo(
@@ -1429,27 +782,61 @@ def send_photo(
                     image_url,
 
                 "caption":
-                    caption
+                    caption,
+
+                "parse_mode":
+                    "HTML"
 
             },
 
             timeout=40
         )
 
-
-        print(
-            "Telegram photo:",
-            response.status_code
-        )
-
-
         return response.ok
-
 
     except Exception as e:
 
         print(
-            "Telegram photo error:",
+            "Photo error:",
+            e
+        )
+
+        return False
+
+
+def send_message(text):
+
+    try:
+
+        response = requests.post(
+
+            f"{TELEGRAM_URL}/sendMessage",
+
+            data={
+
+                "chat_id":
+                    CHANNEL_ID,
+
+                "text":
+                    text,
+
+                "parse_mode":
+                    "HTML",
+
+                "disable_web_page_preview":
+                    True
+
+            },
+
+            timeout=30
+        )
+
+        return response.ok
+
+    except Exception as e:
+
+        print(
+            "Message error:",
             e
         )
 
@@ -1457,127 +844,109 @@ def send_photo(
 
 
 # =========================================================
-# ساخت پست
+# POST
 # =========================================================
 
 def make_post(news):
 
-    source = news["source"]
+    title = news["title"]
 
-    original_title = news["title"]
+    # اگر تیتر فارسی باشد ترجمه نمی‌کنیم
+    if re.search(
+        r"[\u0600-\u06FF]",
+        title
+    ):
 
-
-    # خبر ایرانی ترجمه نشود
-    if is_iranian_news(news):
-
-        title_text = original_title
+        translated = title
 
     else:
 
-        title_text = translate_title(
-            original_title
+        translated = translate_title(
+            title
         )
 
+    impact_text = impact(news)
 
-    impact = impact_analysis(
-        news
-    )
-
+    if not impact_text:
+        return None
 
     post = (
-        "📰 <b>خبر اقتصادی و بازار</b>\n\n"
+        "🚨 <b>خبر فوری و مهم بازار</b>\n\n"
 
-        f"📰 <b>منبع:</b>\n"
-        f"{source}\n\n"
+        f"📰 <b>تیتر:</b>\n"
+        f"{title}\n\n"
 
-        f"🔹 <b>خبر:</b>\n"
-        f"{title_text}\n\n"
+        f"🇮🇷 <b>ترجمه:</b>\n"
+        f"{translated}\n\n"
 
-        f"{impact}\n\n"
+        f"{impact_text}\n\n"
 
-        + COMPANY_FOOTER
+        f"📌 <b>منبع:</b> "
+        f"{news['source']}\n\n"
+
+        f"{COMPANY_FOOTER}"
     )
-
 
     return post.strip()
 
 
 # =========================================================
-# اجرای اصلی
+# MAIN
 # =========================================================
 
 def main():
 
     print(
-        "========================================"
+        "======================================"
     )
 
     print(
-        "Starting Arvand Aron Steel News Bot..."
+        "URGENT MARKET NEWS BOT"
     )
 
     print(
-        "========================================"
+        "======================================"
     )
-
 
     news_items = get_news()
 
-
     print(
-        "Qualified news:",
+        "Important news:",
         len(news_items)
     )
-
 
     if not news_items:
 
         print(
-            "No relevant news found."
+            "No important news."
         )
 
         return
 
-
-    news_items = news_items[
-        :MAX_POSTS_PER_RUN
-    ]
-
+    posted = 0
 
     for news in news_items:
 
+        if posted >= MAX_POSTS_PER_RUN:
+            break
+
+        post = make_post(news)
+
+        if not post:
+            continue
+
         print(
-            "Processing:",
+            "POSTING:",
             news["score"],
             news["title"]
         )
 
+        image = get_image(news)
 
-        post = make_post(
-            news
-        )
-
-
-        image_query = make_image_query(
-            news
-        )
-
-
-        print(
-            "Image search:",
-            image_query
-        )
-
-
-        image_url = get_image(
-            image_query
-        )
-
-
-        if image_url:
+        if image:
 
             success = send_photo(
-                image_url,
+                image,
                 post
             )
 
@@ -1587,26 +956,15 @@ def main():
                 post
             )
 
-
         if success:
 
             history.append(
                 news["id"]
             )
 
+            save_history(history)
 
-            history.append(
-                "title:" +
-                normalize_text(
-                    news["title"]
-                )
-            )
-
-
-            save_history(
-                history
-            )
-
+            posted += 1
 
             print(
                 "POSTED:",
@@ -1620,20 +978,12 @@ def main():
                 news["title"]
             )
 
-
     print(
-        "========================================"
-    )
-
-    print(
-        "Bot finished."
-    )
-
-    print(
-        "========================================"
+        "Finished. Posted:",
+        posted
     )
 
 
 if __name__ == "__main__":
-
     main()
+    
