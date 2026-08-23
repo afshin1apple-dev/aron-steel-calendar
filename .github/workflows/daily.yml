@@ -48,7 +48,7 @@ jobs:
           TZ=Asia/Tehran date
           echo "======================================"
 
-          python bot.py
+          python calendar_bot.py
 
           echo "======================================"
           echo "Calendar job finished"
