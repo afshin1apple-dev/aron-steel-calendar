@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 
 # =========================================================
-# SETTINGS
+# تنظیمات
 # =========================================================
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -21,20 +21,20 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 HISTORY_FILE = "news_history.json"
 
-# حداکثر خبر در هر اجرا
 MAX_POSTS_PER_RUN = 2
 
-# حداقل امتیاز خبر
 MIN_SCORE = 35
 
 
 # =========================================================
-# COMPANY
+# شرکت
 # =========================================================
 
-COMPANY_FOOTER = """
+COMPANY_NAME = "آروند آرون استیل"
+
+COMPANY_FOOTER = f"""
 ━━━━━━━━━━━━━━
-🏭 آروند آرون استیل
+🏭 {COMPANY_NAME}
 👤 مدیریت: افشین آورزمانی
 📞 021-22122239
 🆔 @arvand_aron_steel
@@ -42,7 +42,7 @@ COMPANY_FOOTER = """
 
 
 # =========================================================
-# NEWS SOURCES
+# منابع خبری
 # =========================================================
 
 FEEDS = [
@@ -75,7 +75,7 @@ FEEDS = [
 
 
 # =========================================================
-# IMPORTANT ECONOMIC KEYWORDS
+# موضوعات اقتصادی
 # =========================================================
 
 STEEL = [
@@ -227,7 +227,7 @@ CHINA = [
 
 
 # =========================================================
-# WORDS THAT SHOW REAL MARKET DIRECTION
+# کلمات اثر افزایشی
 # =========================================================
 
 POSITIVE = [
@@ -277,6 +277,10 @@ POSITIVE = [
 ]
 
 
+# =========================================================
+# کلمات اثر کاهشی
+# =========================================================
+
 NEGATIVE = [
 
     "کاهش قیمت",
@@ -318,7 +322,7 @@ NEGATIVE = [
 
 
 # =========================================================
-# NON ECONOMIC / MILITARY
+# اخبار نظامی بدون اثر اقتصادی
 # =========================================================
 
 MILITARY = [
@@ -343,11 +347,10 @@ MILITARY = [
 
 
 # =========================================================
-# PURE ANNOUNCEMENTS
+# اطلاعیه‌های غیرمهم
 # =========================================================
 
-BORING_ANNOUNCEMENTS = [
-
+BORING = [
     "اطلاعیه عرضه",
     "اطلاعیه عرضه بورس کالا",
     "عرضه بورس کالا",
@@ -365,7 +368,7 @@ BORING_ANNOUNCEMENTS = [
 
 
 # =========================================================
-# HISTORY
+# تاریخچه
 # =========================================================
 
 def load_history():
@@ -379,9 +382,9 @@ def load_history():
             HISTORY_FILE,
             "r",
             encoding="utf-8"
-        ) as file:
+        ) as f:
 
-            return json.load(file)
+            return json.load(f)
 
     except Exception:
 
@@ -396,11 +399,11 @@ def save_history(history):
             HISTORY_FILE,
             "w",
             encoding="utf-8"
-        ) as file:
+        ) as f:
 
             json.dump(
                 history[-1000:],
-                file,
+                f,
                 ensure_ascii=False,
                 indent=2
             )
@@ -408,7 +411,7 @@ def save_history(history):
     except Exception as e:
 
         print(
-            "History save error:",
+            "History error:",
             e
         )
 
@@ -417,7 +420,7 @@ history = load_history()
 
 
 # =========================================================
-# TEXT CLEAN
+# پاکسازی متن
 # =========================================================
 
 def clean_text(text):
@@ -468,12 +471,14 @@ def normalize(text):
 def contains(text, keyword):
 
     text = normalize(text)
+
     keyword = normalize(keyword)
 
     if not keyword:
         return False
 
     if " " in keyword:
+
         return keyword in text
 
     return re.search(
@@ -492,7 +497,7 @@ def find_hits(text, keywords):
 
 
 # =========================================================
-# MARKET IMPACT
+# تشخیص اثر بازار
 # =========================================================
 
 def detect_impact(text):
@@ -507,26 +512,23 @@ def detect_impact(text):
         NEGATIVE
     )
 
-    # فقط یکی از دو جهت باید مشخص باشد
-
+    # فقط افزایشی
     if positive and not negative:
-
         return "positive"
 
+    # فقط کاهشی
     if negative and not positive:
-
         return "negative"
 
-    # اگر هر دو یا هیچکدام باشند:
-    # خنثی
+    # هر حالت دیگر = خنثی
     return "neutral"
 
 
 # =========================================================
-# NEWS SCORE
+# امتیاز خبر
 # =========================================================
 
-def score_news(
+def analyze_news(
     title,
     description,
     source
@@ -538,25 +540,25 @@ def score_news(
         description
     )
 
-    normalized_title = normalize(
+    title_normalized = normalize(
         title
     )
 
     # -----------------------------------------
-    # خبرهای صرفاً اطلاعیه‌ای حذف
+    # اطلاعیه ساده = حذف
     # -----------------------------------------
 
-    for word in BORING_ANNOUNCEMENTS:
+    for word in BORING:
 
         if contains(
-            normalized_title,
+            title_normalized,
             word
         ):
 
             return {
                 "score": 0,
                 "impact": "neutral",
-                "reason": "boring announcement"
+                "reason": "announcement"
             }
 
 
@@ -574,12 +576,12 @@ def score_news(
         return {
             "score": 0,
             "impact": "neutral",
-            "reason": "no clear market impact"
+            "reason": "neutral"
         }
 
 
     # -----------------------------------------
-    # موضوعات اقتصادی
+    # موضوعات
     # -----------------------------------------
 
     steel = find_hits(
@@ -634,6 +636,7 @@ def score_news(
         or china
     )
 
+
     # بدون موضوع اقتصادی = حذف
     if not economic:
 
@@ -645,7 +648,7 @@ def score_news(
 
 
     # -----------------------------------------
-    # خبر نظامی بدون اثر اقتصادی = حذف
+    # خبر نظامی صرف = حذف
     # -----------------------------------------
 
     military = find_hits(
@@ -655,7 +658,7 @@ def score_news(
 
     if military:
 
-        direct_effect = (
+        direct_economic = (
             steel
             or dollar
             or oil
@@ -663,17 +666,17 @@ def score_news(
             or trade
         )
 
-        if not direct_effect:
+        if not direct_economic:
 
             return {
                 "score": 0,
                 "impact": "neutral",
-                "reason": "military only"
+                "reason": "military"
             }
 
 
     # -----------------------------------------
-    # SCORE
+    # امتیاز
     # -----------------------------------------
 
     score = 0
@@ -689,19 +692,10 @@ def score_news(
 
 
     # اثر مشخص
-    if impact == "positive":
-
-        score += 20
-
-    elif impact == "negative":
-
-        score += 20
+    score += 20
 
 
-    # -----------------------------------------
     # ترکیب‌های مهم
-    # -----------------------------------------
-
     if steel and dollar:
         score += 18
 
@@ -722,6 +716,7 @@ def score_news(
 
     if dollar and economy:
         score += 12
+
 
     if source == "فولادبان":
         score += 10
@@ -752,7 +747,7 @@ def score_news(
 
 
 # =========================================================
-# NEWS ID
+# شناسه خبر
 # =========================================================
 
 def make_news_id(
@@ -774,7 +769,7 @@ def make_news_id(
 
 
 # =========================================================
-# GET NEWS
+# دریافت اخبار
 # =========================================================
 
 def get_news():
@@ -796,10 +791,14 @@ def get_news():
 
             if not feed.entries:
 
+                print(
+                    "No entries"
+                )
+
                 continue
 
 
-            for item in feed.entries[:40]:
+            for item in feed.entries[:50]:
 
                 title = clean_text(
                     item.get(
@@ -825,7 +824,7 @@ def get_news():
                     continue
 
 
-                analysis = score_news(
+                analysis = analyze_news(
 
                     title,
 
@@ -837,36 +836,37 @@ def get_news():
 
 
                 print(
-                    "SCORE:",
+                    "NEWS:",
                     analysis["score"],
-                    "|",
                     analysis["impact"],
-                    "|",
                     title
                 )
 
 
-                # =========================================
-                # خنثی هرگز وارد لیست نشود
-                # =========================================
+                # -----------------------------------------
+                # خنثی هرگز منتشر نشود
+                # -----------------------------------------
 
                 if analysis["impact"] == "neutral":
+
                     continue
 
 
-                # =========================================
+                # -----------------------------------------
                 # خبر ضعیف حذف
-                # =========================================
+                # -----------------------------------------
 
                 if analysis["score"] < MIN_SCORE:
+
                     continue
 
 
-                # =========================================
+                # -----------------------------------------
                 # لینک الزامی
-                # =========================================
+                # -----------------------------------------
 
                 if not link:
+
                     continue
 
 
@@ -877,6 +877,7 @@ def get_news():
 
 
                 if news_id in history:
+
                     continue
 
 
@@ -914,10 +915,10 @@ def get_news():
             )
 
 
-    # مهم‌ترین‌ها اول
+    # مهم‌ترین خبرها اول
     results.sort(
-        key=lambda item:
-            item["score"],
+        key=lambda x:
+            x["score"],
         reverse=True
     )
 
@@ -926,57 +927,36 @@ def get_news():
 
 
 # =========================================================
-# IMAGE QUERY
+# عکس
 # =========================================================
 
-def make_image_query(news):
+def image_query(news):
 
     analysis = news["analysis"]
 
 
     if analysis.get("steel"):
-
-        return (
-            "steel factory steel market"
-        )
+        return "steel factory steel market"
 
 
     if analysis.get("dollar"):
-
-        return (
-            "dollar currency financial market"
-        )
+        return "US dollar financial market"
 
 
     if analysis.get("gold"):
-
-        return (
-            "gold financial market"
-        )
+        return "gold financial market"
 
 
     if analysis.get("oil"):
-
-        return (
-            "oil energy market"
-        )
+        return "oil energy market"
 
 
     if analysis.get("sanctions"):
-
-        return (
-            "Iran steel industry economy"
-        )
+        return "Iran economy industry"
 
 
-    return (
-        "Iran economy financial market"
-    )
+    return "Iran financial market"
 
-
-# =========================================================
-# GET IMAGE
-# =========================================================
 
 def get_image(news):
 
@@ -997,9 +977,8 @@ def get_image(news):
             },
 
             params={
-
                 "query":
-                    make_image_query(news),
+                    image_query(news),
 
                 "per_page":
                     15,
@@ -1036,7 +1015,7 @@ def get_image(news):
     except Exception as e:
 
         print(
-            "Pexels error:",
+            "Image error:",
             e
         )
 
@@ -1044,36 +1023,121 @@ def get_image(news):
 
 
 # =========================================================
-# TELEGRAM
+# ساخت متن
+# =========================================================
+
+def make_post(news):
+
+    analysis = news["analysis"]
+
+
+    # امنیت نهایی:
+    # اگر خنثی بود اصلاً پست ساخته نشود
+    if analysis["impact"] == "neutral":
+
+        return None
+
+
+    if analysis["impact"] == "positive":
+
+        impact_text = "🟢 افزایشی"
+
+    elif analysis["impact"] == "negative":
+
+        impact_text = "🔴 کاهشی"
+
+    else:
+
+        return None
+
+
+    post = (
+        "🚨 <b>خبر فوری اقتصادی</b>\n\n"
+
+        f"📰 <b>{news['title']}</b>\n\n"
+
+        f"📊 <b>اثر بر بازار:</b> "
+        f"{impact_text}\n"
+    )
+
+
+    if analysis.get("steel"):
+
+        post += (
+            f"🏭 <b>فولاد:</b> "
+            f"{impact_text}\n"
+        )
+
+
+    if analysis.get("dollar"):
+
+        post += (
+            f"💵 <b>دلار:</b> "
+            f"{impact_text}\n"
+        )
+
+
+    if analysis.get("oil"):
+
+        post += (
+            f"🛢 <b>نفت و انرژی:</b> "
+            f"{impact_text}\n"
+        )
+
+
+    if analysis.get("gold"):
+
+        post += (
+            f"🥇 <b>طلا:</b> "
+            f"{impact_text}\n"
+        )
+
+
+    post += (
+
+        "\n"
+
+        f"📌 <b>منبع:</b> "
+        f"{news['source']}\n\n"
+
+        + COMPANY_FOOTER
+    )
+
+
+    return post.strip()
+
+
+# =========================================================
+# ارسال پیام
 # =========================================================
 
 def send_message(
     text,
-    news_url
+    link
 ):
 
-    try:
+    keyboard = {
 
-        keyboard = {
+        "inline_keyboard": [
 
-            "inline_keyboard": [
+            [
 
-                [
+                {
+                    "text":
+                        "🔗 ادامه خبر",
 
-                    {
-                        "text":
-                            "🔗 ادامه خبر",
-
-                        "url":
-                            news_url
-                    }
-
-                ]
+                    "url":
+                        link
+                }
 
             ]
 
-        }
+        ]
 
+    }
+
+
+    try:
 
         response = requests.post(
 
@@ -1097,7 +1161,6 @@ def send_message(
                     json.dumps(
                         keyboard
                     )
-
             },
 
             timeout=30
@@ -1124,37 +1187,37 @@ def send_message(
 
 
 # =========================================================
-# SEND PHOTO
+# ارسال عکس
 # =========================================================
 
 def send_photo(
     image_url,
     caption,
-    news_url
+    link
 ):
 
-    try:
+    keyboard = {
 
-        keyboard = {
+        "inline_keyboard": [
 
-            "inline_keyboard": [
+            [
 
-                [
+                {
+                    "text":
+                        "🔗 ادامه خبر",
 
-                    {
-                        "text":
-                            "🔗 ادامه خبر",
-
-                        "url":
-                            news_url
-                    }
-
-                ]
+                    "url":
+                        link
+                }
 
             ]
 
-        }
+        ]
 
+    }
+
+
+    try:
 
         response = requests.post(
 
@@ -1178,7 +1241,6 @@ def send_photo(
                     json.dumps(
                         keyboard
                     )
-
             },
 
             timeout=40
@@ -1205,101 +1267,6 @@ def send_photo(
 
 
 # =========================================================
-# MAKE POST
-# =========================================================
-
-def make_post(news):
-
-    analysis = news["analysis"]
-
-
-    # -----------------------------------------
-    # هیچ خنثی‌ای نباید ساخته شود
-    # -----------------------------------------
-
-    if analysis["impact"] == "neutral":
-
-        return None
-
-
-    if analysis["impact"] == "positive":
-
-        impact = "🟢 افزایشی"
-
-    elif analysis["impact"] == "negative":
-
-        impact = "🔴 کاهشی"
-
-    else:
-
-        return None
-
-
-    title = news["title"]
-
-
-    post = (
-
-        "🚨 <b>خبر فوری اقتصادی</b>\n\n"
-
-        f"📰 <b>{title}</b>\n\n"
-
-        f"📊 <b>اثر بر بازار:</b> "
-        f"{impact}\n\n"
-    )
-
-
-    # فولاد
-    if analysis.get("steel"):
-
-        post += (
-            f"🏭 <b>فولاد:</b> "
-            f"{impact}\n"
-        )
-
-
-    # دلار
-    if analysis.get("dollar"):
-
-        post += (
-            f"💵 <b>دلار:</b> "
-            f"{impact}\n"
-        )
-
-
-    # نفت
-    if analysis.get("oil"):
-
-        post += (
-            f"🛢 <b>نفت و انرژی:</b> "
-            f"{impact}\n"
-        )
-
-
-    # طلا
-    if analysis.get("gold"):
-
-        post += (
-            f"🥇 <b>طلا:</b> "
-            f"{impact}\n"
-        )
-
-
-    post += (
-
-        "\n"
-
-        f"📌 <b>منبع:</b> "
-        f"{news['source']}\n\n"
-
-        f"{COMPANY_FOOTER}"
-    )
-
-
-    return post.strip()
-
-
-# =========================================================
 # MAIN
 # =========================================================
 
@@ -1310,11 +1277,7 @@ def main():
     )
 
     print(
-        "ARVAND ARON STEEL"
-    )
-
-    print(
-        "IMPORTANT ECONOMIC NEWS BOT"
+        "ARVAND ARON STEEL NEWS BOT"
     )
 
     print(
@@ -1334,7 +1297,7 @@ def main():
     if not news_items:
 
         print(
-            "No important economic news."
+            "No important news."
         )
 
         return
@@ -1350,8 +1313,16 @@ def main():
             break
 
 
-        # دوباره کنترل خنثی
+        # -----------------------------------------
+        # کنترل نهایی خنثی
+        # -----------------------------------------
+
         if news["analysis"]["impact"] == "neutral":
+
+            print(
+                "SKIPPED NEUTRAL:",
+                news["title"]
+            )
 
             continue
 
@@ -1435,8 +1406,7 @@ def main():
     )
 
     print(
-        "POSTED:",
-        posted
+        f"POSTED: {posted}"
     )
 
     print(
