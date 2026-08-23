@@ -19,6 +19,21 @@ TEHRAN = ZoneInfo("Asia/Tehran")
 
 HISTORY_FILE = "market_history.json"
 
+CHANGE_THRESHOLD = 5.0
+
+
+# =========================================================
+# CHANNEL FOOTER
+# =========================================================
+
+COMPANY_FOOTER = """
+━━━━━━━━━━━━━━
+🏭 آروند آرون استیل
+👤 مدیریت: افشین آورزمانی
+📞 021-22122239
+🆔 @arvand_aron_steel
+"""
+
 
 # =========================================================
 # NUMBER
@@ -49,8 +64,7 @@ def get_tgju_price(url):
     r = requests.get(
         url,
         headers={
-            "User-Agent":
-                "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0"
         },
         timeout=30
     )
@@ -140,8 +154,7 @@ def get_tether():
     r = requests.get(
         url,
         headers={
-            "User-Agent":
-                "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0"
         },
         timeout=30
     )
@@ -179,7 +192,6 @@ def get_tether():
             )
 
             if n is not None:
-
                 values.append(n)
 
         for value in values:
@@ -191,7 +203,6 @@ def get_tether():
                 break
 
         if current is not None:
-
             break
 
     if current is None:
@@ -212,7 +223,6 @@ def load_history():
     if not os.path.exists(
         HISTORY_FILE
     ):
-
         return {}
 
     try:
@@ -223,9 +233,19 @@ def load_history():
             encoding="utf-8"
         ) as f:
 
-            return json.load(f)
+            data = json.load(f)
 
-    except:
+            if isinstance(data, dict):
+                return data
+
+            return {}
+
+    except Exception as e:
+
+        print(
+            "History load error:",
+            e
+        )
 
         return {}
 
@@ -299,9 +319,7 @@ def get_bitcoin():
     data = r.json()["bitcoin"]
 
     return (
-
         data["usd"],
-
         data["usd_24h_change"]
     )
 
@@ -316,7 +334,6 @@ def price(
 ):
 
     if value is None:
-
         return "نامشخص"
 
     return (
@@ -331,7 +348,6 @@ def price(
 def change(value):
 
     if value is None:
-
         return "⚪ نامشخص"
 
     if value > 0:
@@ -350,6 +366,57 @@ def change(value):
 
 
 # =========================================================
+# COMPARE WITH LAST POST
+# =========================================================
+
+def compare_prices(
+    current_prices,
+    previous_prices
+):
+
+    changes = {}
+
+    if not previous_prices:
+        return changes
+
+    for name, current in current_prices.items():
+
+        previous = previous_prices.get(name)
+
+        if (
+            previous is None
+            or previous == 0
+            or current is None
+        ):
+            continue
+
+        changes[name] = (
+            (current - previous)
+            / previous
+        ) * 100
+
+    return changes
+
+
+def has_significant_change(
+    changes
+):
+
+    for name, value in changes.items():
+
+        if abs(value) > CHANGE_THRESHOLD:
+
+            print(
+                f"PRICE CHANGE > 5%: "
+                f"{name} = {value:+.2f}%"
+            )
+
+            return True
+
+    return False
+
+
+# =========================================================
 # TIME
 # =========================================================
 
@@ -362,10 +429,18 @@ today_key = now.strftime(
 )
 
 print(
+    "======================================"
+)
+
+print(
     "Iran time:",
     now.strftime(
         "%Y-%m-%d %H:%M:%S"
     )
+)
+
+print(
+    "======================================"
 )
 
 
@@ -375,26 +450,13 @@ print(
 
 history = load_history()
 
-
-# =========================================================
-# IMPORTANT:
-# اگر بازار امروز قبلاً ارسال شده،
-# اجرای پشتیبان هیچ پستی نمی‌فرستد.
-# =========================================================
-
-if history.get(
+last_post_date = history.get(
     "last_post_date"
-) == today_key:
+)
 
-    print(
-        "Today's market post has already been sent."
-    )
-
-    print(
-        "Nothing to do."
-    )
-
-    raise SystemExit(0)
+last_post_prices = history.get(
+    "last_post_prices"
+)
 
 
 # =========================================================
@@ -441,8 +503,17 @@ print(
 tether = get_tether()
 
 
+print(
+    "Getting bitcoin..."
+)
+
+bitcoin, bitcoin_change = (
+    get_bitcoin()
+)
+
+
 # =========================================================
-# TETHER CHANGE
+# TETHER DAILY CHANGE
 # =========================================================
 
 previous_tether = history.get(
@@ -456,23 +527,170 @@ tether_change = calculate_change(
 
 
 # =========================================================
-# BITCOIN
+# CURRENT PRICES
 # =========================================================
+
+current_prices = {
+
+    "gold_world":
+        gold_world,
+
+    "gold18":
+        gold18,
+
+    "coin":
+        coin,
+
+    "bitcoin":
+        bitcoin,
+
+    "tether":
+        tether
+}
+
 
 print(
-    "Getting bitcoin..."
+    "======================================"
 )
 
-bitcoin, bitcoin_change = (
-    get_bitcoin()
+print(
+    "Current prices:"
+)
+
+for name, value in current_prices.items():
+
+    print(
+        f"{name}: {value}"
+    )
+
+print(
+    "======================================"
 )
 
 
 # =========================================================
-# UPDATE HISTORY
+# DECIDE WHETHER TO POST
 # =========================================================
 
-history["tether"] = tether
+should_post = False
+
+
+# ---------------------------------------------------------
+# FIRST POST OF TODAY
+# ---------------------------------------------------------
+
+if last_post_date != today_key:
+
+    print(
+        "This is the first market post of today."
+    )
+
+    print(
+        "Post will be sent."
+    )
+
+    should_post = True
+
+
+# ---------------------------------------------------------
+# SAME DAY
+# ---------------------------------------------------------
+
+else:
+
+    print(
+        "A market post was already sent today."
+    )
+
+    if not last_post_prices:
+
+        print(
+            "No saved prices from the previous post."
+        )
+
+        print(
+            "Post will be sent now."
+        )
+
+        should_post = True
+
+    else:
+
+        price_changes = compare_prices(
+            current_prices,
+            last_post_prices
+        )
+
+        print(
+            "Changes since last market post:"
+        )
+
+        if price_changes:
+
+            for name, value in price_changes.items():
+
+                print(
+                    f"{name}: {value:+.2f}%"
+                )
+
+        else:
+
+            print(
+                "No comparable prices found."
+            )
+
+
+        if has_significant_change(
+            price_changes
+        ):
+
+            print(
+                "At least one price changed "
+                "more than 5%."
+            )
+
+            print(
+                "New market post will be sent."
+            )
+
+            should_post = True
+
+        else:
+
+            print(
+                "No price changed more than 5%."
+            )
+
+            print(
+                "Nothing to do."
+            )
+
+            should_post = False
+
+
+# =========================================================
+# IF NO POST NEEDED
+# =========================================================
+
+if not should_post:
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "Market post skipped."
+    )
+
+    print(
+        "Reason: No price movement above 5%."
+    )
+
+    print(
+        "======================================"
+    )
+
+    raise SystemExit(0)
 
 
 # =========================================================
@@ -569,8 +787,7 @@ message = (
     f"📈 تغییر: "
     f"{change(tether_change)}\n\n"
 
-    "🆔 @Arvand_Aron_Steel\n"
-    "☎️ 021-22122239"
+    f"{COMPANY_FOOTER}"
 )
 
 
@@ -581,7 +798,6 @@ message = (
 print(
     "Sending market post..."
 )
-
 
 r = requests.post(
 
@@ -625,10 +841,12 @@ if not r.ok:
 
 # =========================================================
 # ONLY AFTER SUCCESS:
-# MARK TODAY AS POSTED
+# SAVE POST INFORMATION
 # =========================================================
 
-history["last_post_date"] = today_key
+history["last_post_date"] = (
+    today_key
+)
 
 history["last_post_time"] = (
     now.strftime(
@@ -636,10 +854,21 @@ history["last_post_time"] = (
     )
 )
 
+history["last_post_prices"] = (
+    current_prices
+)
+
+history["tether"] = tether
+
+
 save_history(
     history
 )
 
+
+# =========================================================
+# SUCCESS
+# =========================================================
 
 print(
     "======================================"
@@ -652,6 +881,10 @@ print(
 print(
     "Date saved:",
     today_key
+)
+
+print(
+    "Saved prices for 5% comparison."
 )
 
 print(
