@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 
 # =========================================================
-# تنظیمات
+# SETTINGS
 # =========================================================
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -21,15 +21,15 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 HISTORY_FILE = "news_history.json"
 
-# حداقل امتیاز برای خبر
-MIN_SCORE = 30
+# فقط خبرهای قوی
+MIN_SCORE = 35
 
-# حداکثر خبر در هر اجرا
+# در هر اجرا حداکثر 2 خبر
 MAX_POSTS_PER_RUN = 2
 
 
 # =========================================================
-# اطلاعات شرکت
+# COMPANY
 # =========================================================
 
 COMPANY_FOOTER = """
@@ -42,7 +42,7 @@ COMPANY_FOOTER = """
 
 
 # =========================================================
-# منابع
+# SOURCES
 # =========================================================
 
 FEEDS = [
@@ -58,6 +58,11 @@ FEEDS = [
     },
 
     {
+        "name": "تجارت‌نیوز",
+        "url": "https://tejaratnews.com/feed"
+    },
+
+    {
         "name": "TGJU",
         "url": "https://www.tgju.org/rss"
     },
@@ -70,7 +75,7 @@ FEEDS = [
 
 
 # =========================================================
-# کلمات مهم
+# ECONOMIC TOPICS
 # =========================================================
 
 STEEL = [
@@ -89,6 +94,8 @@ STEEL = [
     "صادرات فولاد",
     "واردات فولاد",
     "تولید فولاد",
+    "کارخانه فولاد",
+    "بورس کالا",
 
     "steel",
     "steel price",
@@ -97,15 +104,15 @@ STEEL = [
     "rebar",
     "billet",
     "slab",
-    "scrap",
     "steel production"
 ]
 
 
-CURRENCY = [
+DOLLAR = [
     "دلار",
     "دلار آزاد",
     "نرخ دلار",
+    "قیمت دلار",
     "ارز",
     "نرخ ارز",
     "ریال",
@@ -124,7 +131,7 @@ CURRENCY = [
 GOLD = [
     "طلا",
     "طلای جهانی",
-    "طلای ۱۸",
+    "طلای ۱۸ عیار",
     "سکه",
     "اونس طلا",
 
@@ -134,17 +141,21 @@ GOLD = [
 ]
 
 
-ENERGY = [
+OIL = [
+    "نفت",
+    "قیمت نفت",
+    "نفت برنت",
+    "نفت خام",
     "بنزین",
     "گازوئیل",
     "سوخت",
-    "نفت",
     "انرژی",
-    "قیمت نفت",
 
+    "oil",
+    "oil price",
+    "brent",
     "gasoline",
     "fuel",
-    "oil",
     "energy"
 ]
 
@@ -155,7 +166,10 @@ SANCTIONS = [
     "تحریم ایران",
     "تحریم آمریکا",
     "تحریم جدید",
+    "تحریم فولاد",
+    "تحریم فلزات",
     "رفع تحریم",
+    "لغو تحریم",
 
     "sanction",
     "sanctions",
@@ -163,74 +177,58 @@ SANCTIONS = [
 ]
 
 
-WAR = [
-    "جنگ",
-    "درگیری",
-    "حمله",
-    "حملات",
-    "موشک",
-    "تنش نظامی",
-    "تنش منطقه‌ای",
-    "تنش منطقه",
+TRADE = [
+    "صادرات",
+    "واردات",
+    "تجارت",
+    "گمرک",
+    "تعرفه",
+    "تعرفه واردات",
+    "تعرفه صادرات",
+    "ممنوعیت صادرات",
+    "ممنوعیت واردات",
 
-    "ایران و آمریکا",
-    "ایران آمریکا",
-    "حمله آمریکا",
-    "حمله ایران",
-
-    "ایران و اسرائیل",
-    "ایران اسرائیل",
-
-    "پنتاگون",
-    "واشنگتن",
-
-    "iran war",
-    "iran conflict",
-    "iran israel",
-    "us iran",
-    "attack",
-    "missile",
-    "pentagon",
-    "military conflict"
+    "export",
+    "exports",
+    "import",
+    "imports",
+    "tariff"
 ]
 
 
 ECONOMY = [
     "بانک مرکزی",
-    "مرکز مبادله",
     "نرخ بهره",
     "تورم",
     "نقدینگی",
-    "وزارت صمت",
     "وزارت اقتصاد",
-    "گمرک",
-    "صادرات",
-    "واردات",
+    "وزارت صمت",
     "بورس کالا",
     "بورس تهران",
-    "تصمیم دولت",
-    "تصمیم مجلس",
+    "قیمت",
+    "بازار",
+    "اقتصاد ایران",
 
     "central bank",
     "interest rate",
-    "inflation"
+    "inflation",
+    "iran economy"
 ]
 
 
 CHINA = [
     "چین",
     "فولاد چین",
-    "اقتصاد چین",
     "تقاضای چین",
-
+    "تولید فولاد چین",
     "china",
-    "chinese",
-    "china steel"
+    "china steel",
+    "chinese steel"
 ]
 
 
 # =========================================================
-# کلمات اثر افزایشی
+# DIRECT ECONOMIC IMPACT
 # =========================================================
 
 POSITIVE = [
@@ -251,32 +249,30 @@ POSITIVE = [
 
     "افزایش دلار",
     "افزایش نرخ دلار",
+    "دلار گران شد",
 
     "افزایش نفت",
+    "افزایش قیمت نفت",
+
     "افزایش طلا",
 
     "تحریم جدید",
     "تحریم شدیدتر",
     "تحریم‌های جدید",
 
-    "حمله",
-    "حملات",
-    "درگیری",
-    "جنگ",
-    "تنش",
+    "افزایش تعرفه",
+    "ممنوعیت صادرات",
 
     "production cut",
     "supply cut",
     "price rise",
+    "price increase",
     "prices rise",
     "strong demand",
-    "price increase"
+    "new sanctions",
+    "higher tariffs"
 ]
 
-
-# =========================================================
-# کلمات اثر کاهشی
-# =========================================================
 
 NEGATIVE = [
 
@@ -290,58 +286,59 @@ NEGATIVE = [
     "افت کرد",
     "کاهش یافت",
     "ارزان شد",
-    "افت قیمت",
 
     "کاهش دلار",
     "کاهش نرخ دلار",
+    "دلار ارزان شد",
 
     "کاهش نفت",
+    "کاهش قیمت نفت",
+
     "کاهش طلا",
 
     "رفع تحریم",
     "لغو تحریم",
     "کاهش تحریم",
 
+    "کاهش تعرفه",
+
     "production increase",
     "oversupply",
     "weak demand",
     "price fall",
-    "prices fall",
-    "price decrease"
+    "price decrease",
+    "lower tariffs",
+    "sanctions lifted"
 ]
 
 
 # =========================================================
-# کلمات خنثی
+# EXCLUDE NON-ECONOMIC NEWS
 # =========================================================
 
-NEUTRAL = [
+PURE_MILITARY = [
+    "حمله",
+    "حملات",
+    "موشک",
+    "موشکی",
+    "جنگنده",
+    "پهپاد",
+    "پدافند",
+    "عملیات نظامی",
+    "درگیری نظامی",
+    "توانایی نظامی",
+    "توان نظامی",
 
-    "بررسی شد",
-    "اعلام شد",
-    "نشست برگزار شد",
-    "جلسه برگزار شد",
-    "گفتگو کرد",
-    "دیدار کرد",
-    "اظهار داشت",
-    "توضیح داد",
-    "تاکید کرد",
-    "تاکید بر",
-    "مطرح شد",
-    "برنامه دارد",
-    "خبر داد",
-
-    "meeting",
-    "discussed",
-    "said",
-    "announced",
-    "talks",
-    "statement"
+    "missile",
+    "fighter jet",
+    "drone",
+    "military operation",
+    "military capability"
 ]
 
 
 # =========================================================
-# تاریخچه
+# HISTORY
 # =========================================================
 
 def load_history():
@@ -390,7 +387,7 @@ history = load_history()
 
 
 # =========================================================
-# تمیز کردن متن
+# TEXT
 # =========================================================
 
 def clean_text(text):
@@ -444,7 +441,7 @@ def has_keyword(text, keyword):
     ) is not None
 
 
-def get_hits(text, keywords):
+def hits(text, keywords):
 
     return [
         word
@@ -454,40 +451,36 @@ def get_hits(text, keywords):
 
 
 # =========================================================
-# تشخیص اثر
+# IMPACT
 # =========================================================
 
 def detect_impact(text):
 
-    positive = get_hits(
+    positive = hits(
         text,
         POSITIVE
     )
 
-    negative = get_hits(
+    negative = hits(
         text,
         NEGATIVE
     )
 
-    # اگر هر دو طرف وجود داشته باشند
-    # خبر را خنثی می‌کنیم تا ریسک انتشار پایین بیاید
-    if positive and negative:
-
-        return "neutral", positive, negative
-
-    if positive:
+    if positive and not negative:
 
         return "positive", positive, negative
 
-    if negative:
+    if negative and not positive:
 
         return "negative", positive, negative
 
+    # اگر هر دو یا هیچ‌کدام باشند
+    # خنثی = حذف
     return "neutral", positive, negative
 
 
 # =========================================================
-# امتیاز خبر
+# SCORE
 # =========================================================
 
 def score_news(
@@ -498,154 +491,142 @@ def score_news(
 
     text = title + " " + description
 
-    steel = get_hits(
-        text,
-        STEEL
-    )
+    steel = hits(text, STEEL)
+    dollar = hits(text, DOLLAR)
+    gold = hits(text, GOLD)
+    oil = hits(text, OIL)
+    sanctions = hits(text, SANCTIONS)
+    trade = hits(text, TRADE)
+    economy = hits(text, ECONOMY)
+    china = hits(text, CHINA)
 
-    currency = get_hits(
-        text,
-        CURRENCY
-    )
-
-    gold = get_hits(
-        text,
-        GOLD
-    )
-
-    energy = get_hits(
-        text,
-        ENERGY
-    )
-
-    sanctions = get_hits(
-        text,
-        SANCTIONS
-    )
-
-    war = get_hits(
-        text,
-        WAR
-    )
-
-    economy = get_hits(
-        text,
-        ECONOMY
-    )
-
-    china = get_hits(
-        text,
-        CHINA
-    )
-
-    impact, positive, negative = detect_impact(
-        text
-    )
+    impact, positive, negative = detect_impact(text)
 
     # =====================================================
-    # اگر اثر مشخص نیست → صفر
+    # اول: خنثی ممنوع
     # =====================================================
 
     if impact == "neutral":
 
         return {
             "score": 0,
-            "impact": "neutral",
-            "steel": steel,
-            "currency": currency,
-            "gold": gold,
-            "energy": energy,
-            "sanctions": sanctions,
-            "war": war,
-            "economy": economy,
-            "china": china,
-            "positive": positive,
-            "negative": negative
+            "impact": "neutral"
         }
+
+    # =====================================================
+    # حداقل یک موضوع اقتصادی باید وجود داشته باشد
+    # =====================================================
+
+    economic_topics = (
+        steel
+        or dollar
+        or gold
+        or oil
+        or sanctions
+        or trade
+        or economy
+        or china
+    )
+
+    if not economic_topics:
+
+        return {
+            "score": 0,
+            "impact": "neutral"
+        }
+
+    # =====================================================
+    # خبر نظامی بدون اثر اقتصادی = حذف
+    # =====================================================
+
+    military = hits(
+        text,
+        PURE_MILITARY
+    )
+
+    if military:
+
+        direct_economic_effect = (
+            steel
+            or dollar
+            or oil
+            or sanctions
+            or trade
+        )
+
+        if not direct_economic_effect:
+
+            return {
+                "score": 0,
+                "impact": "neutral"
+            }
 
     score = 0
 
     # =====================================================
-    # موضوعات
+    # امتیاز موضوع
     # =====================================================
 
-    score += len(steel) * 7
-    score += len(currency) * 6
+    score += len(steel) * 8
+    score += len(dollar) * 7
     score += len(gold) * 5
-    score += len(energy) * 6
-    score += len(sanctions) * 9
-    score += len(war) * 10
-    score += len(economy) * 5
+    score += len(oil) * 7
+    score += len(sanctions) * 10
+    score += len(trade) * 7
+    score += len(economy) * 4
     score += len(china) * 5
 
     # =====================================================
-    # اثر
+    # امتیاز اثر
     # =====================================================
 
-    score += len(positive) * 10
-    score += len(negative) * 10
+    score += len(positive) * 12
+    score += len(negative) * 12
 
     # =====================================================
-    # ترکیب‌های مهم
+    # ترکیب‌های بسیار مهم
     # =====================================================
 
-    if steel and currency:
-        score += 15
+    if steel and dollar:
+        score += 18
 
     if steel and sanctions:
-        score += 18
+        score += 20
 
-    if steel and war:
-        score += 18
-
-    if currency and sanctions:
+    if steel and trade:
         score += 15
 
-    if currency and war:
+    if dollar and sanctions:
         score += 18
+
+    if oil and sanctions:
+        score += 15
+
+    if oil and military:
+        score += 15
 
     if steel and china:
-        score += 12
-
-    if energy and war:
         score += 15
 
-    if economy and currency:
-        score += 10
+    if dollar and economy:
+        score += 12
 
     # =====================================================
-    # منابع تخصصی
+    # منبع تخصصی فولاد
     # =====================================================
 
     if source == "فولادبان":
         score += 10
 
-    # =====================================================
-    # خبرهای خیلی عمومی
-    # =====================================================
-
-    if (
-        not steel
-        and not currency
-        and not gold
-        and not energy
-        and not sanctions
-        and not war
-        and not economy
-        and not china
-    ):
-
-        score = 0
-
     return {
         "score": score,
         "impact": impact,
         "steel": steel,
-        "currency": currency,
+        "dollar": dollar,
         "gold": gold,
-        "energy": energy,
+        "oil": oil,
         "sanctions": sanctions,
-        "war": war,
+        "trade": trade,
         "economy": economy,
         "china": china,
         "positive": positive,
@@ -654,7 +635,7 @@ def score_news(
 
 
 # =========================================================
-# شناسه خبر
+# NEWS ID
 # =========================================================
 
 def make_news_id(
@@ -676,7 +657,7 @@ def make_news_id(
 
 
 # =========================================================
-# دریافت خبرها
+# GET NEWS
 # =========================================================
 
 def get_news():
@@ -695,10 +676,6 @@ def get_news():
             feed = feedparser.parse(
                 feed_info["url"]
             )
-
-            if not feed.entries:
-
-                continue
 
             for item in feed.entries[:40]:
 
@@ -738,17 +715,11 @@ def get_news():
                     title
                 )
 
-                # =================================================
-                # فقط خبر با اثر واقعی
-                # =================================================
-
+                # فقط خبر اثرگذار
                 if analysis["impact"] == "neutral":
                     continue
 
-                # =================================================
                 # حداقل اهمیت
-                # =================================================
-
                 if analysis["score"] < MIN_SCORE:
                     continue
 
@@ -801,144 +772,160 @@ def get_news():
 
 
 # =========================================================
-# ترجمه
+# TELEGRAM LINK BUTTON
 # =========================================================
 
-def translate_title(title):
-
-    # اگر فارسی است ترجمه نکن
-    if re.search(
-        r"[\u0600-\u06FF]",
-        title
-    ):
-
-        return title
+def send_photo(
+    image_url,
+    caption,
+    news_url
+):
 
     try:
 
-        response = requests.get(
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "🔗 ادامه خبر",
+                        "url": news_url
+                    }
+                ]
+            ]
+        }
 
-            "https://translate.googleapis.com/"
-            "translate_a/single",
+        response = requests.post(
 
-            params={
+            f"{TELEGRAM_URL}/sendPhoto",
 
-                "client": "gtx",
-                "sl": "auto",
-                "tl": "fa",
-                "dt": "t",
-                "q": title
+            data={
+
+                "chat_id":
+                    CHANNEL_ID,
+
+                "photo":
+                    image_url,
+
+                "caption":
+                    caption,
+
+                "parse_mode":
+                    "HTML",
+
+                "reply_markup":
+                    json.dumps(
+                        keyboard
+                    )
+
             },
 
-            timeout=20
+            timeout=40
         )
 
-        if response.status_code != 200:
-            return title
+        print(
+            "Telegram photo:",
+            response.status_code
+        )
 
-        data = response.json()
-
-        translated = ""
-
-        for part in data[0]:
-
-            if part and part[0]:
-
-                translated += part[0]
-
-        return clean_text(
-            translated
-        ) or title
+        return response.ok
 
     except Exception as e:
 
         print(
-            "Translation error:",
+            "Photo error:",
             e
         )
 
-        return title
+        return False
+
+
+def send_message(
+    text,
+    news_url
+):
+
+    try:
+
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "🔗 ادامه خبر",
+                        "url": news_url
+                    }
+                ]
+            ]
+        }
+
+        response = requests.post(
+
+            f"{TELEGRAM_URL}/sendMessage",
+
+            data={
+
+                "chat_id":
+                    CHANNEL_ID,
+
+                "text":
+                    text,
+
+                "parse_mode":
+                    "HTML",
+
+                "disable_web_page_preview":
+                    True,
+
+                "reply_markup":
+                    json.dumps(
+                        keyboard
+                    )
+
+            },
+
+            timeout=30
+        )
+
+        print(
+            "Telegram message:",
+            response.status_code
+        )
+
+        return response.ok
+
+    except Exception as e:
+
+        print(
+            "Message error:",
+            e
+        )
+
+        return False
 
 
 # =========================================================
-# تحلیل بازار
+# IMAGE
 # =========================================================
 
-def make_impact_text(news):
+def image_query(news):
 
-    analysis = news["analysis"]
+    a = news["analysis"]
 
-    if analysis["impact"] == "positive":
+    if a.get("steel"):
+        return "steel factory steel market"
 
-        main = "🟢 افزایشی"
+    if a.get("dollar"):
+        return "dollar currency financial market"
 
-    elif analysis["impact"] == "negative":
-
-        main = "🔴 کاهشی"
-
-    else:
-
-        return None
-
-    steel = "🟡 خنثی"
-    dollar = "🟡 خنثی"
-    energy = "🟡 خنثی"
-
-    if (
-        analysis["steel"]
-        or analysis["sanctions"]
-        or analysis["china"]
-    ):
-
-        steel = main
-
-    if (
-        analysis["currency"]
-        or analysis["sanctions"]
-        or analysis["war"]
-    ):
-
-        dollar = main
-
-    if (
-        analysis["energy"]
-        or analysis["war"]
-    ):
-
-        energy = main
-
-    return (
-        "📊 <b>اثر خبر بر بازار</b>\n\n"
-        f"🏭 فولاد: {steel}\n"
-        f"💵 دلار: {dollar}\n"
-        f"🛢 انرژی: {energy}"
-    )
-
-
-# =========================================================
-# عکس
-# =========================================================
-
-def make_image_query(news):
-
-    analysis = news["analysis"]
-
-    if analysis["steel"]:
-        return "steel factory steel industry"
-
-    if analysis["currency"]:
-        return "dollar financial market"
-
-    if analysis["gold"]:
+    if a.get("gold"):
         return "gold financial market"
 
-    if analysis["energy"]:
+    if a.get("oil"):
         return "oil energy market"
 
-    if analysis["war"]:
-        return "Middle East military news"
+    if a.get("sanctions"):
+        return "Iran steel industry economy"
 
-    return "Iran financial market"
+    return "Iran economy financial market"
 
 
 def get_image(news):
@@ -960,7 +947,7 @@ def get_image(news):
             params={
 
                 "query":
-                    make_image_query(news),
+                    image_query(news),
 
                 "per_page":
                     15,
@@ -998,138 +985,52 @@ def get_image(news):
 
 
 # =========================================================
-# ارسال عکس
-# =========================================================
-
-def send_photo(
-    image_url,
-    caption
-):
-
-    try:
-
-        response = requests.post(
-
-            f"{TELEGRAM_URL}/sendPhoto",
-
-            data={
-
-                "chat_id":
-                    CHANNEL_ID,
-
-                "photo":
-                    image_url,
-
-                "caption":
-                    caption,
-
-                "parse_mode":
-                    "HTML"
-
-            },
-
-            timeout=40
-        )
-
-        print(
-            "Telegram photo:",
-            response.status_code
-        )
-
-        return response.ok
-
-    except Exception as e:
-
-        print(
-            "Photo error:",
-            e
-        )
-
-        return False
-
-
-# =========================================================
-# ارسال متن
-# =========================================================
-
-def send_message(text):
-
-    try:
-
-        response = requests.post(
-
-            f"{TELEGRAM_URL}/sendMessage",
-
-            data={
-
-                "chat_id":
-                    CHANNEL_ID,
-
-                "text":
-                    text,
-
-                "parse_mode":
-                    "HTML",
-
-                "disable_web_page_preview":
-                    True
-
-            },
-
-            timeout=30
-        )
-
-        print(
-            "Telegram message:",
-            response.status_code
-        )
-
-        return response.ok
-
-    except Exception as e:
-
-        print(
-            "Telegram error:",
-            e
-        )
-
-        return False
-
-
-# =========================================================
-# ساخت پست
+# POST
 # =========================================================
 
 def make_post(news):
 
-    title = news["title"]
+    analysis = news["analysis"]
 
-    translated = translate_title(
-        title
-    )
+    if analysis["impact"] == "positive":
 
-    impact_text = make_impact_text(
-        news
-    )
+        impact_text = "🟢 افزایشی"
 
-    # هرگز خبر خنثی ساخته نشود
-    if not impact_text:
+    elif analysis["impact"] == "negative":
+
+        impact_text = "🔴 کاهشی"
+
+    else:
+
         return None
 
+    title = news["title"]
+
     post = (
-        "🚨 <b>خبر فوری و مهم بازار</b>\n\n"
+        "🚨 <b>خبر فوری اقتصادی</b>\n\n"
 
-        f"📰 <b>تیتر:</b>\n"
-        f"{title}\n\n"
+        f"📰 <b>{title}</b>\n\n"
 
-        f"🇮🇷 <b>ترجمه:</b>\n"
-        f"{translated}\n\n"
-
+        f"📊 <b>اثر بر بازار:</b> "
         f"{impact_text}\n\n"
+    )
 
-        f"📌 <b>منبع:</b> "
-        f"{news['source']}\n\n"
+    # فقط بازارهایی که واقعاً مرتبط‌اند
+    if analysis.get("steel"):
+        post += f"🏭 <b>فولاد:</b> {impact_text}\n"
 
+    if analysis.get("dollar"):
+        post += f"💵 <b>دلار:</b> {impact_text}\n"
+
+    if analysis.get("oil"):
+        post += f"🛢 <b>نفت و انرژی:</b> {impact_text}\n"
+
+    if analysis.get("gold"):
+        post += f"🥇 <b>طلا:</b> {impact_text}\n"
+
+    post += (
+        "\n"
+        f"📌 <b>منبع:</b> {news['source']}\n\n"
         f"{COMPANY_FOOTER}"
     )
 
@@ -1147,7 +1048,11 @@ def main():
     )
 
     print(
-        "ARVAND ARON STEEL - URGENT NEWS BOT"
+        "ARVAND ARON STEEL"
+    )
+
+    print(
+        "URGENT ECONOMIC NEWS BOT"
     )
 
     print(
@@ -1164,7 +1069,7 @@ def main():
     if not news_items:
 
         print(
-            "No important non-neutral news found."
+            "No important economic news."
         )
 
         return
@@ -1176,15 +1081,17 @@ def main():
         if posted >= MAX_POSTS_PER_RUN:
             break
 
-        post = make_post(
-            news
-        )
+        # لینک باید وجود داشته باشد
+        if not news["link"]:
+            continue
+
+        post = make_post(news)
 
         if not post:
             continue
 
         print(
-            "PROCESSING:",
+            "POSTING:",
             news["score"],
             news["title"]
         )
@@ -1197,13 +1104,15 @@ def main():
 
             success = send_photo(
                 image_url,
-                post
+                post,
+                news["link"]
             )
 
         else:
 
             success = send_message(
-                post
+                post,
+                news["link"]
             )
 
         if success:
@@ -1240,7 +1149,7 @@ def main():
     )
 
     print(
-        "======================================"
+        "======================================" 
     )
 
 
