@@ -23,7 +23,8 @@ HISTORY_FILE = "news_history.json"
 
 MAX_POSTS_PER_RUN = 2
 
-MIN_SCORE = 35
+# حداقل امتیاز برای خبر مهم
+MIN_SCORE = 40
 
 
 # =========================================================
@@ -32,13 +33,13 @@ MIN_SCORE = 35
 
 COMPANY_NAME = "آروند آرون استیل"
 
-COMPANY_FOOTER = f"""
-━━━━━━━━━━━━━━
-🏭 {COMPANY_NAME}
-👤 مدیریت: افشین آورزمانی
-📞 021-22122239
-🆔 @arvand_aron_steel
-"""
+COMPANY_FOOTER = (
+    "\n━━━━━━━━━━━━━━\n"
+    "🏭 آروند آرون استیل\n"
+    "👤 مدیریت: افشین آورزمانی\n"
+    "📞 021-22122239\n"
+    "🆔 @arvand_aron_steel"
+)
 
 
 # =========================================================
@@ -210,7 +211,12 @@ ECONOMY = [
     "بورس کالا",
     "بورس تهران",
     "اقتصاد ایران",
-    "بازار ایران"
+    "بازار ایران",
+    "بورس",
+    "شاخص بورس",
+    "بازار سهام",
+    "سهام",
+    "پول حقیقی"
 ]
 
 
@@ -227,7 +233,7 @@ CHINA = [
 
 
 # =========================================================
-# کلمات اثر افزایشی
+# اثر افزایشی
 # =========================================================
 
 POSITIVE = [
@@ -266,6 +272,15 @@ POSITIVE = [
     "افزایش تعرفه",
     "ممنوعیت صادرات",
 
+    "ورود پول حقیقی",
+    "ورود نقدینگی",
+    "افزایش شاخص",
+    "رشد شاخص",
+    "رشد بورس",
+    "رکورد بورس",
+    "قله بورس",
+    "صعود بورس",
+
     "production cut",
     "supply cut",
     "price rise",
@@ -278,7 +293,7 @@ POSITIVE = [
 
 
 # =========================================================
-# کلمات اثر کاهشی
+# اثر کاهشی
 # =========================================================
 
 NEGATIVE = [
@@ -311,6 +326,13 @@ NEGATIVE = [
 
     "کاهش تعرفه",
 
+    "خروج پول حقیقی",
+    "خروج نقدینگی",
+    "کاهش شاخص",
+    "افت شاخص",
+    "افت بورس",
+    "ریزش بورس",
+
     "production increase",
     "oversupply",
     "weak demand",
@@ -322,7 +344,7 @@ NEGATIVE = [
 
 
 # =========================================================
-# اخبار نظامی بدون اثر اقتصادی
+# خبرهای غیر اقتصادی
 # =========================================================
 
 MILITARY = [
@@ -345,10 +367,6 @@ MILITARY = [
     "military capability"
 ]
 
-
-# =========================================================
-# اطلاعیه‌های غیرمهم
-# =========================================================
 
 BORING = [
     "اطلاعیه عرضه",
@@ -377,24 +395,20 @@ def load_history():
         return []
 
     try:
-
         with open(
             HISTORY_FILE,
             "r",
             encoding="utf-8"
         ) as f:
-
             return json.load(f)
 
     except Exception:
-
         return []
 
 
 def save_history(history):
 
     try:
-
         with open(
             HISTORY_FILE,
             "w",
@@ -410,17 +424,14 @@ def save_history(history):
 
     except Exception as e:
 
-        print(
-            "History error:",
-            e
-        )
+        print("History error:", e)
 
 
 history = load_history()
 
 
 # =========================================================
-# پاکسازی متن
+# پاکسازی
 # =========================================================
 
 def clean_text(text):
@@ -446,20 +457,9 @@ def normalize(text):
 
     text = clean_text(text).lower()
 
-    text = text.replace(
-        "‌",
-        " "
-    )
-
-    text = text.replace(
-        "ي",
-        "ی"
-    )
-
-    text = text.replace(
-        "ك",
-        "ک"
-    )
+    text = text.replace("‌", " ")
+    text = text.replace("ي", "ی")
+    text = text.replace("ك", "ک")
 
     return re.sub(
         r"\s+",
@@ -471,14 +471,12 @@ def normalize(text):
 def contains(text, keyword):
 
     text = normalize(text)
-
     keyword = normalize(keyword)
 
     if not keyword:
         return False
 
     if " " in keyword:
-
         return keyword in text
 
     return re.search(
@@ -497,35 +495,35 @@ def find_hits(text, keywords):
 
 
 # =========================================================
-# تشخیص اثر بازار
+# تشخیص اثر
 # =========================================================
 
 def detect_impact(text):
 
-    positive = find_hits(
+    positive_hits = find_hits(
         text,
         POSITIVE
     )
 
-    negative = find_hits(
+    negative_hits = find_hits(
         text,
         NEGATIVE
     )
 
     # فقط افزایشی
-    if positive and not negative:
+    if positive_hits and not negative_hits:
         return "positive"
 
     # فقط کاهشی
-    if negative and not positive:
+    if negative_hits and not positive_hits:
         return "negative"
 
-    # هر حالت دیگر = خنثی
+    # ترکیب مبهم یا بدون اثر
     return "neutral"
 
 
 # =========================================================
-# امتیاز خبر
+# تحلیل خبر
 # =========================================================
 
 def analyze_news(
@@ -534,95 +532,39 @@ def analyze_news(
     source
 ):
 
-    text = (
-        title +
-        " " +
-        description
-    )
+    text = title + " " + description
 
-    title_normalized = normalize(
-        title
-    )
-
-    # -----------------------------------------
-    # اطلاعیه ساده = حذف
-    # -----------------------------------------
-
+    # اطلاعیه‌های عادی حذف
     for word in BORING:
 
-        if contains(
-            title_normalized,
-            word
-        ):
+        if contains(title, word):
 
             return {
                 "score": 0,
-                "impact": "neutral",
-                "reason": "announcement"
+                "impact": "neutral"
             }
 
 
-    # -----------------------------------------
-    # اثر بازار
-    # -----------------------------------------
+    impact = detect_impact(text)
 
-    impact = detect_impact(
-        text
-    )
-
-    # خنثی = حذف کامل
+    # قفل اول:
+    # خبر بدون اثر مشخص اصلاً وارد سیستم نشود
     if impact == "neutral":
 
         return {
             "score": 0,
-            "impact": "neutral",
-            "reason": "neutral"
+            "impact": "neutral"
         }
 
 
-    # -----------------------------------------
-    # موضوعات
-    # -----------------------------------------
-
-    steel = find_hits(
-        text,
-        STEEL
-    )
-
-    dollar = find_hits(
-        text,
-        DOLLAR
-    )
-
-    gold = find_hits(
-        text,
-        GOLD
-    )
-
-    oil = find_hits(
-        text,
-        OIL
-    )
-
-    sanctions = find_hits(
-        text,
-        SANCTIONS
-    )
-
-    trade = find_hits(
-        text,
-        TRADE
-    )
-
-    economy = find_hits(
-        text,
-        ECONOMY
-    )
-
-    china = find_hits(
-        text,
-        CHINA
-    )
+    steel = find_hits(text, STEEL)
+    dollar = find_hits(text, DOLLAR)
+    gold = find_hits(text, GOLD)
+    oil = find_hits(text, OIL)
+    sanctions = find_hits(text, SANCTIONS)
+    trade = find_hits(text, TRADE)
+    economy = find_hits(text, ECONOMY)
+    china = find_hits(text, CHINA)
 
 
     economic = (
@@ -637,20 +579,16 @@ def analyze_news(
     )
 
 
-    # بدون موضوع اقتصادی = حذف
+    # خبر بدون موضوع اقتصادی حذف
     if not economic:
 
         return {
             "score": 0,
-            "impact": "neutral",
-            "reason": "not economic"
+            "impact": "neutral"
         }
 
 
-    # -----------------------------------------
-    # خبر نظامی صرف = حذف
-    # -----------------------------------------
-
+    # خبر نظامی صرف حذف
     military = find_hits(
         text,
         MILITARY
@@ -670,14 +608,9 @@ def analyze_news(
 
             return {
                 "score": 0,
-                "impact": "neutral",
-                "reason": "military"
+                "impact": "neutral"
             }
 
-
-    # -----------------------------------------
-    # امتیاز
-    # -----------------------------------------
 
     score = 0
 
@@ -687,12 +620,11 @@ def analyze_news(
     score += len(oil) * 7
     score += len(sanctions) * 10
     score += len(trade) * 7
-    score += len(economy) * 4
+    score += len(economy) * 5
     score += len(china) * 5
 
-
     # اثر مشخص
-    score += 20
+    score += 25
 
 
     # ترکیب‌های مهم
@@ -723,49 +655,29 @@ def analyze_news(
 
 
     return {
-
         "score": score,
-
         "impact": impact,
-
         "steel": steel,
-
         "dollar": dollar,
-
         "gold": gold,
-
         "oil": oil,
-
         "sanctions": sanctions,
-
         "trade": trade,
-
         "economy": economy,
-
         "china": china
     }
 
 
 # =========================================================
-# شناسه خبر
+# شناسه
 # =========================================================
 
-def make_news_id(
-    title,
-    link
-):
+def make_news_id(title, link):
 
     if link:
+        return "url:" + link.strip().lower()
 
-        return (
-            "url:" +
-            link.strip().lower()
-        )
-
-    return (
-        "title:" +
-        normalize(title)
-    )
+    return "title:" + normalize(title)
 
 
 # =========================================================
@@ -775,6 +687,7 @@ def make_news_id(
 def get_news():
 
     results = []
+
 
     for feed_info in FEEDS:
 
@@ -789,29 +702,19 @@ def get_news():
                 feed_info["url"]
             )
 
+
             if not feed.entries:
-
-                print(
-                    "No entries"
-                )
-
                 continue
 
 
             for item in feed.entries[:50]:
 
                 title = clean_text(
-                    item.get(
-                        "title",
-                        ""
-                    )
+                    item.get("title", "")
                 )
 
                 description = clean_text(
-                    item.get(
-                        "summary",
-                        ""
-                    )
+                    item.get("summary", "")
                 )
 
                 link = item.get(
@@ -825,13 +728,9 @@ def get_news():
 
 
                 analysis = analyze_news(
-
                     title,
-
                     description,
-
                     feed_info["name"]
-
                 )
 
 
@@ -843,30 +742,18 @@ def get_news():
                 )
 
 
-                # -----------------------------------------
-                # خنثی هرگز منتشر نشود
-                # -----------------------------------------
-
+                # قفل دوم
                 if analysis["impact"] == "neutral":
-
                     continue
 
 
-                # -----------------------------------------
                 # خبر ضعیف حذف
-                # -----------------------------------------
-
                 if analysis["score"] < MIN_SCORE:
-
                     continue
 
 
-                # -----------------------------------------
                 # لینک الزامی
-                # -----------------------------------------
-
                 if not link:
-
                     continue
 
 
@@ -877,7 +764,6 @@ def get_news():
 
 
                 if news_id in history:
-
                     continue
 
 
@@ -915,7 +801,6 @@ def get_news():
             )
 
 
-    # مهم‌ترین خبرها اول
     results.sort(
         key=lambda x:
             x["score"],
@@ -961,7 +846,6 @@ def image_query(news):
 def get_image(news):
 
     if not PEXELS_API_KEY:
-
         return None
 
 
@@ -992,7 +876,6 @@ def get_image(news):
 
 
         if response.status_code != 200:
-
             return None
 
 
@@ -1003,7 +886,6 @@ def get_image(news):
 
 
         if not photos:
-
             return None
 
 
@@ -1023,7 +905,7 @@ def get_image(news):
 
 
 # =========================================================
-# ساخت متن
+# ساخت پست
 # =========================================================
 
 def make_post(news):
@@ -1031,18 +913,16 @@ def make_post(news):
     analysis = news["analysis"]
 
 
-    # امنیت نهایی:
-    # اگر خنثی بود اصلاً پست ساخته نشود
-    if analysis["impact"] == "neutral":
-
+    # قفل نهایی شماره ۱
+    if analysis.get("impact") == "neutral":
         return None
 
 
-    if analysis["impact"] == "positive":
+    if analysis.get("impact") == "positive":
 
         impact_text = "🟢 افزایشی"
 
-    elif analysis["impact"] == "negative":
+    elif analysis.get("impact") == "negative":
 
         impact_text = "🔴 کاهشی"
 
@@ -1053,16 +933,12 @@ def make_post(news):
 
     post = (
         "🚨 <b>خبر فوری اقتصادی</b>\n\n"
-
-        f"📰 <b>{news['title']}</b>\n\n"
-
-        f"📊 <b>اثر بر بازار:</b> "
-        f"{impact_text}\n"
+        f"📰 <b>{html.escape(news['title'])}</b>\n\n"
+        f"📊 <b>اثر بر بازار:</b> {impact_text}\n"
     )
 
 
     if analysis.get("steel"):
-
         post += (
             f"🏭 <b>فولاد:</b> "
             f"{impact_text}\n"
@@ -1070,7 +946,6 @@ def make_post(news):
 
 
     if analysis.get("dollar"):
-
         post += (
             f"💵 <b>دلار:</b> "
             f"{impact_text}\n"
@@ -1078,7 +953,6 @@ def make_post(news):
 
 
     if analysis.get("oil"):
-
         post += (
             f"🛢 <b>نفت و انرژی:</b> "
             f"{impact_text}\n"
@@ -1086,7 +960,6 @@ def make_post(news):
 
 
     if analysis.get("gold"):
-
         post += (
             f"🥇 <b>طلا:</b> "
             f"{impact_text}\n"
@@ -1094,12 +967,9 @@ def make_post(news):
 
 
     post += (
-
         "\n"
-
         f"📌 <b>منبع:</b> "
-        f"{news['source']}\n\n"
-
+        f"{html.escape(news['source'])}\n"
         + COMPANY_FOOTER
     )
 
@@ -1111,29 +981,19 @@ def make_post(news):
 # ارسال پیام
 # =========================================================
 
-def send_message(
-    text,
-    link
-):
+def send_message(text, link):
 
     keyboard = {
-
         "inline_keyboard": [
-
             [
-
                 {
                     "text":
                         "🔗 ادامه خبر",
-
                     "url":
                         link
                 }
-
             ]
-
         ]
-
     }
 
 
@@ -1159,7 +1019,8 @@ def send_message(
 
                 "reply_markup":
                     json.dumps(
-                        keyboard
+                        keyboard,
+                        ensure_ascii=False
                     )
             },
 
@@ -1197,23 +1058,16 @@ def send_photo(
 ):
 
     keyboard = {
-
         "inline_keyboard": [
-
             [
-
                 {
                     "text":
                         "🔗 ادامه خبر",
-
                     "url":
                         link
                 }
-
             ]
-
         ]
-
     }
 
 
@@ -1239,7 +1093,8 @@ def send_photo(
 
                 "reply_markup":
                     json.dumps(
-                        keyboard
+                        keyboard,
+                        ensure_ascii=False
                     )
             },
 
@@ -1281,6 +1136,11 @@ def main():
     )
 
     print(
+        "COMPANY:",
+        COMPANY_NAME
+    )
+
+    print(
         "======================================"
     )
 
@@ -1297,7 +1157,7 @@ def main():
     if not news_items:
 
         print(
-            "No important news."
+            "No important economic news."
         )
 
         return
@@ -1309,31 +1169,21 @@ def main():
     for news in news_items:
 
         if posted >= MAX_POSTS_PER_RUN:
-
             break
 
 
-        # -----------------------------------------
-        # کنترل نهایی خنثی
-        # -----------------------------------------
-
-        if news["analysis"]["impact"] == "neutral":
-
-            print(
-                "SKIPPED NEUTRAL:",
-                news["title"]
-            )
-
+        # قفل نهایی شماره ۲
+        if news["analysis"].get("impact") not in (
+            "positive",
+            "negative"
+        ):
             continue
 
 
-        post = make_post(
-            news
-        )
+        post = make_post(news)
 
 
         if not post:
-
             continue
 
 
@@ -1344,31 +1194,22 @@ def main():
         )
 
 
-        image_url = get_image(
-            news
-        )
+        image_url = get_image(news)
 
 
         if image_url:
 
             success = send_photo(
-
                 image_url,
-
                 post,
-
                 news["link"]
-
             )
 
         else:
 
             success = send_message(
-
                 post,
-
                 news["link"]
-
             )
 
 
@@ -1378,9 +1219,7 @@ def main():
                 news["id"]
             )
 
-            save_history(
-                history
-            )
+            save_history(history)
 
             posted += 1
 
@@ -1402,11 +1241,7 @@ def main():
     )
 
     print(
-        "FINISHED"
-    )
-
-    print(
-        f"POSTED: {posted}"
+        f"FINISHED - POSTED: {posted}"
     )
 
     print(
@@ -1415,5 +1250,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
