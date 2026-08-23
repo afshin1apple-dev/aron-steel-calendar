@@ -1,5 +1,12 @@
 {
-  "tether": 1924350.0,
+  "tether": 1951000.0,
   "last_post_date": "2026-08-23",
-  "last_post_time": "2026-08-23 09:23:17"
+  "last_post_time": "2026-08-23 14:41:04",
+  "last_post_prices": {
+    "gold_world": 4607.35,
+    "gold18": 217221000.0,
+    "coin": 2170150000.0,
+    "bitcoin": 76806,
+    "tether": 1951000.0
+  }
 }
