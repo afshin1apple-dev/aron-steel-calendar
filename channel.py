@@ -1,5 +1,6 @@
-import requests
+import os
 import re
+import requests
 from bs4 import BeautifulSoup
 # =========================================================
 # SETTINGS
@@ -74,7 +75,7 @@ CHANNEL_FACTORIES = [
     }
 ]
 # =========================================================
-# NORMALIZE DIGITS
+# NUMBER NORMALIZER
 # =========================================================
 def normalize_digits(text):
     if text is None:
@@ -101,59 +102,63 @@ def normalize_digits(text):
         "٧": "7",
         "٨": "8",
         "٩": "9",
+        "٬": "",
+        "،": "",
+        ",": "",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
     return text
-# =========================================================
-# EXTRACT NUMBERS
-# =========================================================
-def extract_numbers(text):
-    text = normalize_digits(text)
-    if not text:
-        return []
-    # -----------------------------------------------------
-    # تبدیل جداکننده‌های عددی
-    # -----------------------------------------------------
-    text = text.replace("٬", ",")
-    text = text.replace("،", ",")
-    
-    # -----------------------------------------------------
-    # استخراج عددها
-    #
-    # مثال:
-    # "80,000 تومان"
-    # -> ["80,000"]
-    #
-    # "8,800 تومان"
-    # -> ["8,800"]
-    # -----------------------------------------------------
-    matches = re.findall(
-        r"\d[\d,]*",
-        text
-    )
-    numbers = []
-    for item in matches:
-        item = item.replace(",", "")
-        try:
-            number = int(item)
-            numbers.append(number)
-        except Exception:
-            continue
-    return numbers
 # =========================================================
 # CLEAN TEXT
 # =========================================================
 def clean_text(text):
     if text is None:
         return ""
-    text = str(text)
+    text = normalize_digits(text)
     text = text.replace("\n", " ")
     text = text.replace("\r", " ")
     text = text.replace("\t", " ")
     return " ".join(
         text.split()
     ).strip()
+# =========================================================
+# EXTRACT INTEGER
+# =========================================================
+def extract_number(text):
+    text = normalize_digits(text)
+    matches = re.findall(
+        r"\d+(?:\.\d+)?",
+        text
+    )
+    if not matches:
+        return None
+    try:
+        value = matches[0]
+        if "." in value:
+            return float(value)
+        return int(value)
+    except Exception:
+        return None
+# =========================================================
+# EXTRACT ALL NUMBERS
+# =========================================================
+def extract_numbers(text):
+    text = normalize_digits(text)
+    matches = re.findall(
+        r"\d+(?:\.\d+)?",
+        text
+    )
+    result = []
+    for value in matches:
+        try:
+            if "." in value:
+                result.append(float(value))
+            else:
+                result.append(int(value))
+        except Exception:
+            pass
+    return result
 # =========================================================
 # GET PAGE
 # =========================================================
@@ -165,6 +170,11 @@ def get_page(url):
             "AppleWebKit/537.36 "
             "(KHTML, like Gecko) "
             "Chrome/126.0 Safari/537.36"
+        ),
+        "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
+        "Accept": (
+            "text/html,application/xhtml+xml,"
+            "application/xml;q=0.9,*/*;q=0.8"
         )
     }
     response = requests.get(
@@ -175,72 +185,202 @@ def get_page(url):
     response.raise_for_status()
     return response.text
 # =========================================================
-# FIND SIZE
+# FIND PRICE IN CELL
 # =========================================================
-def find_size(values):
-    for value in values:
-        numbers = extract_numbers(
-            value
-        )
-        for number in numbers:
-            if 6 <= number <= 30:
-                return number
-    return None
-# =========================================================
-# FIND LENGTH
-# =========================================================
-def find_length(values):
-    lengths = []
-    for value in values:
-        numbers = extract_numbers(
-            value
-        )
-        for number in numbers:
-            if number in (6, 12):
-                lengths.append(
-                    number
-                )
-    if not lengths:
+def extract_price_from_cell(cell):
+    if cell is None:
         return None
     # -----------------------------------------------------
-    # اگر 12 وجود داشت، اولویت با 12
+    # First inspect the complete visible text.
     # -----------------------------------------------------
-    if 12 in lengths:
-        return 12
-    return 6
-# =========================================================
-# FIND PRICE
-# =========================================================
-def find_price(values):
-    candidates = []
-    for value in values:
-        numbers = extract_numbers(
-            value
+    text = clean_text(
+        cell.get_text(
+            " ",
+            strip=True
         )
-        for number in numbers:
-            # -------------------------------------------------
-            # قیمت‌های واقعی این بخش معمولاً در این محدوده‌اند.
-            #
-            # 79,100
-            # 79,500
-            # 80,000
-            # 80,900
-            # 83,200
-            # 83,600
-            # 100,000
-            # -------------------------------------------------
-            if 10_000 <= number <= 500_000:
-                candidates.append(
-                    number
-                )
+    )
+    if not text:
+        return None
+    # -----------------------------------------------------
+    # Ignore cells that clearly contain dimensions.
+    # -----------------------------------------------------
+    lower = text.lower()
+    if (
+        "طول" in text
+        or "سایز" in text
+        or "اندازه" in text
+    ):
+        return None
+    # -----------------------------------------------------
+    # Look for price-like numbers.
+    # -----------------------------------------------------
+    numbers = extract_numbers(
+        text
+    )
+    if not numbers:
+        return None
+    candidates = []
+    for number in numbers:
+        if not isinstance(number, (int, float)):
+            continue
+        # Dimensions are not prices.
+        if number in (6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30):
+            continue
+        # Percentage / small values.
+        if number < 1000:
+            continue
+        candidates.append(
+            int(number)
+        )
     if not candidates:
         return None
     # -----------------------------------------------------
-    # معمولاً آخرین عدد معتبر موجود در سلول قیمت است.
+    # Pivan prices are normally the largest numeric value
+    # inside the price cell.
     # -----------------------------------------------------
-    return candidates[-1]
+    return max(candidates)
 # =========================================================
-# PARSE TABLE
+# PARSE ROW
+# =========================================================
+def parse_row(row, factory):
+    cells = row.find_all(
+        "td"
+    )
+    if not cells:
+        return None
+    cell_texts = [
+        clean_text(
+            cell.get_text(
+                " ",
+                strip=True
+            )
+        )
+        for cell in cells
+    ]
+    row_text = " | ".join(
+        cell_texts
+    )
+    # -----------------------------------------------------
+    # Ignore obvious header rows
+    # -----------------------------------------------------
+    if (
+        "سایز" in row_text
+        or "قیمت" in row_text
+        or "طول" in row_text
+        or "وزن" in row_text
+    ):
+        return None
+    # -----------------------------------------------------
+    # DEBUG: print exact row structure
+    # -----------------------------------------------------
+    print(
+        "RAW ROW:",
+        cell_texts
+    )
+    # -----------------------------------------------------
+    # SIZE
+    # -----------------------------------------------------
+    size = None
+    size_index = None
+    for index, text in enumerate(cell_texts):
+        numbers = extract_numbers(
+            text
+        )
+        for number in numbers:
+            if (
+                isinstance(number, int)
+                and 6 <= number <= 30
+            ):
+                size = number
+                size_index = index
+                break
+        if size is not None:
+            break
+    if size is None:
+        return None
+    # -----------------------------------------------------
+    # LENGTH
+    # -----------------------------------------------------
+    length = None
+    length_index = None
+    # First try cells other than size cell.
+    for index, text in enumerate(cell_texts):
+        if index == size_index:
+            continue
+        numbers = extract_numbers(
+            text
+        )
+        for number in numbers:
+            if number in (6, 12):
+                length = int(number)
+                length_index = index
+                break
+        if length is not None:
+            break
+    # -----------------------------------------------------
+    # PRICE
+    # -----------------------------------------------------
+    price = None
+    price_index = None
+    # Prefer cells after size/length.
+    for index, cell in enumerate(cells):
+        if index == size_index:
+            continue
+        if index == length_index:
+            continue
+        candidate = extract_price_from_cell(
+            cell
+        )
+        if candidate is not None:
+            price = candidate
+            price_index = index
+            break
+    # -----------------------------------------------------
+    # If price wasn't found, inspect every cell again.
+    # -----------------------------------------------------
+    if price is None:
+        for index, cell in enumerate(cells):
+            candidate = extract_price_from_cell(
+                cell
+            )
+            if candidate is not None:
+                price = candidate
+                price_index = index
+                break
+    # -----------------------------------------------------
+    # Validate
+    # -----------------------------------------------------
+    if price is None:
+        print(
+            f"SIZE {size}: PRICE NOT FOUND"
+        )
+        return None
+    # -----------------------------------------------------
+    # If length is missing, do NOT blindly guess 12.
+    # -----------------------------------------------------
+    if length is None:
+        print(
+            f"SIZE {size} | "
+            f"PRICE {price:,} | "
+            f"LENGTH NOT FOUND"
+        )
+        return None
+    product = {
+        "size": size,
+        "length": length,
+        "price": price,
+        "factory": factory["key"],
+        "factory_name": factory["name"],
+        "type": factory["type"]
+    }
+    print(
+        f"SIZE {size} | "
+        f"LENGTH {length} | "
+        f"PRICE {price:,}"
+    )
+    return product
+# =========================================================
+# PARSE UCHANNEL TABLE
 # =========================================================
 def parse_uchannel_table(
     html,
@@ -260,14 +400,15 @@ def parse_uchannel_table(
     if not tables:
         return []
     # -----------------------------------------------------
-    # جدول اول Pivan
+    # Current Pivan structure:
+    # first table = channel price table
     # -----------------------------------------------------
     table = tables[0]
-    rows = table.find_all(
-        "tr"
-    )
     print(
         "SELECTED CHANNEL TABLE: 0"
+    )
+    rows = table.find_all(
+        "tr"
     )
     print(
         "ROWS:",
@@ -275,94 +416,19 @@ def parse_uchannel_table(
     )
     products = []
     for row in rows:
-        cells = row.find_all(
-            ["td", "th"]
+        product = parse_row(
+            row,
+            factory
         )
-        if not cells:
-            continue
-        values = [
-            clean_text(
-                cell.get_text(
-                    " ",
-                    strip=True
-                )
+        if product is not None:
+            products.append(
+                product
             )
-            for cell in cells
-        ]
-        row_text = " ".join(
-            values
-        )
-        # -------------------------------------------------
-        # Header
-        # -------------------------------------------------
-        header_words = [
-            "سایز",
-            "قیمت",
-            "طول",
-            "وزن",
-            "استاندارد"
-        ]
-        if any(
-            word in row_text
-            for word in header_words
-        ):
-            continue
-        # -------------------------------------------------
-        # SIZE
-        # -------------------------------------------------
-        size = find_size(
-            values
-        )
-        if size is None:
-            continue
-        # -------------------------------------------------
-        # LENGTH
-        # -------------------------------------------------
-        length = find_length(
-            values
-        )
-        # -------------------------------------------------
-        # PRICE
-        # -------------------------------------------------
-        price = find_price(
-            values
-        )
-        if price is None:
-            print(
-                f"SIZE {size}: PRICE NOT FOUND"
-            )
-            continue
-        if length is None:
-            length = 12
-        product = {
-            "size":
-                size,
-            "length":
-                length,
-            "price":
-                price,
-            "factory":
-                factory["key"],
-            "factory_name":
-                factory["name"],
-            "type":
-                factory["type"]
-        }
-        products.append(
-            product
-        )
-        print(
-            f"SIZE {size} | "
-            f"LENGTH {length} | "
-            f"PRICE {price:,}"
-        )
     return products
 # =========================================================
 # FETCH FACTORY
 # =========================================================
-def fetch_factory(
-    factory
-):
+def fetch_factory(factory):
     print()
     print(
         "=" * 70
@@ -401,7 +467,11 @@ def fetch_factory(
             factory
         )
         # -------------------------------------------------
-        # Remove duplicates
+        # Remove duplicate size + length.
+        #
+        # IMPORTANT:
+        # Last value wins only if the same exact
+        # size/length combination appears twice.
         # -------------------------------------------------
         unique = {}
         for item in prices:
@@ -409,10 +479,6 @@ def fetch_factory(
                 item["size"],
                 item["length"]
             )
-            # -------------------------------------------------
-            # اگر یک سایز/طول چند بار آمد،
-            # آخرین قیمت معتبر را نگه می‌داریم.
-            # -------------------------------------------------
             unique[key] = item
         prices = list(
             unique.values()
@@ -484,9 +550,13 @@ def main():
     )
     for factory in results:
         print()
+        status = (
+            "ok"
+            if factory["prices"]
+            else "FAILED"
+        )
         print(
-            f"{factory['key']} -> "
-            f"{'ok' if factory['prices'] else 'FAILED'}"
+            f"{factory['key']} -> {status}"
         )
         for item in factory["prices"]:
             print(
