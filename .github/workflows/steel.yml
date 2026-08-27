@@ -1,16 +1,13 @@
-name: Steel Price Bot
+name: Steel Bot
 
 on:
+  workflow_dispatch:
 
   schedule:
-
     # 15:00 Iran time
     # 11:30 UTC
-    #
-    # Friday excluded
-    - cron: "30 11 * * 0-4,6"
-
-  workflow_dispatch:
+    # Every day except Friday
+    - cron: "30 11 * * 0-3,5-6"
 
 
 jobs:
@@ -21,70 +18,34 @@ jobs:
 
     steps:
 
-      # ===================================================
-      # CHECKOUT
-      # ===================================================
-
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-
-      # ===================================================
-      # PYTHON
-      # ===================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
-
         with:
           python-version: "3.12"
 
-
-      # ===================================================
-      # INSTALL
-      # ===================================================
-
       - name: Install dependencies
         run: |
-
-          pip install requests
-          pip install beautifulsoup4
-
-
-      # ===================================================
-      # RUN
-      # ===================================================
+          pip install requests beautifulsoup4 lxml
 
       - name: Run Steel Bot
         env:
-
-          BOT_TOKEN:
-            ${{ secrets.BOT_TOKEN }}
-
-          CHANNEL_ID:
-            ${{ secrets.CHANNEL_ID }}
-
-          PRIVATE_CHAT_ID:
-            ${{ secrets.PRIVATE_CHAT_ID }}
-
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          PRIVATE_CHAT_ID: ${{ secrets.PRIVATE_CHAT_ID }}
         run: |
-
           echo "======================================"
-
-          echo "Starting Steel Price Bot"
-
+          echo "Starting Steel Bot"
           echo "UTC time:"
           date -u
-
           echo "Iran time:"
           TZ=Asia/Tehran date
-
           echo "======================================"
 
           python steel_bot.py
 
           echo "======================================"
-
           echo "Steel Bot finished"
-
           echo "======================================"
