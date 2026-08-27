@@ -1,4 +1,5 @@
 import re
+from io import StringIO
 import requests
 import pandas as pd
 # =========================================================
@@ -93,18 +94,22 @@ def fetch_page(url):
         timeout=TIMEOUT,
     )
     response.raise_for_status()
-    return response
+    return response.text
 # =========================================================
-# PARSE ONE FACTORY
+# PARSE CHANNEL TABLE
 # =========================================================
 def parse_channel_product(product):
     try:
-        response = fetch_page(product["url"])
-        tables = pd.read_html(response.text)
+        html = fetch_page(product["url"])
+        # -------------------------------------------------
+        # IMPORTANT:
+        # StringIO prevents pandas from treating HTML
+        # as a filename.
+        # -------------------------------------------------
+        tables = pd.read_html(StringIO(html))
         if not tables:
             return {
                 "name": product["name"],
-                "factory": product["factory"],
                 "type": product["type"],
                 "ok": False,
                 "products": [],
@@ -113,7 +118,10 @@ def parse_channel_product(product):
         df = tables[0]
         products = []
         for _, row in df.iterrows():
-            values = [str(x).strip() for x in row.tolist()]
+            values = [
+                str(x).strip()
+                for x in row.tolist()
+            ]
             if len(values) < 5:
                 continue
             size = normalize_number(values[0])
@@ -122,30 +130,40 @@ def parse_channel_product(product):
             unit = values[3].strip()
             raw_price = values[4]
             # -------------------------------------------------
-            # فقط سایز عددی
+            # SIZE
             # -------------------------------------------------
-            if not re.fullmatch(r"\d+(?:\.\d+)?", size):
+            if not re.fullmatch(
+                r"\d+(?:\.\d+)?",
+                size
+            ):
                 continue
             # -------------------------------------------------
-            # فقط طول عددی
+            # LENGTH
             # -------------------------------------------------
-            if not re.fullmatch(r"\d+(?:\.\d+)?", length):
+            if not re.fullmatch(
+                r"\d+(?:\.\d+)?",
+                length
+            ):
                 continue
             # -------------------------------------------------
-            # فقط کیلوگرم
+            # UNIT
             # -------------------------------------------------
             if "کیلو" not in unit:
                 continue
             # -------------------------------------------------
-            # حذف تمام قیمت‌های انبار تهران
+            # REMOVE WAREHOUSE / TEHRAN
             # -------------------------------------------------
-            delivery_normalized = delivery.replace("‌", " ").strip()
-            if "تهران" in delivery_normalized:
+            delivery_clean = (
+                delivery
+                .replace("‌", " ")
+                .strip()
+            )
+            if "تهران" in delivery_clean:
                 continue
-            if "انبار" in delivery_normalized:
+            if "انبار" in delivery_clean:
                 continue
             # -------------------------------------------------
-            # قیمت جاری
+            # PRICE
             # -------------------------------------------------
             price = extract_current_price(raw_price)
             if price is None:
@@ -154,30 +172,40 @@ def parse_channel_product(product):
                 {
                     "size": size,
                     "length": length,
-                    "delivery": delivery,
+                    "delivery": delivery_clean,
                     "unit": unit,
                     "price": price,
                 }
             )
         return {
             "name": product["name"],
-            "factory": product["factory"],
             "type": product["type"],
             "ok": len(products) > 0,
             "products": products,
         }
-    except Exception as e:
-        error_text = str(e)
-        # کوتاه کردن خطا برای جلوگیری از لاگ چند هزار خطی
-        if len(error_text) > 300:
-            error_text = error_text[:300] + "..."
+    except requests.exceptions.Timeout:
         return {
             "name": product["name"],
-            "factory": product["factory"],
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": error_text,
+            "error": "Timeout",
+        }
+    except requests.exceptions.RequestException as e:
+        return {
+            "name": product["name"],
+            "type": product["type"],
+            "ok": False,
+            "products": [],
+            "error": f"Request error: {str(e)[:120]}",
+        }
+    except Exception as e:
+        return {
+            "name": product["name"],
+            "type": product["type"],
+            "ok": False,
+            "products": [],
+            "error": str(e)[:200],
         }
 # =========================================================
 # GET ALL PRICES
@@ -199,27 +227,40 @@ def print_final_result(results):
     factories_ok = 0
     total_products = 0
     for result in results:
+        print()
         if result["ok"]:
             factories_ok += 1
-            total_products += len(result["products"])
+            count = len(result["products"])
+            total_products += count
             print(
                 f"{result['name']}: OK "
-                f"({len(result['products'])} قیمت)"
+                f"({count} قیمت)"
             )
-            # فقط خروجی نهایی، بدون RAW ROW
             for item in result["products"]:
                 print(
-                    f"  {item['size']}×{item['length']} متر : "
+                    f"  ناودانی "
+                    f"{item['size']} - "
+                    f"{item['length']} متر : "
                     f"{item['price']:,} تومان"
                 )
         else:
-            print(f"{result['name']}: ERROR")
+            print(
+                f"{result['name']}: ERROR"
+            )
             if result.get("error"):
-                print(f"  علت: {result['error']}")
+                print(
+                    f"  علت: {result['error']}"
+                )
     print()
     print("=" * 45)
-    print(f"FACTORIES: {factories_ok}/{len(results)}")
-    print(f"PRODUCTS: {total_products}")
+    print(
+        f"FACTORIES: "
+        f"{factories_ok}/{len(results)}"
+    )
+    print(
+        f"PRODUCTS: "
+        f"{total_products}"
+    )
     print("=" * 45)
 # =========================================================
 # MAIN
