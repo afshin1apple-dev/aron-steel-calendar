@@ -16,6 +16,10 @@ PIVAN_URL = (
 
 OUTPUT_FILE = "prices.json"
 
+FACTORY = "فولاد خراسان نیشابور"
+BRAND = "KSC"
+PRODUCT = "میلگرد"
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -100,66 +104,72 @@ def parse_price(text):
     if not numbers:
         return None
 
-    values = []
-
     for number in numbers:
 
         number = number.replace(",", "")
 
         try:
+
             value = int(number)
 
             if value > 1000:
-                values.append(value)
+                return value
 
         except Exception:
             continue
 
-    if not values:
-        return None
-
-    return values[-1]
+    return None
 
 
 # =========================================================
-# EXTRACT PRICE FROM PRICE CELL
+# EXTRACT EX-TAX PRICE
 # =========================================================
 
 def extract_price_from_cell(cell):
 
+    """
+    فقط قیمت قبل از ارزش افزوده را می‌خواند.
+
+    منبع معتبر:
+
+        span.ex-tax
+
+    مثال:
+
+        <span class="in-tax">79,000</span>
+        <span class="ex-tax">71,800</span>
+
+    خروجی:
+
+        71800
+
+    اگر ex-tax وجود نداشته باشد، قیمت None می‌شود.
+
+    عمداً از کل متن سلول fallback نمی‌گیریم
+    تا قیمت با ارزش افزوده اشتباهاً وارد نشود.
+    """
+
     if cell is None:
         return None
 
-    # -----------------------------------------
-    # اول span مربوط به ex-tax
-    # -----------------------------------------
-
     ex_tax = cell.select_one(
-        ".ex-tax"
+        "span.ex-tax"
     )
 
-    if ex_tax:
+    if ex_tax is None:
+        return None
 
-        value = parse_price(
-            ex_tax.get_text(
-                " ",
-                strip=True
-            )
+    value = parse_price(
+        ex_tax.get_text(
+            " ",
+            strip=True
         )
-
-        if value:
-            return value
-
-    # -----------------------------------------
-    # اگر ex-tax پیدا نشد
-    # -----------------------------------------
-
-    text = cell.get_text(
-        " ",
-        strip=True
     )
 
-    return parse_price(text)
+    if value is None:
+        return None
+
+    return value
 
 
 # =========================================================
@@ -223,10 +233,6 @@ def find_price_table(soup):
         len(tables)
     )
 
-    # -----------------------------------------
-    # بررسی تمام جدول‌ها
-    # -----------------------------------------
-
     for index, table in enumerate(
         tables,
         start=1
@@ -239,8 +245,6 @@ def find_price_table(soup):
             )
         )
 
-        # جدول مورد نظر باید قیمت، سایز
-        # و نوسان داشته باشد
         if (
             "سایز" in text
             and "قیمت" in text
@@ -309,8 +313,8 @@ def extract_products(html):
             for cell in cells
         ]
 
-        # -----------------------------------------
-        # ستون‌ها طبق جدول پیوان
+        # -------------------------------------------------
+        # COLUMN STRUCTURE
         #
         # 0 = سایز
         # 1 = استاندارد
@@ -318,16 +322,16 @@ def extract_products(html):
         # 3 = واحد
         # 4 = قیمت
         # 5 = نوسان
-        # -----------------------------------------
+        # -------------------------------------------------
 
         size_text = values[0]
         standard = values[1]
         delivery = values[2]
         unit = values[3]
 
-        # -----------------------------------------
-        # سایز باید عدد باشد
-        # -----------------------------------------
+        # -------------------------------------------------
+        # SIZE
+        # -------------------------------------------------
 
         size_match = re.search(
             r"\d+",
@@ -345,20 +349,26 @@ def extract_products(html):
         if size < 8 or size > 50:
             continue
 
-        # -----------------------------------------
-        # قیمت
-        # -----------------------------------------
+        # -------------------------------------------------
+        # EX-TAX PRICE
+        # -------------------------------------------------
 
         price = extract_price_from_cell(
             cells[4]
         )
 
+        # اگر قیمت قبل از ارزش افزوده موجود نباشد،
+        # محصول را وارد خروجی نمی‌کنیم.
         if price is None:
+            print(
+                f"⚠️ SIZE {size}: "
+                f"EX-TAX PRICE NOT AVAILABLE"
+            )
             continue
 
-        # -----------------------------------------
-        # نوسان
-        # -----------------------------------------
+        # -------------------------------------------------
+        # FLUCTUATION
+        # -------------------------------------------------
 
         fluctuation = None
 
@@ -384,17 +394,26 @@ def extract_products(html):
                 except Exception:
                     fluctuation = None
 
+        # -------------------------------------------------
+        # PRODUCT
+        # -------------------------------------------------
+
         product = {
-            "factory": "فولاد خراسان نیشابور",
-            "brand": "KSC",
-            "product": "میلگرد",
+            "factory": FACTORY,
+            "brand": BRAND,
+            "product": PRODUCT,
             "size": size,
             "standard": standard,
             "delivery": delivery,
             "unit": unit,
+
+            # مهم:
+            # قیمت قبل از ارزش افزوده
             "price": price,
-            "price_unit": "تومان",
+
+            "price_unit": "تومان/کیلوگرم",
             "fluctuation_percent": fluctuation,
+
             "source": "Pivan",
             "source_url": PIVAN_URL
         }
@@ -403,9 +422,14 @@ def extract_products(html):
             product
         )
 
-    # -----------------------------------------
-    # حذف سایزهای تکراری
-    # -----------------------------------------
+        print(
+            f"SIZE {size}: "
+            f"EX-TAX PRICE = {price:,}"
+        )
+
+    # =====================================================
+    # REMOVE DUPLICATES
+    # =====================================================
 
     unique = []
     seen = set()
@@ -428,6 +452,7 @@ def extract_products(html):
             product
         )
 
+    # مرتب‌سازی بر اساس سایز
     unique.sort(
         key=lambda x: x["size"]
     )
@@ -444,8 +469,11 @@ def save_json(products):
     data = {
         "source": "Pivan",
         "source_url": PIVAN_URL,
-        "factory": "فولاد خراسان نیشابور",
-        "product": "میلگرد",
+        "factory": FACTORY,
+        "brand": BRAND,
+        "product": PRODUCT,
+        "price_basis": "ex_tax",
+        "price_description": "قیمت قبل از ارزش افزوده",
         "updated_at": datetime.now(
             timezone.utc
         ).isoformat(),
@@ -489,11 +517,14 @@ def print_result(products):
 
     for product in products:
 
+        price = product["price"]
+
         print(
             f"🏭 {product['factory']} | "
             f"📏 {product['size']} | "
             f"📋 {product['standard']} | "
-            f"💰 {product['price']:,} تومان | "
+            f"💰 قیمت قبل از ارزش افزوده: "
+            f"{price:,} تومان | "
             f"📍 {product['delivery']}"
         )
 
@@ -547,6 +578,11 @@ def main():
     print(
         "TOTAL:",
         data["count"]
+    )
+
+    print(
+        "PRICE BASIS:",
+        data["price_description"]
     )
 
     print()
