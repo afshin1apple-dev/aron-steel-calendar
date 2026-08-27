@@ -18,39 +18,79 @@ jobs:
 
     steps:
 
+      # =====================================================
+      # CHECKOUT
+      # =====================================================
+
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      # =====================================================
+      # PYTHON
+      # =====================================================
+
       - name: Setup Python
         uses: actions/setup-python@v5
+
         with:
           python-version: "3.12"
 
+
+      # =====================================================
+      # INSTALL DEPENDENCIES
+      # =====================================================
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+
+      # =====================================================
+      # CHECK PILLOW
+      # =====================================================
 
       - name: Check Pillow
         run: |
           python -c "from PIL import Image, ImageDraw, ImageFont; print('Pillow OK')"
 
+
+      # =====================================================
+      # RUN STEEL BOT
+      # =====================================================
+
       - name: Run Steel Bot
+
         env:
+
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+
           PRIVATE_CHAT_ID: ${{ secrets.PRIVATE_CHAT_ID }}
+
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
         run: |
+
           echo "======================================"
+
           echo "Starting Steel Bot"
+
           echo "UTC time:"
+
           date -u
+
           echo "Iran time:"
+
           TZ=Asia/Tehran date
+
           echo "======================================"
 
           python steel_bot.py
 
           echo "======================================"
+
           echo "Steel Bot finished"
+
           echo "======================================"
