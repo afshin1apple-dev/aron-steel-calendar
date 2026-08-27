@@ -27,6 +27,14 @@ HISTORY_FILE = "market_history.json"
 
 CHANGE_THRESHOLD = 5.0
 
+# =========================================================
+# TEST MODE
+# =========================================================
+# برای تست اولیه True باشد
+# بعد از اینکه پیام با موفقیت در کانال آمد، False کنید
+
+FORCE_POST = True
+
 
 # =========================================================
 # CHANNEL FOOTER
@@ -47,23 +55,17 @@ COMPANY_FOOTER = """
 
 def number(text):
 
-    if text is None:
-        return None
-
-    text = str(text)
-
     text = (
         text
         .replace(",", "")
         .replace("٬", "")
-        .replace(" ", "")
         .strip()
     )
 
     try:
         return float(text)
 
-    except Exception:
+    except:
         return None
 
 
@@ -290,8 +292,8 @@ def calculate_change(
     if (
         previous is None
         or previous == 0
-        or current is None
     ):
+
         return None
 
     return (
@@ -378,7 +380,7 @@ def change(value):
 
 
 # =========================================================
-# COMPARE PRICES
+# COMPARE WITH LAST POST
 # =========================================================
 
 def compare_prices(
@@ -393,9 +395,7 @@ def compare_prices(
 
     for name, current in current_prices.items():
 
-        previous = previous_prices.get(
-            name
-        )
+        previous = previous_prices.get(name)
 
         if (
             previous is None
@@ -478,7 +478,7 @@ last_post_prices = history.get(
 
 
 # =========================================================
-# GET GOLD WORLD
+# GET PRICES
 # =========================================================
 
 print(
@@ -492,10 +492,6 @@ gold_world, gold_world_change = (
 )
 
 
-# =========================================================
-# GET GOLD 18
-# =========================================================
-
 print(
     "Getting gold 18..."
 )
@@ -506,10 +502,6 @@ gold18, gold18_change = (
     )
 )
 
-
-# =========================================================
-# GET COIN
-# =========================================================
 
 print(
     "Getting coin..."
@@ -522,20 +514,12 @@ coin, coin_change = (
 )
 
 
-# =========================================================
-# GET TETHER
-# =========================================================
-
 print(
     "Getting tether..."
 )
 
 tether = get_tether()
 
-
-# =========================================================
-# GET BITCOIN
-# =========================================================
 
 print(
     "Getting bitcoin..."
@@ -547,7 +531,7 @@ bitcoin, bitcoin_change = (
 
 
 # =========================================================
-# GET STEEL FROM PIVAN
+# GET STEEL PRICES FROM PIVAN
 # =========================================================
 
 print(
@@ -559,40 +543,6 @@ steel_prices = get_prices()
 print(
     "Steel products found:",
     len(steel_prices)
-)
-
-for steel in steel_prices:
-
-    steel_price = steel.get(
-        "price"
-    )
-
-    if steel_price is not None:
-
-        print(
-            f"Steel size {steel['size']}: "
-            f"{steel_price:,} تومان"
-        )
-
-    else:
-
-        print(
-            f"Steel size {steel['size']}: "
-            f"PRICE NOT AVAILABLE"
-        )
-
-
-# =========================================================
-# TETHER CHANGE
-# =========================================================
-
-previous_tether = history.get(
-    "tether"
-)
-
-tether_change = calculate_change(
-    tether,
-    previous_tether
 )
 
 
@@ -623,6 +573,32 @@ for steel in steel_prices:
             steel_price
         )
 
+        print(
+            f"Steel size {size}: "
+            f"{steel_price:,} تومان"
+        )
+
+    else:
+
+        print(
+            f"Steel size {size}: "
+            f"PRICE NOT AVAILABLE"
+        )
+
+
+# =========================================================
+# TETHER DAILY CHANGE
+# =========================================================
+
+previous_tether = history.get(
+    "tether"
+)
+
+tether_change = calculate_change(
+    tether,
+    previous_tether
+)
+
 
 # =========================================================
 # CURRENT PRICES
@@ -643,10 +619,17 @@ current_prices = {
         bitcoin,
 
     "tether":
-        tether,
-
-    **steel_current_prices
+        tether
 }
+
+
+# =========================================================
+# ADD STEEL TO CURRENT PRICES
+# =========================================================
+
+current_prices.update(
+    steel_current_prices
+)
 
 
 print(
@@ -675,96 +658,120 @@ print(
 should_post = False
 
 
-# ---------------------------------------------------------
-# FIRST POST OF TODAY
-# ---------------------------------------------------------
+# =========================================================
+# FORCE POST
+# =========================================================
 
-if last_post_date != today_key:
+if FORCE_POST:
 
     print(
-        "This is the first market post of today."
+        "FORCE_POST = True"
     )
 
     print(
-        "Post will be sent."
+        "Test mode: post will be sent."
     )
 
     should_post = True
 
 
-# ---------------------------------------------------------
-# SAME DAY
-# ---------------------------------------------------------
+# =========================================================
+# NORMAL MODE
+# =========================================================
 
 else:
 
-    print(
-        "A market post was already sent today."
-    )
+    # -----------------------------------------------------
+    # FIRST POST OF TODAY
+    # -----------------------------------------------------
 
-    if not last_post_prices:
+    if last_post_date != today_key:
 
         print(
-            "No saved prices from the previous post."
+            "This is the first market post of today."
         )
 
         print(
-            "Post will be sent now."
+            "Post will be sent."
         )
 
         should_post = True
 
+
+    # -----------------------------------------------------
+    # SAME DAY
+    # -----------------------------------------------------
+
     else:
 
-        price_changes = compare_prices(
-            current_prices,
-            last_post_prices
-        )
-
         print(
-            "Changes since last market post:"
+            "A market post was already sent today."
         )
 
-        if price_changes:
-
-            for name, value in price_changes.items():
-
-                print(
-                    f"{name}: {value:+.2f}%"
-                )
-
-        else:
+        if not last_post_prices:
 
             print(
-                "No comparable prices found."
-            )
-
-        if has_significant_change(
-            price_changes
-        ):
-
-            print(
-                "At least one price changed "
-                "more than 5%."
+                "No saved prices from the previous post."
             )
 
             print(
-                "New market post will be sent."
+                "Post will be sent now."
             )
 
             should_post = True
 
         else:
 
-            print(
-                "No price changed more than 5%."
+            price_changes = compare_prices(
+                current_prices,
+                last_post_prices
             )
 
             print(
-                "Nothing to do."
+                "Changes since last market post:"
             )
 
-            should_post = False
+            if price_changes:
+
+                for name, value in price_changes.items():
+
+                    print(
+                        f"{name}: {value:+.2f}%"
+                    )
+
+            else:
+
+                print(
+                    "No comparable prices found."
+                )
+
+
+            if has_significant_change(
+                price_changes
+            ):
+
+                print(
+                    "At least one price changed "
+                    "more than 5%."
+                )
+
+                print(
+                    "New market post will be sent."
+                )
+
+                should_post = True
+
+            else:
+
+                print(
+                    "No price changed more than 5%."
+                )
+
+                print(
+                    "Nothing to do."
+                )
+
+                should_post = False
 
 
 # =========================================================
@@ -779,10 +786,6 @@ if not should_post:
 
     print(
         "Market post skipped."
-    )
-
-    print(
-        "Reason: No price movement above 5%."
     )
 
     print(
@@ -812,7 +815,7 @@ r = requests.get(
     params={
 
         "query":
-            "gold bitcoin steel finance trading",
+            "gold bitcoin finance trading",
 
         "orientation":
             "landscape",
@@ -825,6 +828,7 @@ r = requests.get(
 )
 
 r.raise_for_status()
+
 
 photos = r.json().get(
     "photos",
@@ -853,52 +857,30 @@ image_url = photo[
 
 
 # =========================================================
-# STEEL MESSAGE
+# BUILD STEEL MESSAGE
 # =========================================================
 
 steel_message = ""
 
-if steel_prices:
+for steel in steel_prices:
 
-    steel_message += (
-        "🏭 <b>میلگرد فولاد خراسان نیشابور</b>\n"
+    size = steel.get(
+        "size"
     )
 
-    steel_message += (
-        "📍 محل تحویل: کارخانه\n\n"
+    steel_price = steel.get(
+        "price"
     )
 
-    for steel in steel_prices:
-
-        steel_price = steel.get(
-            "price"
-        )
-
-        if steel_price is None:
-            continue
-
-        size = steel.get(
-            "size"
-        )
-
-        fluctuation = steel.get(
-            "fluctuation_percent"
-        )
+    if (
+        size is not None
+        and steel_price is not None
+    ):
 
         steel_message += (
-            f"📏 سایز {size}: "
-            f"<b>{price(steel_price)}</b> تومان"
+            f"📏 <b>سایز {size}</b> "
+            f"💰 {price(steel_price)} تومان\n"
         )
-
-        if fluctuation is not None:
-
-            steel_message += (
-                f"  ({change(fluctuation)})"
-            )
-
-        steel_message += "\n"
-
-    steel_message += "\n"
 
 
 # =========================================================
@@ -909,7 +891,7 @@ message = (
 
     "📊 <b>گزارش بازار امروز</b>\n\n"
 
-    "━━━━━━━━━━━━━━\n"
+    "🌍 <b>بازار طلا و ارز</b>\n\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
     f"💰 {price(gold_world, 2)} دلار\n"
@@ -936,16 +918,19 @@ message = (
     f"📈 تغییر: "
     f"{change(tether_change)}\n\n"
 
-    "━━━━━━━━━━━━━━\n\n"
+    "━━━━━━━━━━━━━━\n"
 
-    f"{steel_message}"
+    "🏭 <b>قیمت میلگرد فولاد خراسان نیشابور</b>\n"
+    "📍 درب کارخانه\n\n"
+
+    f"{steel_message}\n"
 
     f"{COMPANY_FOOTER}"
 )
 
 
 # =========================================================
-# SEND TELEGRAM
+# SEND TO TELEGRAM
 # =========================================================
 
 print(
@@ -976,6 +961,15 @@ r = requests.post(
 )
 
 
+# =========================================================
+# TELEGRAM RESPONSE
+# =========================================================
+
+print(
+    "Telegram HTTP status:",
+    r.status_code
+)
+
 print(
     "Telegram response:"
 )
@@ -993,7 +987,34 @@ if not r.ok:
 
 
 # =========================================================
-# SAVE HISTORY
+# CHECK TELEGRAM JSON
+# =========================================================
+
+try:
+
+    telegram_data = r.json()
+
+except Exception:
+
+    raise RuntimeError(
+        "Telegram returned invalid JSON"
+    )
+
+
+if not telegram_data.get(
+    "ok",
+    False
+):
+
+    raise RuntimeError(
+        f"Telegram API error: "
+        f"{telegram_data}"
+    )
+
+
+# =========================================================
+# ONLY AFTER SUCCESS:
+# SAVE POST INFORMATION
 # =========================================================
 
 history["last_post_date"] = (
@@ -1040,8 +1061,7 @@ print(
 )
 
 print(
-    "Steel prices included:",
-    len(steel_prices)
+    "Steel prices saved for comparison."
 )
 
 print(
