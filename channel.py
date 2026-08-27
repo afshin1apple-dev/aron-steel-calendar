@@ -1,6 +1,7 @@
 import re
 import requests
 import pandas as pd
+from io import StringIO
 # =========================================================
 # SETTINGS
 # =========================================================
@@ -14,7 +15,7 @@ HEADERS = {
 }
 # =========================================================
 # CHANNEL PRODUCTS
-# فایکو عمداً حذف شده است
+# فایکو حذف شده
 # =========================================================
 CHANNEL_PRODUCTS = [
     {
@@ -62,13 +63,10 @@ def normalize_number(value):
     for i, ch in enumerate(arabic):
         text = text.replace(ch, str(i))
     return text
+# =========================================================
+# PRICE
+# =========================================================
 def extract_current_price(value):
-    """
-    مثال:
-    88000 80000 -> 80000
-    89000 80900 -> 80900
-    تماس بگیرید -> None
-    """
     if value is None:
         return None
     text = normalize_number(value)
@@ -93,7 +91,7 @@ def fetch_page(url):
     response.raise_for_status()
     return response
 # =========================================================
-# PARSE
+# PARSE PRODUCT
 # =========================================================
 def parse_channel_product(product):
     try:
@@ -109,9 +107,11 @@ def parse_channel_product(product):
         }
     try:
         # مهم:
-        # html را مستقیماً به read_html می‌دهیم.
-        # هیچ‌وقت متن کامل HTML را داخل خطا چاپ نمی‌کنیم.
-        tables = pd.read_html(response.text)
+        # StringIO باعث می‌شود pandas متن HTML را
+        # به‌عنوان فایل اشتباه نگیرد.
+        tables = pd.read_html(
+            StringIO(response.text)
+        )
     except Exception as e:
         return {
             "name": product["name"],
@@ -130,7 +130,9 @@ def parse_channel_product(product):
             "products": [],
             "error": "No table found",
         }
-    # جدول اصلی قیمت
+    # =====================================================
+    # TABLE 0
+    # =====================================================
     df = tables[0]
     products = []
     for _, row in df.iterrows():
@@ -146,7 +148,7 @@ def parse_channel_product(product):
         unit = values[3]
         raw_price = values[4]
         # -------------------------------------------------
-        # Size
+        # SIZE
         # -------------------------------------------------
         if not re.fullmatch(
             r"\d+(?:\.\d+)?",
@@ -154,7 +156,7 @@ def parse_channel_product(product):
         ):
             continue
         # -------------------------------------------------
-        # Length
+        # LENGTH
         # -------------------------------------------------
         if not re.fullmatch(
             r"\d+(?:\.\d+)?",
@@ -162,12 +164,12 @@ def parse_channel_product(product):
         ):
             continue
         # -------------------------------------------------
-        # Unit
+        # UNIT
         # -------------------------------------------------
         if "کیلو" not in unit:
             continue
         # -------------------------------------------------
-        # Price
+        # PRICE
         # -------------------------------------------------
         price = extract_current_price(raw_price)
         if price is None:
@@ -189,7 +191,7 @@ def parse_channel_product(product):
         "products": products,
     }
 # =========================================================
-# GET ALL PRICES
+# GET ALL
 # =========================================================
 def get_channel_prices():
     results = []
@@ -199,7 +201,6 @@ def get_channel_prices():
     return results
 # =========================================================
 # FINAL RESULT
-# لاگ بسیار کم
 # =========================================================
 def print_final_result(results):
     print()
@@ -211,12 +212,13 @@ def print_final_result(results):
     for result in results:
         if result["ok"]:
             factories_ok += 1
-            total_products += len(result["products"])
+            total_products += len(
+                result["products"]
+            )
             print(
                 f"{result['name']}: "
                 f"OK ({len(result['products'])} قیمت)"
             )
-            # فقط قیمت‌ها را چاپ می‌کنیم
             for item in result["products"]:
                 print(
                     f"  ناودانی {item['size']} - "
@@ -227,7 +229,6 @@ def print_final_result(results):
             print(
                 f"{result['name']}: ERROR"
             )
-            # فقط نوع خطا، بدون HTML
             if result.get("error"):
                 print(
                     f"  علت: {result['error']}"
