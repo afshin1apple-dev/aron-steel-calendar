@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 
 from datetime import datetime
@@ -16,6 +17,8 @@ CHANNEL = os.environ["CHANNEL_ID"]
 PEXELS_KEY = os.environ["PEXELS_API_KEY"]
 
 TEHRAN = ZoneInfo("Asia/Tehran")
+
+STEEL_HISTORY_FILE = "steel_history.json"
 
 
 # =========================================================
@@ -35,12 +38,138 @@ COMPANY_FOOTER = """
 # PRICE FORMAT
 # =========================================================
 
-def price(value):
+def format_price(value):
 
     if value is None:
         return "نامشخص"
 
     return f"{value:,.0f}"
+
+
+# =========================================================
+# CHANGE FORMAT
+# =========================================================
+
+def format_change(value):
+
+    if value is None:
+        return "⚪ بدون سابقه"
+
+    if value > 0:
+
+        return f"🟢 +{value:.2f}%"
+
+    if value < 0:
+
+        return f"🔴 {value:.2f}%"
+
+    return "⚪ 0.00%"
+
+
+# =========================================================
+# LOAD STEEL HISTORY
+# =========================================================
+
+def load_history():
+
+    if not os.path.exists(
+        STEEL_HISTORY_FILE
+    ):
+
+        return {}
+
+    try:
+
+        with open(
+            STEEL_HISTORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+            if isinstance(data, dict):
+
+                return data
+
+            return {}
+
+    except Exception as e:
+
+        print(
+            "Steel history load error:",
+            e
+        )
+
+        return {}
+
+
+# =========================================================
+# SAVE STEEL HISTORY
+# =========================================================
+
+def save_history(history):
+
+    with open(
+        STEEL_HISTORY_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            history,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+
+# =========================================================
+# CALCULATE CHANGE
+# =========================================================
+
+def calculate_change(
+    current,
+    previous
+):
+
+    if (
+        current is None
+        or previous is None
+        or previous == 0
+    ):
+
+        return None
+
+    return (
+        (current - previous)
+        / previous
+    ) * 100
+
+
+# =========================================================
+# GET PREVIOUS PRICE
+# =========================================================
+
+def get_previous_price(
+    previous_prices,
+    size
+):
+
+    if not previous_prices:
+        return None
+
+    value = previous_prices.get(
+        str(size)
+    )
+
+    if value is None:
+
+        value = previous_prices.get(
+            size
+        )
+
+    return value
 
 
 # =========================================================
@@ -51,6 +180,63 @@ now = datetime.now(
     TEHRAN
 )
 
+today_key = now.strftime(
+    "%Y-%m-%d"
+)
+
+weekday = now.weekday()
+
+
+# =========================================================
+# FRIDAY CHECK
+# =========================================================
+#
+# Python:
+# Monday    = 0
+# Tuesday   = 1
+# Wednesday = 2
+# Thursday  = 3
+# Friday    = 4
+# Saturday  = 5
+# Sunday    = 6
+#
+# =========================================================
+
+if weekday == 4:
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "STEEL MARKET"
+    )
+
+    print(
+        "Today is Friday."
+    )
+
+    print(
+        "Steel post will NOT be sent."
+    )
+
+    print(
+        "Iran time:",
+        now.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    )
+
+    print(
+        "======================================"
+    )
+
+    raise SystemExit(0)
+
+
+# =========================================================
+# START
+# =========================================================
 
 print(
     "======================================"
@@ -73,13 +259,23 @@ print(
 
 
 # =========================================================
-# GET STEEL
+# LOAD HISTORY
+# =========================================================
+
+history = load_history()
+
+previous_prices = history.get(
+    "last_steel_prices"
+)
+
+
+# =========================================================
+# GET STEEL PRICES
 # =========================================================
 
 print(
     "Getting steel prices from Pivan..."
 )
-
 
 steel_prices = get_prices()
 
@@ -97,6 +293,13 @@ if not steel_prices:
     )
 
 
+# =========================================================
+# CURRENT STEEL PRICES
+# =========================================================
+
+current_prices = {}
+
+
 for steel in steel_prices:
 
     size = steel.get(
@@ -107,64 +310,79 @@ for steel in steel_prices:
         "price"
     )
 
+    if size is None:
+
+        continue
+
+    current_prices[
+        str(size)
+    ] = steel_price
+
     print(
-        f"Size {size}: "
+        f"Steel size {size}: "
         f"{steel_price}"
     )
 
 
+if not current_prices:
+
+    raise RuntimeError(
+        "No valid steel prices found"
+    )
+
+
 # =========================================================
-# BUILD STEEL MESSAGE
+# BUILD MESSAGE
 # =========================================================
 
 message_parts = [
 
     "🏗 <b>گزارش قیمت فولاد</b>",
-
     "",
-
     "📍 <b>میلگرد فولاد خراسان نیشابور</b>",
-
-    "💰 قیمت‌ها به تومان"
+    "💰 قیمت‌ها به تومان",
+    ""
 ]
 
 
-for steel in steel_prices:
+# =========================================================
+# ADD PRICES + COMPARISON
+# =========================================================
 
-    size = steel.get(
-        "size"
+for size, current in current_prices.items():
+
+    previous = get_previous_price(
+        previous_prices,
+        size
     )
 
-    steel_price = steel.get(
-        "price"
+    change = calculate_change(
+        current,
+        previous
     )
 
-    if steel_price is None:
+    message_parts.append(
+        f"🔩 <b>میلگرد {size}</b>"
+    )
 
-        message_parts.append(
-            f"🔩 میلگرد {size}: "
-            f"نامشخص"
-        )
+    message_parts.append(
+        f"💰 {format_price(current)} تومان"
+    )
 
-    else:
+    message_parts.append(
+        f"📊 تغییر: {format_change(change)}"
+    )
 
-        message_parts.append(
-            f"🔩 میلگرد {size}: "
-            f"<b>{price(steel_price)}</b> تومان"
-        )
+    message_parts.append("")
 
 
-message_parts.extend([
+# =========================================================
+# FOOTER
+# =========================================================
 
-    "",
-
-    "🌐 منبع: پیوان",
-
-    "",
-
+message_parts.append(
     COMPANY_FOOTER
-
-])
+)
 
 
 message = "\n".join(
@@ -172,12 +390,16 @@ message = "\n".join(
 )
 
 
+# =========================================================
+# PRINT MESSAGE
+# =========================================================
+
 print(
     "======================================"
 )
 
 print(
-    "Steel message:"
+    "STEEL MESSAGE"
 )
 
 print(
@@ -190,7 +412,7 @@ print(
 
 
 # =========================================================
-# GET STEEL IMAGE
+# GET IMAGE
 # =========================================================
 
 print(
@@ -247,11 +469,13 @@ photo = photos[
 
 image_url = photo[
     "src"
-]["large2x"]
+][
+    "large2x"
+]
 
 
 # =========================================================
-# SEND TO TELEGRAM
+# SEND TELEGRAM
 # =========================================================
 
 print(
@@ -300,6 +524,32 @@ if not r.ok:
 
 
 # =========================================================
+# SAVE HISTORY ONLY AFTER SUCCESS
+# =========================================================
+
+history[
+    "last_steel_post_date"
+] = today_key
+
+
+history[
+    "last_steel_post_time"
+] = now.strftime(
+    "%Y-%m-%d %H:%M:%S"
+)
+
+
+history[
+    "last_steel_prices"
+] = current_prices
+
+
+save_history(
+    history
+)
+
+
+# =========================================================
 # SUCCESS
 # =========================================================
 
@@ -309,6 +559,10 @@ print(
 
 print(
     "STEEL POST SENT SUCCESSFULLY"
+)
+
+print(
+    "Steel prices saved for comparison."
 )
 
 print(
