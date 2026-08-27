@@ -11,6 +11,7 @@ URLS = {
     "میلگرد نیشابور": "https://khorasan-steel.com/product.php?prd=3",
 }
 
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -23,7 +24,6 @@ HEADERS = {
         "image/apng,*/*;q=0.8"
     ),
     "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Connection": "keep-alive",
 }
 
 
@@ -31,34 +31,140 @@ session = requests.Session()
 session.headers.update(HEADERS)
 
 
+# =========================================================
+# TEXT CLEAN
+# =========================================================
+
 def clean(text):
+
     if text is None:
         return ""
 
     text = unescape(str(text))
-    text = re.sub(r"<[^>]+>", "", text)
-    text = text.replace("\xa0", " ")
-    text = text.replace("&nbsp;", " ")
 
-    return " ".join(text.split()).strip()
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text
+    )
 
+    text = text.replace(
+        "\xa0",
+        " "
+    )
+
+    text = text.replace(
+        "&nbsp;",
+        " "
+    )
+
+    return " ".join(
+        text.split()
+    ).strip()
+
+
+# =========================================================
+# DIGIT CONVERSION
+# =========================================================
+
+def normalize_digits(text):
+
+    if text is None:
+        return ""
+
+    text = str(text)
+
+    arabic = "٠١٢٣٤٥٦٧٨٩"
+    persian = "۰۱۲۳۴۵۶۷۸۹"
+
+    for i in range(10):
+
+        text = text.replace(
+            arabic[i],
+            str(i)
+        )
+
+        text = text.replace(
+            persian[i],
+            str(i)
+        )
+
+    return text
+
+
+# =========================================================
+# PRICE
+# =========================================================
 
 def price_value(text):
+
     text = clean(text)
 
-    if text in ("", "-", "—", "–", "null", "None"):
+    text = normalize_digits(text)
+
+    if not text:
         return None
 
-    digits = re.sub(r"[^\d]", "", text)
-
-    if not digits:
+    if text in (
+        "-",
+        "—",
+        "–",
+        "null",
+        "None",
+        "ندارد"
+    ):
         return None
 
-    try:
-        return int(digits)
-    except Exception:
+    # حذف کد گرید و موارد غیرقیمتی
+    text = re.sub(
+        r"\bA[123]\b",
+        " ",
+        text,
+        flags=re.I
+    )
+
+    # فقط اعداد
+    numbers = re.findall(
+        r"\d[\d,]*",
+        text
+    )
+
+    if not numbers:
         return None
 
+    # بزرگ‌ترین عدد معمولاً قیمت است
+    values = []
+
+    for number in numbers:
+
+        digits = re.sub(
+            r"[^\d]",
+            "",
+            number
+        )
+
+        if not digits:
+            continue
+
+        try:
+            value = int(digits)
+
+            # قیمت‌های فولادی معمولاً در این بازه‌اند
+            if 10000 <= value <= 100000000:
+                values.append(value)
+
+        except Exception:
+            continue
+
+    if not values:
+        return None
+
+    return max(values)
+
+
+# =========================================================
+# TABLE ROWS
+# =========================================================
 
 def extract_table_rows(html):
 
@@ -78,35 +184,128 @@ def extract_table_rows(html):
             flags=re.I | re.S
         )
 
-        values = [clean(x) for x in cells]
+        values = [
+            clean(x)
+            for x in cells
+        ]
 
         if len(values) == 5:
-            result.append(values)
+
+            result.append(
+                values
+            )
 
     return result
 
 
-def extract_products(html, source_page):
+# =========================================================
+# SIZE CLEAN
+# =========================================================
 
-    rows = extract_table_rows(html)
+def clean_size(size):
+
+    size = clean(size)
+
+    size = normalize_digits(size)
+
+    # حذف اطلاعات اضافی
+    size = re.sub(
+        r"\bA[123]\b",
+        "",
+        size,
+        flags=re.I
+    )
+
+    size = re.sub(
+        r"\s+",
+        " ",
+        size
+    ).strip()
+
+    return size
+
+
+# =========================================================
+# DESCRIPTION CLEAN
+# =========================================================
+
+def clean_description(description):
+
+    description = clean(
+        description
+    )
+
+    description = normalize_digits(
+        description
+    )
+
+    # حذف قیمت‌های اضافی
+    description = re.sub(
+        r"\b\d[\d,]*\b",
+        "",
+        description
+    )
+
+    return " ".join(
+        description.split()
+    ).strip()
+
+
+# =========================================================
+# EXTRACT PRODUCTS
+# =========================================================
+
+def extract_products(
+    html,
+    source_page
+):
+
+    rows = extract_table_rows(
+        html
+    )
 
     products = []
 
     for values in rows:
 
-        factory = clean(values[0])
-        size = clean(values[1])
-        yesterday = clean(values[2])
-        today = clean(values[3])
-        description = clean(values[4])
+        factory = clean(
+            values[0]
+        )
 
-        if not factory or not size:
+        size = clean_size(
+            values[1]
+        )
+
+        yesterday_text = clean(
+            values[2]
+        )
+
+        today_text = clean(
+            values[3]
+        )
+
+        description = clean_description(
+            values[4]
+        )
+
+        # -------------------------------------------------
+        # حذف Header
+        # -------------------------------------------------
+
+        if "قیمت دیروز" in yesterday_text:
             continue
 
-        if "قیمت دیروز" in yesterday:
+        if "قیمت امروز" in today_text:
             continue
 
-        if "قیمت امروز" in today:
+        # -------------------------------------------------
+        # حذف ردیف‌های غیرمحصول
+        # -------------------------------------------------
+
+        if not factory:
+            continue
+
+        if not size:
             continue
 
         if factory == "میلگرد":
@@ -115,422 +314,135 @@ def extract_products(html, source_page):
         if "قیمت ها با احتساب" in factory:
             continue
 
-        old_price = price_value(yesterday)
-        new_price = price_value(today)
+        # -------------------------------------------------
+        # PRICE
+        # -------------------------------------------------
+
+        old_price = price_value(
+            yesterday_text
+        )
+
+        new_price = price_value(
+            today_text
+        )
+
+        # اگر قیمت امروز وجود ندارد
+        # این ردیف برای ما کاربردی نیست
+        if new_price is None:
+
+            continue
+
+        # -------------------------------------------------
+        # تغییر
+        # -------------------------------------------------
+
+        change = None
+        change_percent = None
+
+        if (
+            old_price is not None
+            and old_price > 0
+        ):
+
+            change = (
+                new_price -
+                old_price
+            )
+
+            change_percent = round(
+                (
+                    change /
+                    old_price
+                ) * 100,
+                2
+            )
 
         products.append({
+
             "factory": factory,
+
             "size": size,
+
             "yesterday": old_price,
+
             "today": new_price,
-            "description": description,
-            "source_page": source_page
+
+            "change": change,
+
+            "change_percent":
+                change_percent,
+
+            "description":
+                description,
+
+            "source_page":
+                source_page
+
         })
 
     return products
 
 
-def extract_urls_from_html(html, base_url):
+# =========================================================
+# DUPLICATES
+# =========================================================
 
-    found = []
+def remove_duplicates(
+    products
+):
 
-    # href
-    hrefs = re.findall(
-        r"""href\s*=\s*["']([^"']+)["']""",
-        html,
-        flags=re.I
-    )
+    unique = []
 
-    # src
-    srcs = re.findall(
-        r"""src\s*=\s*["']([^"']+)["']""",
-        html,
-        flags=re.I
-    )
+    seen = set()
 
-    # URLهای داخل JavaScript
-    js_urls = re.findall(
-        r"""["']([^"']*(?:ajax|api|price|product|archive|load)[^"']*)["']""",
-        html,
-        flags=re.I
-    )
+    for product in products:
 
-    for url in hrefs + srcs + js_urls:
-
-        url = unescape(url).strip()
-
-        if not url:
-            continue
-
-        if url.startswith("#"):
-            continue
-
-        full_url = urljoin(base_url, url)
-
-        if full_url not in found:
-            found.append(full_url)
-
-    return found
-
-
-def find_ajax_candidates(html, base_url):
-
-    candidates = []
-
-    patterns = [
-        r"""url\s*:\s*["']([^"']+)["']""",
-        r"""url\s*=\s*["']([^"']+)["']""",
-        r"""["']([^"']*ajax[^"']*)["']""",
-        r"""["']([^"']*product[^"']*)["']""",
-        r"""["']([^"']*price[^"']*)["']""",
-        r"""["']([^"']*archive[^"']*)["']""",
-        r"""["']([^"']*load[^"']*)["']""",
-        r"""["']([^"']*prd=[^"']*)["']""",
-    ]
-
-    for pattern in patterns:
-
-        matches = re.findall(
-            pattern,
-            html,
-            flags=re.I
+        key = (
+            product["factory"],
+            product["size"],
+            product["today"],
+            product["source_page"]
         )
 
-        for match in matches:
+        if key in seen:
+            continue
 
-            match = unescape(match).strip()
+        seen.add(
+            key
+        )
 
-            if not match:
-                continue
+        unique.append(
+            product
+        )
 
-            full_url = urljoin(base_url, match)
-
-            if full_url not in candidates:
-                candidates.append(full_url)
-
-    return candidates
+    return unique
 
 
-def inspect_nishabour_page(html, url):
+# =========================================================
+# FETCH
+# =========================================================
+
+def fetch_page(
+    title,
+    url
+):
 
     print()
-    print("=" * 70)
-    print("NISHABOUR PAGE ANALYSIS")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
 
-    print("HTML LENGTH:", len(html))
+    print(
+        title
+    )
 
-    # -----------------------------------------
-    # پیدا کردن URLهای احتمالی
-    # -----------------------------------------
-
-    candidates = find_ajax_candidates(
-        html,
+    print(
         url
     )
 
-    print()
-    print("POSSIBLE AJAX/API URLS:")
-
-    for item in candidates[:50]:
-        print(item)
-
-    # -----------------------------------------
-    # پیدا کردن scriptها
-    # -----------------------------------------
-
-    scripts = re.findall(
-        r"<script\b[^>]*>(.*?)</script>",
-        html,
-        flags=re.I | re.S
-    )
-
-    print()
-    print("INLINE SCRIPTS:", len(scripts))
-
-    keywords = [
-        "ajax",
-        "$.get",
-        "$.post",
-        "xmlhttp",
-        "fetch(",
-        "axios",
-        "price",
-        "product",
-        "archive",
-        "prd",
-        "load("
-    ]
-
-    interesting = []
-
-    for script in scripts:
-
-        lower = script.lower()
-
-        if any(k.lower() in lower for k in keywords):
-
-            text = clean(script)
-
-            if text:
-                interesting.append(text)
-
     print(
-        "INTERESTING SCRIPTS:",
-        len(interesting)
+        "=" * 70
     )
-
-    for index, script in enumerate(
-        interesting[:20],
-        start=1
-    ):
-
-        print()
-        print(
-            f"--- SCRIPT {index} ---"
-        )
-
-        print(
-            script[:4000]
-        )
-
-    # -----------------------------------------
-    # پیدا کردن فایل‌های JS
-    # -----------------------------------------
-
-    js_files = re.findall(
-        r"""<script[^>]+src\s*=\s*["']([^"']+)["']""",
-        html,
-        flags=re.I
-    )
-
-    print()
-    print("JS FILES:")
-
-    for js in js_files[:50]:
-
-        full = urljoin(
-            url,
-            unescape(js)
-        )
-
-        print(full)
-
-    return candidates
-
-
-def try_json_response(
-    response,
-    source_page
-):
-
-    text = response.text.strip()
-
-    if not text:
-        return []
-
-    # -----------------------------------------
-    # JSON مستقیم
-    # -----------------------------------------
-
-    try:
-
-        data = response.json()
-
-        products = parse_json_products(
-            data,
-            source_page
-        )
-
-        if products:
-            return products
-
-    except Exception:
-        pass
-
-    # -----------------------------------------
-    # JSON داخل HTML
-    # -----------------------------------------
-
-    json_blocks = re.findall(
-        r"""(?:\{.*?\}|\[.*?\])""",
-        text,
-        flags=re.S
-    )
-
-    for block in json_blocks:
-
-        try:
-
-            data = json.loads(block)
-
-            products = parse_json_products(
-                data,
-                source_page
-            )
-
-            if products:
-                return products
-
-        except Exception:
-            continue
-
-    return []
-
-
-def parse_json_products(
-    data,
-    source_page
-):
-
-    products = []
-
-    def walk(obj):
-
-        if isinstance(obj, dict):
-
-            keys = {
-                str(k).lower()
-                for k in obj.keys()
-            }
-
-            # کلیدهای احتمالی
-            factory_key = None
-            size_key = None
-            old_key = None
-            new_key = None
-            desc_key = None
-
-            for k in obj.keys():
-
-                lk = str(k).lower()
-
-                if any(
-                    x in lk
-                    for x in [
-                        "factory",
-                        "brand",
-                        "company",
-                        "کارخانه",
-                        "میلگرد"
-                    ]
-                ):
-                    factory_key = k
-
-                if any(
-                    x in lk
-                    for x in [
-                        "size",
-                        "saz",
-                        "سایز"
-                    ]
-                ):
-                    size_key = k
-
-                if any(
-                    x in lk
-                    for x in [
-                        "yesterday",
-                        "old",
-                        "prev",
-                        "دیروز"
-                    ]
-                ):
-                    old_key = k
-
-                if any(
-                    x in lk
-                    for x in [
-                        "today",
-                        "new",
-                        "current",
-                        "امروز"
-                    ]
-                ):
-                    new_key = k
-
-                if any(
-                    x in lk
-                    for x in [
-                        "description",
-                        "desc",
-                        "توضیحات"
-                    ]
-                ):
-                    desc_key = k
-
-            if factory_key and size_key:
-
-                factory = clean(
-                    obj.get(factory_key)
-                )
-
-                size = clean(
-                    obj.get(size_key)
-                )
-
-                old_price = (
-                    price_value(
-                        obj.get(old_key)
-                    )
-                    if old_key
-                    else None
-                )
-
-                new_price = (
-                    price_value(
-                        obj.get(new_key)
-                    )
-                    if new_key
-                    else None
-                )
-
-                description = (
-                    clean(
-                        obj.get(desc_key)
-                    )
-                    if desc_key
-                    else ""
-                )
-
-                if (
-                    factory
-                    and size
-                    and (
-                        old_price is not None
-                        or new_price is not None
-                    )
-                ):
-
-                    products.append({
-                        "factory": factory,
-                        "size": size,
-                        "yesterday": old_price,
-                        "today": new_price,
-                        "description": description,
-                        "source_page": source_page
-                    })
-
-            for value in obj.values():
-                walk(value)
-
-        elif isinstance(obj, list):
-
-            for item in obj:
-                walk(item)
-
-    walk(data)
-
-    return products
-
-
-def fetch_page(title, url):
-
-    print()
-    print("=" * 70)
-    print(title)
-    print(url)
-    print("=" * 70)
 
     try:
 
@@ -563,172 +475,66 @@ def fetch_page(title, url):
         return ""
 
 
-def fetch_nishabour_data(html, url):
+# =========================================================
+# DISPLAY
+# =========================================================
+
+def show_sample(
+    products,
+    count=20
+):
 
     print()
-    print("=" * 70)
-    print("TRYING NISHABOUR DATA")
-    print("=" * 70)
-
-    all_products = []
-
-    # -----------------------------------------
-    # روش 1: جدول مستقیم
-    # -----------------------------------------
-
-    products = extract_products(
-        html,
-        "میلگرد نیشابور"
+    print(
+        "=" * 70
     )
 
-    if products:
+    print(
+        "CLEAN SAMPLE"
+    )
+
+    print(
+        "=" * 70
+    )
+
+    for product in products[:count]:
+
+        print()
 
         print(
-            "TABLE PRODUCTS:",
-            len(products)
+            "🏭 کارخانه:",
+            product["factory"]
         )
 
-        all_products.extend(
-            products
+        print(
+            "📏 سایز:",
+            product["size"]
         )
 
-    # -----------------------------------------
-    # روش 2: JSON موجود در HTML
-    # -----------------------------------------
-
-    products = try_json_response(
-        requests.models.Response(),
-        "میلگرد نیشابور"
-    )
-
-    # -----------------------------------------
-    # تحلیل صفحه
-    # -----------------------------------------
-
-    candidates = inspect_nishabour_page(
-        html,
-        url
-    )
-
-    # -----------------------------------------
-    # امتحان کردن URLهای احتمالی
-    # -----------------------------------------
-
-    tested = set()
-
-    for candidate in candidates:
-
-        if candidate in tested:
-            continue
-
-        tested.add(candidate)
-
-        # فقط URLهای مربوط به سایت
-        if "khorasan-steel.com" not in candidate:
-            continue
-
-        try:
-
-            print()
-            print(
-                "TRY:",
-                candidate
-            )
-
-            response = session.get(
-                candidate,
-                timeout=20,
-                headers={
-                    **HEADERS,
-                    "Referer": url
-                }
-            )
-
-            print(
-                "HTTP:",
-                response.status_code,
-                "LENGTH:",
-                len(response.text)
-            )
-
-            if response.status_code != 200:
-                continue
-
-            # جدول
-            found = extract_products(
-                response.text,
-                "میلگرد نیشابور"
-            )
-
-            if found:
-
-                print(
-                    "TABLE FOUND:",
-                    len(found)
-                )
-
-                all_products.extend(
-                    found
-                )
-
-            # JSON
-            try:
-
-                data = response.json()
-
-                found = parse_json_products(
-                    data,
-                    "میلگرد نیشابور"
-                )
-
-                if found:
-
-                    print(
-                        "JSON FOUND:",
-                        len(found)
-                    )
-
-                    all_products.extend(
-                        found
-                    )
-
-            except Exception:
-                pass
-
-        except Exception as e:
-
-            print(
-                "REQUEST ERROR:",
-                e
-            )
-
-    return all_products
-
-
-def remove_duplicates(products):
-
-    unique = []
-    seen = set()
-
-    for product in products:
-
-        key = (
-            product["factory"],
-            product["size"],
-            product["yesterday"],
-            product["today"],
-            product["description"],
-            product["source_page"]
+        print(
+            "💰 امروز:",
+            product["today"]
         )
 
-        if key in seen:
-            continue
+        print(
+            "💰 دیروز:",
+            product["yesterday"]
+        )
 
-        seen.add(key)
-        unique.append(product)
+        print(
+            "📊 تغییر:",
+            product["change_percent"]
+        )
 
-    return unique
+        print(
+            "📝 توضیحات:",
+            product["description"]
+        )
 
+
+# =========================================================
+# MAIN
+# =========================================================
 
 def main():
 
@@ -736,13 +542,15 @@ def main():
 
     page_counts = {}
 
-    # ==================================================
-    # سایر کارخانجات
-    # ==================================================
+    # =====================================================
+    # سایر کارخانه‌ها
+    # =====================================================
 
     html = fetch_page(
         "میلگرد سایر کارخانجات",
-        URLS["میلگرد سایر کارخانجات"]
+        URLS[
+            "میلگرد سایر کارخانجات"
+        ]
     )
 
     if html:
@@ -753,7 +561,7 @@ def main():
         )
 
         print(
-            "FOUND:",
+            "CLEAN FOUND:",
             len(products)
         )
 
@@ -771,25 +579,26 @@ def main():
             "میلگرد سایر کارخانجات"
         ] = 0
 
-    # ==================================================
+    # =====================================================
     # نیشابور
-    # ==================================================
+    # =====================================================
 
     html = fetch_page(
         "میلگرد نیشابور",
-        URLS["میلگرد نیشابور"]
+        URLS[
+            "میلگرد نیشابور"
+        ]
     )
 
     if html:
 
-        products = fetch_nishabour_data(
+        products = extract_products(
             html,
-            URLS["میلگرد نیشابور"]
+            "میلگرد نیشابور"
         )
 
-        print()
         print(
-            "NISHABOUR FOUND:",
+            "CLEAN FOUND:",
             len(products)
         )
 
@@ -799,7 +608,6 @@ def main():
 
         all_products.extend(
             products
-
         )
 
     else:
@@ -808,25 +616,34 @@ def main():
             "میلگرد نیشابور"
         ] = 0
 
-    # ==================================================
+    # =====================================================
     # حذف تکراری
-    # ==================================================
+    # =====================================================
 
     all_products = remove_duplicates(
         all_products
     )
 
-    # ==================================================
-    # ساخت JSON
-    # ==================================================
+    # =====================================================
+    # JSON
+    # =====================================================
 
     data = {
-        "source": "khorasan-steel.com",
-        "updated_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
-        "count": len(all_products),
-        "prices": all_products
+
+        "source":
+            "khorasan-steel.com",
+
+        "updated_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
+
+        "count":
+            len(all_products),
+
+        "prices":
+            all_products
+
     }
 
     with open(
@@ -842,21 +659,29 @@ def main():
             indent=2
         )
 
-    # ==================================================
-    # نتیجه
-    # ==================================================
+    # =====================================================
+    # RESULT
+    # =====================================================
 
     print()
-    print("=" * 70)
-    print("JSON CREATED")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "JSON CREATED"
+    )
+
+    print(
+        "=" * 70
+    )
 
     print(
         "FILE: prices.json"
     )
 
     print(
-        "TOTAL PRODUCTS:",
+        "TOTAL CLEAN PRODUCTS:",
         len(all_products)
     )
 
@@ -871,25 +696,25 @@ def main():
             f"{page}: {count}"
         )
 
-    print()
-    print("=" * 70)
-    print("SAMPLE")
-    print("=" * 70)
-
-    for product in all_products[:15]:
-
-        print(
-            f"{product['factory']} | "
-            f"سایز {product['size']} | "
-            f"امروز {product['today']} | "
-            f"{product['description']}"
-        )
+    show_sample(
+        all_products,
+        20
+    )
 
     print()
-    print("=" * 70)
-    print("TEST FINISHED")
-    print("=" * 70)
+    print(
+        "=" * 70
+    )
+
+    print(
+        "TEST FINISHED"
+    )
+
+    print(
+        "=" * 70
+    )
 
 
 if __name__ == "__main__":
+
     main()
