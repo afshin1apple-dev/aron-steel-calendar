@@ -5,6 +5,8 @@ import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from PIL import Image, ImageDraw, ImageFont
+
 from price import get_all_prices
 
 
@@ -16,7 +18,6 @@ TOKEN = os.environ["BOT_TOKEN"]
 
 CHANNEL = os.environ["CHANNEL_ID"]
 
-# Telegram numeric Chat ID of Afshin
 PRIVATE_CHAT_ID = os.environ.get(
     "PRIVATE_CHAT_ID"
 )
@@ -29,25 +30,23 @@ STEEL_HISTORY_FILE = (
     "steel_history.json"
 )
 
+IMAGE_FILE = (
+    "steel_price_card.jpg"
+)
 
-# =========================================================
-# MAIN FACTORIES
-# =========================================================
-#
-# فقط این سه کارخانه در کانال منتشر می‌شوند.
-#
-# سایر کارخانه‌ها فقط برای مدیریت ارسال می‌شوند.
-#
+FONT_FILE = (
+    "NotoSansArabic-Regular.ttf"
+)
 
-MAIN_FACTORIES = [
-    "نیشابور",
-    "هیربد",
-    "امیرکبیر"
-]
+FONT_URL = (
+    "https://github.com/googlefonts/noto-fonts/"
+    "raw/main/hinted/ttf/NotoSansArabic/"
+    "NotoSansArabic-Regular.ttf"
+)
 
 
 # =========================================================
-# COMPANY FOOTER
+# COMPANY
 # =========================================================
 
 COMPANY_FOOTER = """
@@ -66,29 +65,138 @@ COMPANY_FOOTER = """
 def format_price(value):
 
     if value is None:
+
         return "نامشخص"
 
-    return f"{float(value):,.0f}"
+    return f"{int(value):,}"
 
 
 # =========================================================
-# CHANGE FORMAT
+# CALCULATE AVERAGE CHANGE
 # =========================================================
 
-def format_change(value):
+def calculate_average_change(
+    current_prices,
+    previous_prices
+):
 
-    if value is None:
-        return "⚪ بدون سابقه"
+    if (
+        not current_prices
+        or not previous_prices
+    ):
 
-    if value > 0:
+        return None
 
-        return f"🟢 +{value:.2f}%"
+    changes = []
 
-    if value < 0:
+    previous_map = {}
 
-        return f"🔴 {value:.2f}%"
+    for item in previous_prices:
 
-    return "⚪ 0.00%"
+        try:
+
+            size = int(
+                item["size"]
+            )
+
+            price = float(
+                item["price"]
+            )
+
+            previous_map[size] = price
+
+        except Exception:
+
+            continue
+
+    for item in current_prices:
+
+        try:
+
+            size = int(
+                item["size"]
+            )
+
+            current = float(
+                item["price"]
+            )
+
+            previous = previous_map.get(
+                size
+            )
+
+            if (
+                previous is None
+                or previous == 0
+            ):
+
+                continue
+
+            change = (
+                (current - previous)
+                / previous
+            ) * 100
+
+            changes.append(
+                change
+            )
+
+        except Exception:
+
+            continue
+
+    if not changes:
+
+        return None
+
+    return (
+        sum(changes)
+        / len(changes)
+    )
+
+
+# =========================================================
+# COMPARISON TEXT
+# =========================================================
+
+def comparison_text(
+    current_prices,
+    previous_prices
+):
+
+    change = calculate_average_change(
+        current_prices,
+        previous_prices
+    )
+
+    if change is None:
+
+        return (
+            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+            "⚪ اطلاعات کافی برای مقایسه وجود ندارد."
+        )
+
+    if change > 0.01:
+
+        return (
+            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+            f"🟢 قیمت میلگرد در مجموع "
+            f"<b>{change:+.2f}٪ افزایش</b> داشته است."
+        )
+
+    if change < -0.01:
+
+        return (
+            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+            f"🔴 قیمت میلگرد در مجموع "
+            f"<b>{change:+.2f}٪ کاهش</b> داشته است."
+        )
+
+    return (
+        "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+        "⚪ قیمت میلگرد در مجموع "
+        "<b>بدون تغییر</b> بوده است."
+    )
 
 
 # =========================================================
@@ -111,29 +219,34 @@ def load_history():
             encoding="utf-8"
         ) as f:
 
-            data = json.load(f)
+            data = json.load(
+                f
+            )
 
-            if isinstance(data, dict):
+            if isinstance(
+                data,
+                dict
+            ):
 
                 return data
-
-            return {}
 
     except Exception as e:
 
         print(
-            "Steel history load error:",
+            "History load error:",
             e
         )
 
-        return {}
+    return {}
 
 
 # =========================================================
 # SAVE HISTORY
 # =========================================================
 
-def save_history(history):
+def save_history(
+    history
+):
 
     with open(
         STEEL_HISTORY_FILE,
@@ -150,208 +263,305 @@ def save_history(history):
 
 
 # =========================================================
-# CALCULATE CHANGE
+# FONT
 # =========================================================
 
-def calculate_change(
-    current,
-    previous
-):
-
-    if (
-        current is None
-        or previous is None
-        or previous == 0
-    ):
-
-        return None
-
-    return (
-        (current - previous)
-        / previous
-    ) * 100
-
-
-# =========================================================
-# GET PREVIOUS PRICE
-# =========================================================
-
-def get_previous_price(
-    previous_prices,
+def get_font(
     size
 ):
 
-    if not previous_prices:
-
-        return None
-
-    value = previous_prices.get(
-        str(size)
-    )
-
-    if value is None:
-
-        value = previous_prices.get(
-            size
-        )
-
-    return value
-
-
-# =========================================================
-# OVERALL FACTORY COMPARISON
-# =========================================================
-
-def calculate_overall_change(
-    current_prices,
-    previous_prices
-):
-
-    if (
-        not current_prices
-        or not previous_prices
+    if not os.path.exists(
+        FONT_FILE
     ):
 
-        return None
-
-    changes = []
-
-    previous_map = {}
-
-    for item in previous_prices:
-
-        if item.get("price") is None:
-            continue
-
-        try:
-
-            previous_map[
-                int(item["size"])
-            ] = float(
-                item["price"]
-            )
-
-        except Exception:
-
-            continue
-
-    for item in current_prices:
-
-        current_price = item.get(
-            "price"
+        print(
+            "Downloading Persian font..."
         )
 
-        if current_price is None:
-            continue
-
-        try:
-
-            size = int(
-                item["size"]
-            )
-
-            current_price = float(
-                current_price
-            )
-
-        except Exception:
-
-            continue
-
-        previous_price = previous_map.get(
-            size
+        response = requests.get(
+            FONT_URL,
+            timeout=30
         )
 
-        if (
-            previous_price is None
-            or previous_price == 0
-        ):
+        response.raise_for_status()
 
-            continue
+        with open(
+            FONT_FILE,
+            "wb"
+        ) as f:
 
-        change = (
-            (
-                current_price
-                - previous_price
+            f.write(
+                response.content
             )
-            / previous_price
-        ) * 100
 
-        changes.append(
-            change
-        )
-
-    if not changes:
-
-        return None
-
-    return (
-        sum(changes)
-        / len(changes)
+    return ImageFont.truetype(
+        FONT_FILE,
+        size
     )
 
 
 # =========================================================
-# BUILD OVERALL COMPARISON
+# DOWNLOAD BACKGROUND
 # =========================================================
 
-def build_comparison(
-    current_prices,
-    previous_prices
-):
+def get_background():
 
-    result = calculate_overall_change(
-        current_prices,
-        previous_prices
+    print(
+        "Getting steel image..."
     )
 
-    if result is None:
+    pexels_key = os.environ.get(
+        "PEXELS_API_KEY"
+    )
 
-        return (
-            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
-            "⚪ اطلاعات کافی برای مقایسه وجود ندارد."
+    if not pexels_key:
+
+        raise RuntimeError(
+            "PEXELS_API_KEY is missing"
         )
 
-    if result > 0.01:
+    response = requests.get(
 
-        return (
-            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
-            f"🟢 قیمت میلگرد در مجموع "
-            f"<b>افزایش</b> داشته است "
-            f"({result:+.2f}٪)"
+        "https://api.pexels.com/v1/search",
+
+        headers={
+            "Authorization":
+                pexels_key
+        },
+
+        params={
+
+            "query":
+                "steel rebar construction",
+
+            "orientation":
+                "landscape",
+
+            "per_page":
+                30
+        },
+
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    photos = response.json().get(
+        "photos",
+        []
+    )
+
+    if not photos:
+
+        raise RuntimeError(
+            "No Pexels image found"
         )
 
-    if result < -0.01:
+    now = datetime.now(
+        TEHRAN
+    )
 
-        return (
-            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
-            f"🔴 قیمت میلگرد در مجموع "
-            f"<b>کاهش</b> داشته است "
-            f"({result:+.2f}٪)"
+    photo = photos[
+        now.date().toordinal()
+        % len(photos)
+    ]
+
+    image_url = photo[
+        "src"
+    ][
+        "large2x"
+    ]
+
+    image_response = requests.get(
+        image_url,
+        timeout=30
+    )
+
+    image_response.raise_for_status()
+
+    with open(
+        IMAGE_FILE,
+        "wb"
+    ) as f:
+
+        f.write(
+            image_response.content
         )
 
-    return (
-        "📊 <b>مقایسه با آخرین قیمت:</b>\n"
-        "⚪ قیمت میلگرد در مجموع "
-        "<b>بدون تغییر</b> بوده است."
+    return Image.open(
+        IMAGE_FILE
+    ).convert(
+        "RGB"
     )
 
 
 # =========================================================
-# BUILD PRICE TABLE
+# CREATE PRICE IMAGE
 # =========================================================
 
-def build_price_table(
+def create_price_image(
+    factory_name,
     prices
 ):
 
-    if not prices:
+    print(
+        "Creating branded steel image..."
+    )
 
-        return (
-            "اطلاعات قیمت در دسترس نیست."
+    background = get_background()
+
+    width = 1200
+    height = 1500
+
+    background = background.resize(
+        (
+            width,
+            height
         )
+    )
 
-    lines = []
+    image = background.copy()
+
+    draw = ImageDraw.Draw(
+        image,
+        "RGBA"
+    )
+
+    # -----------------------------------------------------
+    # Dark overlay
+    # -----------------------------------------------------
+
+    draw.rectangle(
+        [
+            0,
+            0,
+            width,
+            height
+        ],
+        fill=(
+            0,
+            0,
+            0,
+            125
+        )
+    )
+
+    # -----------------------------------------------------
+    # Main panel
+    # -----------------------------------------------------
+
+    panel_x1 = 100
+    panel_y1 = 100
+    panel_x2 = width - 100
+    panel_y2 = height - 100
+
+    draw.rounded_rectangle(
+        [
+            panel_x1,
+            panel_y1,
+            panel_x2,
+            panel_y2
+        ],
+        radius=40,
+        fill=(
+            255,
+            255,
+            255,
+            235
+        )
+    )
+
+    # -----------------------------------------------------
+    # Fonts
+    # -----------------------------------------------------
+
+    title_font = get_font(
+        54
+    )
+
+    subtitle_font = get_font(
+        34
+    )
+
+    price_font = get_font(
+        39
+    )
+
+    small_font = get_font(
+        27
+    )
+
+    watermark_font = get_font(
+        32
+    )
+
+    # -----------------------------------------------------
+    # Header
+    # -----------------------------------------------------
+
+    title = (
+        "🏗 " + factory_name
+    )
+
+    bbox = draw.textbbox(
+        (0, 0),
+        title,
+        font=title_font
+    )
+
+    title_width = (
+        bbox[2] - bbox[0]
+    )
+
+    draw.text(
+        (
+            (width - title_width) / 2,
+            145
+        ),
+        title,
+        font=title_font,
+        fill=(
+            20,
+            40,
+            60,
+            255
+        )
+    )
+
+    subtitle = (
+        "قیمت روز میلگرد"
+    )
+
+    bbox = draw.textbbox(
+        (0, 0),
+        subtitle,
+        font=subtitle_font
+    )
+
+    subtitle_width = (
+        bbox[2] - bbox[0]
+    )
+
+    draw.text(
+        (
+            (width - subtitle_width) / 2,
+            225
+        ),
+        subtitle,
+        font=subtitle_font,
+        fill=(
+            80,
+            80,
+            80,
+            255
+        )
+    )
+
+    # -----------------------------------------------------
+    # Price list - ONE COLUMN
+    # -----------------------------------------------------
+
+    y = 330
 
     for item in prices:
 
@@ -363,62 +573,234 @@ def build_price_table(
             "price"
         )
 
-        if size is None:
-            continue
-
-        lines.append(
-            f"🔩 <b>میلگرد {size}</b>\n"
-            f"💰 {format_price(value)} تومان"
+        text = (
+            f"میلگرد {size}      "
+            f"{format_price(value)} تومان"
         )
 
-    return "\n\n".join(
-        lines
+        draw.text(
+            (
+                220,
+                y
+            ),
+            text,
+            font=price_font,
+            fill=(
+                25,
+                25,
+                25,
+                255
+            )
+        )
+
+        draw.line(
+            [
+                200,
+                y + 65,
+                width - 200,
+                y + 65
+            ],
+            fill=(
+                190,
+                190,
+                190,
+                180
+            ),
+            width=2
+        )
+
+        y += 115
+
+    # -----------------------------------------------------
+    # Unit
+    # -----------------------------------------------------
+
+    unit_text = (
+        "💰 واحد قیمت: تومان"
     )
 
+    draw.text(
+        (
+            220,
+            y + 20
+        ),
+        unit_text,
+        font=small_font,
+        fill=(
+            70,
+            70,
+            70,
+            255
+        )
+    )
+
+    # -----------------------------------------------------
+    # MAIN BRAND
+    # -----------------------------------------------------
+
+    brand = (
+        "@arvand_aron_steel"
+    )
+
+    bbox = draw.textbbox(
+        (0, 0),
+        brand,
+        font=watermark_font
+    )
+
+    brand_width = (
+        bbox[2] - bbox[0]
+    )
+
+    # -----------------------------------------------------
+    # Bottom brand
+    # -----------------------------------------------------
+
+    draw.rounded_rectangle(
+        [
+            width - brand_width - 110,
+            height - 145,
+            width - 55,
+            height - 70
+        ],
+        radius=20,
+        fill=(
+            0,
+            0,
+            0,
+            145
+        )
+    )
+
+    draw.text(
+        (
+            width - brand_width - 82,
+            height - 130
+        ),
+        brand,
+        font=watermark_font,
+        fill=(
+            255,
+            255,
+            255,
+            235
+        )
+    )
+
+    # -----------------------------------------------------
+    # WATERMARKS
+    # -----------------------------------------------------
+
+    watermark = (
+        "@arvand_aron_steel"
+    )
+
+    watermark_positions = [
+
+        (120, 520),
+
+        (500, 760),
+
+        (170, 1000),
+
+        (620, 1220)
+    ]
+
+    for x, y_pos in watermark_positions:
+
+        draw.text(
+            (
+                x,
+                y_pos
+            ),
+            watermark,
+            font=watermark_font,
+            fill=(
+                255,
+                255,
+                255,
+                45
+            )
+        )
+
+    # -----------------------------------------------------
+    # SAVE IMAGE
+    # -----------------------------------------------------
+
+    image.save(
+        IMAGE_FILE,
+        "JPEG",
+        quality=95
+    )
+
+    print(
+        "Branded image created:",
+        IMAGE_FILE
+    )
+
+    return IMAGE_FILE
+
 
 # =========================================================
-# BUILD CHANNEL POST
+# SEND PHOTO
 # =========================================================
 
-def build_channel_post(
-    factory_name,
-    prices,
-    previous
+def send_photo(
+    chat_id,
+    image_file,
+    caption
 ):
 
-    message = (
-        f"🏗 <b>{factory_name}</b>\n"
-        f"📌 <b>قیمت روز میلگرد</b>\n"
-        f"💰 واحد قیمت: تومان\n\n"
+    if not chat_id:
+
+        print(
+            "Chat ID missing."
+        )
+
+        return False
+
+    with open(
+        image_file,
+        "rb"
+    ) as photo:
+
+        response = requests.post(
+
+            f"https://api.telegram.org/"
+            f"bot{TOKEN}/sendPhoto",
+
+            data={
+
+                "chat_id":
+                    chat_id,
+
+                "caption":
+                    caption,
+
+                "parse_mode":
+                    "HTML"
+
+            },
+
+            files={
+
+                "photo":
+                    photo
+            },
+
+            timeout=60
+        )
+
+    print(
+        "Telegram response:",
+        response.text
     )
 
-    message += build_price_table(
-        prices
-    )
-
-    message += "\n\n"
-
-    message += build_comparison(
-        prices,
-        previous
-    )
-
-    message += (
-        "\n\n"
-        "📞 جهت اطلاع از قیمت سایر کارخانه‌ها "
-        "با واحد فروش تماس حاصل نمایید."
-    )
-
-    message += (
-        "\n\n"
-        + COMPANY_FOOTER
-    )
-
-    return message
+    return response.ok
 
 
 # =========================================================
-# SEND TELEGRAM MESSAGE
+# SEND TEXT
 # =========================================================
 
 def send_message(
@@ -428,213 +810,86 @@ def send_message(
 
     if not chat_id:
 
-        print(
-            "❌ Chat ID not configured."
-        )
-
         return False
 
-    try:
+    response = requests.post(
 
-        response = requests.post(
+        f"https://api.telegram.org/"
+        f"bot{TOKEN}/sendMessage",
 
-            f"https://api.telegram.org/"
-            f"bot{TOKEN}/sendMessage",
+        data={
 
-            data={
+            "chat_id":
+                chat_id,
 
-                "chat_id":
-                    chat_id,
+            "text":
+                message,
 
-                "text":
-                    message,
+            "parse_mode":
+                "HTML",
 
-                "parse_mode":
-                    "HTML",
+            "disable_web_page_preview":
+                True
 
-                "disable_web_page_preview":
-                    True
-            },
+        },
 
-            timeout=30
-        )
+        timeout=30
+    )
 
-        print(
-            "Telegram response:",
-            response.text
-        )
+    print(
+        "Telegram text response:",
+        response.text
+    )
 
-        return response.ok
-
-    except Exception as e:
-
-        print(
-            "Telegram send error:",
-            e
-        )
-
-        return False
+    return response.ok
 
 
 # =========================================================
-# BUILD PRIVATE FACTORY MESSAGE
+# BUILD CHANNEL CAPTION
 # =========================================================
 
-def build_private_factory_message(
+def build_caption(
     factory_name,
-    prices
+    prices,
+    previous
 ):
-
-    message = (
-        f"🏭 <b>{factory_name}</b>\n"
-        f"📌 <b>قیمت روز میلگرد</b>\n"
-        f"💰 واحد قیمت: تومان\n\n"
-    )
-
-    message += build_price_table(
-        prices
-    )
-
-    return message
-
-
-# =========================================================
-# SEND OTHER FACTORIES PRIVATELY
-# =========================================================
-
-def send_private_other_factories(
-    all_prices
-):
-
-    print(
-        "======================================"
-    )
-
-    print(
-        "PRIVATE FACTORY REPORT"
-    )
-
-    print(
-        "Private Chat ID:",
-        PRIVATE_CHAT_ID
-    )
-
-    print(
-        "======================================"
-    )
-
-    if not PRIVATE_CHAT_ID:
-
-        print(
-            "❌ PRIVATE_CHAT_ID is empty."
-        )
-
-        print(
-            "Private report will NOT be sent."
-        )
-
-        return False
-
-    # -----------------------------------------------------
-    # Find all factories except the 3 main factories
-    # -----------------------------------------------------
-
-    other_factories = []
-
-    for factory_key, factory_data in all_prices.items():
-
-        if factory_key in MAIN_FACTORIES:
-
-            continue
-
-        if not isinstance(
-            factory_data,
-            dict
-        ):
-
-            continue
-
-        prices = factory_data.get(
-            "prices",
-            []
-        )
-
-        if not prices:
-
-            continue
-
-        factory_name = factory_data.get(
-            "name",
-            factory_key
-        )
-
-        other_factories.append(
-            (
-                factory_key,
-                factory_name,
-                prices
-            )
-        )
-
-    # -----------------------------------------------------
-    # Nothing found
-    # -----------------------------------------------------
-
-    if not other_factories:
-
-        print(
-            "⚠️ No other factory prices found."
-        )
-
-        message = (
-            "🔐 <b>قیمت سایر کارخانه‌ها</b>\n\n"
-            "⚪ در حال حاضر قیمت کارخانه‌های "
-            "دیگر دریافت نشد."
-        )
-
-        message += (
-            "\n\n"
-            + COMPANY_FOOTER
-        )
-
-        return send_message(
-            PRIVATE_CHAT_ID,
-            message
-        )
-
-    # -----------------------------------------------------
-    # Build one private message
-    # -----------------------------------------------------
 
     parts = [
 
-        "🔐 <b>قیمت سایر کارخانه‌ها</b>",
-        "",
-        "📌 این گزارش فقط برای مدیریت ارسال شده است.",
+        f"🏗 <b>{factory_name}</b>",
+
+        "📌 <b>قیمت روز میلگرد</b>",
+
+        "💰 واحد قیمت: تومان",
+
         ""
     ]
 
-    for (
-        factory_key,
-        factory_name,
-        prices
-    ) in other_factories:
+    for item in prices:
 
-        print(
-            "Private factory:",
-            factory_key
+        size = item.get(
+            "size"
+        )
+
+        value = item.get(
+            "price"
         )
 
         parts.append(
-            build_private_factory_message(
-                factory_name,
-                prices
-            )
+            f"🔩 میلگرد {size}: "
+            f"<b>{format_price(value)}</b> تومان"
         )
 
-        parts.append(
-            "━━━━━━━━━━━━━━"
+    parts.append("")
+
+    parts.append(
+        comparison_text(
+            prices,
+            previous
         )
+    )
+
+    parts.append("")
 
     parts.append(
         "📞 جهت اطلاع از قیمت سایر کارخانه‌ها "
@@ -645,200 +900,99 @@ def send_private_other_factories(
         COMPANY_FOOTER
     )
 
-    message = "\n\n".join(
+    return "\n".join(
         parts
     )
 
-    # -----------------------------------------------------
-    # Send
-    # -----------------------------------------------------
+
+# =========================================================
+# SEND PRIVATE OTHER FACTORIES
+# =========================================================
+
+def send_private_prices(
+    all_prices
+):
+
+    if not PRIVATE_CHAT_ID:
+
+        print(
+            "PRIVATE_CHAT_ID not configured."
+        )
+
+        return
+
+    main_factories = {
+
+        "نیشابور",
+        "هیربد",
+        "امیرکبیر"
+    }
+
+    parts = [
+
+        "🔐 <b>قیمت سایر کارخانه‌ها</b>",
+
+        ""
+    ]
+
+    found = False
+
+    for key, data in all_prices.items():
+
+        if key in main_factories:
+
+            continue
+
+        prices = data.get(
+            "prices",
+            []
+        )
+
+        if not prices:
+
+            continue
+
+        found = True
+
+        parts.append(
+            f"🏗 <b>{data['name']}</b>"
+        )
+
+        for item in prices:
+
+            parts.append(
+                f"میلگرد {item['size']}: "
+                f"<b>{format_price(item['price'])}</b> تومان"
+            )
+
+        parts.append("")
+
+    if not found:
+
+        parts.append(
+            "⚪ در حال حاضر قیمت کارخانه‌های دیگر دریافت نشد."
+        )
+
+    parts.append(
+        COMPANY_FOOTER
+    )
 
     success = send_message(
         PRIVATE_CHAT_ID,
-        message
+        "\n".join(parts)
     )
 
     if success:
 
         print(
-            "✅ PRIVATE FACTORY REPORT SENT"
+            "PRIVATE PRICE REPORT SENT SUCCESSFULLY"
         )
 
     else:
 
         print(
-            "❌ PRIVATE FACTORY REPORT FAILED"
+            "PRIVATE PRICE REPORT FAILED"
         )
-
-    return success
-
-
-# =========================================================
-# GET IMAGE
-# =========================================================
-
-def get_steel_image():
-
-    pexels_key = os.environ.get(
-        "PEXELS_API_KEY"
-    )
-
-    if not pexels_key:
-
-        print(
-            "⚠️ PEXELS_API_KEY not configured."
-        )
-
-        return None
-
-    print(
-        "Getting steel image..."
-    )
-
-    try:
-
-        response = requests.get(
-
-            "https://api.pexels.com/v1/search",
-
-            headers={
-                "Authorization":
-                    pexels_key
-            },
-
-            params={
-
-                "query":
-                    "steel rebar construction",
-
-                "orientation":
-                    "landscape",
-
-                "per_page":
-                    30
-            },
-
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        photos = response.json().get(
-            "photos",
-            []
-        )
-
-        if not photos:
-
-            print(
-                "⚠️ No steel image found."
-            )
-
-            return None
-
-        now = datetime.now(
-            TEHRAN
-        )
-
-        photo = photos[
-            now.date().toordinal()
-            % len(photos)
-        ]
-
-        return photo[
-            "src"
-        ][
-            "large2x"
-        ]
-
-    except Exception as e:
-
-        print(
-            "Image error:",
-            e
-        )
-
-        return None
-
-
-# =========================================================
-# SEND CHANNEL POST
-# =========================================================
-
-def send_channel_post(
-    message,
-    image_url
-):
-
-    print(
-        "Sending steel post to channel..."
-    )
-
-    if image_url:
-
-        response = requests.post(
-
-            f"https://api.telegram.org/"
-            f"bot{TOKEN}/sendPhoto",
-
-            data={
-
-                "chat_id":
-                    CHANNEL,
-
-                "photo":
-                    image_url,
-
-                "caption":
-                    message,
-
-                "parse_mode":
-                    "HTML"
-            },
-
-            timeout=30
-        )
-
-    else:
-
-        response = requests.post(
-
-            f"https://api.telegram.org/"
-            f"bot{TOKEN}/sendMessage",
-
-            data={
-
-                "chat_id":
-                    CHANNEL,
-
-                "text":
-                    message,
-
-                "parse_mode":
-                    "HTML",
-
-                "disable_web_page_preview":
-                    True
-            },
-
-            timeout=30
-        )
-
-    print(
-        "Telegram channel response:"
-    )
-
-    print(
-        response.text
-    )
-
-    if not response.ok:
-
-        raise RuntimeError(
-            response.text
-        )
-
-    return True
 
 
 # =========================================================
@@ -851,18 +1005,12 @@ def main():
         TEHRAN
     )
 
-    today_key = now.strftime(
-        "%Y-%m-%d"
-    )
-
-    weekday = now.weekday()
-
     print(
         "======================================"
     )
 
     print(
-        "STEEL MARKET"
+        "STEEL BOT"
     )
 
     print(
@@ -880,67 +1028,46 @@ def main():
     # FRIDAY
     # -----------------------------------------------------
 
-    if weekday == 4:
+    if now.weekday() == 4:
 
         print(
-            "Today is Friday."
-        )
-
-        print(
-            "Steel post will NOT be sent."
+            "Friday - no steel post."
         )
 
         return
 
     # -----------------------------------------------------
-    # LOAD HISTORY
-    # -----------------------------------------------------
-
-    history = load_history()
-
-    previous_prices = history.get(
-        "last_steel_prices"
-    )
-
-    # -----------------------------------------------------
-    # GET ALL FACTORY PRICES
+    # GET ALL PRICES
     # -----------------------------------------------------
 
     print(
-        "Getting all steel prices..."
+        "Getting steel prices..."
     )
 
     all_prices = get_all_prices()
 
-    if not all_prices:
+    # -----------------------------------------------------
+    # HISTORY
+    # -----------------------------------------------------
 
-        raise RuntimeError(
-            "No factory prices found"
-        )
+    history = load_history()
 
-    print(
-        "Factories found:",
-        len(all_prices)
+    previous_factories = history.get(
+        "factories",
+        {}
     )
 
-    for key in all_prices:
-
-        print(
-            "Factory:",
-            key
-        )
-
     # -----------------------------------------------------
-    # GET IMAGE
+    # MAIN CHANNEL
     # -----------------------------------------------------
 
-    image_url = get_steel_image()
+    for factory_key in [
 
-    # -----------------------------------------------------
-    # MAIN CHANNEL FACTORIES
-    # -----------------------------------------------------
+        "نیشابور",
+        "هیربد",
+        "امیرکبیر"
 
-    for factory_key in MAIN_FACTORIES:
+    ]:
 
         factory_data = all_prices.get(
             factory_key
@@ -949,7 +1076,7 @@ def main():
         if not factory_data:
 
             print(
-                "⚠️ Factory data missing:",
+                "Factory missing:",
                 factory_key
             )
 
@@ -963,182 +1090,99 @@ def main():
         if not prices:
 
             print(
-                "⚠️ No prices:",
+                "No prices:",
                 factory_key
             )
 
             continue
 
-        previous = {}
-
-        if isinstance(
-            previous_prices,
-            dict
-        ):
-
-            previous = previous_prices.get(
-                factory_key,
-                {}
-            )
+        previous = previous_factories.get(
+            factory_key,
+            []
+        )
 
         # -------------------------------------------------
-        # Support both old and new history format
+        # CREATE BRANDED IMAGE
         # -------------------------------------------------
 
-        if isinstance(
-            previous,
-            dict
-        ):
+        image_file = create_price_image(
+            factory_data["name"],
+            prices
+        )
 
-            previous_list = []
+        # -------------------------------------------------
+        # CAPTION
+        # -------------------------------------------------
 
-            for size, value in previous.items():
-
-                previous_list.append({
-
-                    "size":
-                        size,
-
-                    "price":
-                        value
-                })
-
-        else:
-
-            previous_list = previous
-
-        message = build_channel_post(
-
-            factory_data.get(
-                "name",
-                factory_key
-            ),
-
+        caption = build_caption(
+            factory_data["name"],
             prices,
-
-            previous_list
+            previous
         )
 
         print()
         print(
-            "Sending channel:",
-            factory_key
+            "Sending:",
+            factory_data["name"]
         )
 
-        send_channel_post(
-            message,
-            image_url
+        success = send_photo(
+            CHANNEL,
+            image_file,
+            caption
         )
 
-        print(
-            "✅ CHANNEL POST SENT:",
-            factory_key
-        )
+        if success:
+
+            print(
+                "POST SENT:",
+                factory_key
+            )
+
+            previous_factories[
+                factory_key
+            ] = prices
+
+        else:
+
+            print(
+                "POST FAILED:",
+                factory_key
+            )
 
     # -----------------------------------------------------
-    # PRIVATE OTHER FACTORIES
+    # PRIVATE REPORT
     # -----------------------------------------------------
 
-    send_private_other_factories(
+    send_private_prices(
         all_prices
     )
 
     # -----------------------------------------------------
-    # SAVE CURRENT PRICES
+    # SAVE HISTORY
     # -----------------------------------------------------
 
     history[
-        "last_steel_post_date"
-    ] = today_key
-
-    history[
-        "last_steel_post_time"
+        "last_update"
     ] = now.strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
     history[
-        "last_steel_prices"
-    ] = {}
-
-    # Save all factory prices for future comparison
-    for factory_key, factory_data in all_prices.items():
-
-        if not isinstance(
-            factory_data,
-            dict
-        ):
-
-            continue
-
-        prices = factory_data.get(
-            "prices",
-            []
-        )
-
-        if not prices:
-
-            continue
-
-        factory_history = {}
-
-        for item in prices:
-
-            size = item.get(
-                "size"
-            )
-
-            value = item.get(
-                "price"
-            )
-
-            if (
-                size is None
-                or value is None
-            ):
-
-                continue
-
-            factory_history[
-                str(size)
-            ] = value
-
-        history[
-            "last_steel_prices"
-        ][factory_key] = (
-            factory_history
-        )
+        "factories"
+    ] = previous_factories
 
     save_history(
         history
     )
 
-    # -----------------------------------------------------
-    # SUCCESS
-    # -----------------------------------------------------
-
+    print()
     print(
         "======================================"
     )
 
     print(
         "STEEL BOT FINISHED"
-    )
-
-    print(
-        "Channel factories:"
-    )
-
-    print(
-        "نیشابور / هیربد / امیرکبیر"
-    )
-
-    print(
-        "Other factories:"
-    )
-
-    print(
-        "PRIVATE ONLY"
     )
 
     print(
