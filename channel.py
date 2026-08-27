@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -91,13 +92,13 @@ CHANNEL_FACTORIES = [
 
 
 # =========================================================
-# NUMBER CLEANER
+# NUMBER NORMALIZER
 # =========================================================
 
-def clean_number(text):
+def normalize_digits(text):
 
-    if not text:
-        return None
+    if text is None:
+        return ""
 
     text = str(text)
 
@@ -112,35 +113,80 @@ def clean_number(text):
         "۷": "7",
         "۸": "8",
         "۹": "9",
-        "٬": "",
-        ",": "",
-        "،": "",
-        "تومان": "",
-        "ریال": "",
     }
 
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    digits = ""
-
-    for char in text:
-
-        if char.isdigit():
-            digits += char
-
-    if not digits:
-        return None
-
-    try:
-        return int(digits)
-
-    except Exception:
-        return None
+    return text
 
 
 # =========================================================
-# TEXT CLEANER
+# EXTRACT NUMBERS
+# =========================================================
+
+def extract_numbers(text):
+
+    """
+    تمام عددهای مستقل داخل متن را پیدا می‌کند.
+
+    مثال:
+
+    '8,800 80,000 تومان'
+
+    تبدیل می‌شود به:
+
+    [8800, 80000]
+
+    نه:
+
+    880008000
+    """
+
+    if not text:
+        return []
+
+    text = normalize_digits(text)
+
+    # حذف واحدها و علائم متنی
+    text = text.replace("تومان", " ")
+    text = text.replace("ریال", " ")
+    text = text.replace("٬", ",")
+    text = text.replace("،", ",")
+
+    # اعداد با یا بدون جداکننده هزارگان
+    matches = re.findall(
+        r"\d[\d,]*",
+        text
+    )
+
+    numbers = []
+
+    for match in matches:
+
+        cleaned = match.replace(
+            ",",
+            ""
+        )
+
+        if not cleaned.isdigit():
+            continue
+
+        try:
+
+            numbers.append(
+                int(cleaned)
+            )
+
+        except Exception:
+
+            continue
+
+    return numbers
+
+
+# =========================================================
+# CLEAN TEXT
 # =========================================================
 
 def clean_text(text):
@@ -150,9 +196,20 @@ def clean_text(text):
 
     text = str(text)
 
-    text = text.replace("\n", " ")
-    text = text.replace("\r", " ")
-    text = text.replace("\t", " ")
+    text = text.replace(
+        "\n",
+        " "
+    )
+
+    text = text.replace(
+        "\r",
+        " "
+    )
+
+    text = text.replace(
+        "\t",
+        " "
+    )
 
     return " ".join(
         text.split()
@@ -166,6 +223,7 @@ def clean_text(text):
 def get_page(url):
 
     headers = {
+
         "User-Agent": (
             "Mozilla/5.0 "
             "(Windows NT 10.0; Win64; x64) "
@@ -184,6 +242,111 @@ def get_page(url):
     response.raise_for_status()
 
     return response.text
+
+
+# =========================================================
+# FIND PRICE IN CELL
+# =========================================================
+
+def find_price_in_cell(text):
+
+    """
+    قیمت واقعی را از بین اعداد داخل سلول پیدا می‌کند.
+
+    قیمت‌های فعلی Pivan برای این بخش حدود
+    80,000 تا 100,000 هستند.
+
+    اگر سلول شامل مواردی مثل:
+
+        8,800 80,000
+
+    باشد، فقط 80,000 انتخاب می‌شود.
+
+    همچنین اگر:
+
+        9,150 83,200
+
+    باشد، 83,200 انتخاب می‌شود.
+
+    """
+
+    numbers = extract_numbers(
+        text
+    )
+
+    if not numbers:
+        return None
+
+    # -----------------------------------------------------
+    # قیمت‌های معمول بازار فولاد
+    # -----------------------------------------------------
+
+    price_candidates = [
+
+        number
+
+        for number in numbers
+
+        if 10_000 <= number <= 999_999
+    ]
+
+    if price_candidates:
+
+        # معمولاً قیمت واقعی آخرین عدد معتبر است
+        return price_candidates[-1]
+
+    return None
+
+
+# =========================================================
+# FIND SIZE
+# =========================================================
+
+def find_size(values):
+
+    for value in values:
+
+        numbers = extract_numbers(
+            value
+        )
+
+        for number in numbers:
+
+            # سایز ناودانی
+            if 6 <= number <= 30:
+
+                return number
+
+    return None
+
+
+# =========================================================
+# FIND LENGTH
+# =========================================================
+
+def find_length(values):
+
+    lengths = []
+
+    for value in values:
+
+        numbers = extract_numbers(
+            value
+        )
+
+        for number in numbers:
+
+            if number in (6, 12):
+
+                lengths.append(
+                    number
+                )
+
+    if lengths:
+
+        return lengths[-1]
+
+    return None
 
 
 # =========================================================
@@ -214,7 +377,7 @@ def parse_uchannel_table(
         return []
 
     # -----------------------------------------------------
-    # Pivan's first table is currently the channel table.
+    # Pivan channel table
     # -----------------------------------------------------
 
     table = tables[0]
@@ -244,12 +407,14 @@ def parse_uchannel_table(
             continue
 
         values = [
+
             clean_text(
                 cell.get_text(
                     " ",
                     strip=True
                 )
             )
+
             for cell in cells
         ]
 
@@ -258,82 +423,66 @@ def parse_uchannel_table(
         )
 
         # -------------------------------------------------
-        # Skip header rows
+        # Skip headers
         # -------------------------------------------------
 
-        if (
-            "سایز" in row_text
-            or "قیمت" in row_text
-            or "طول" in row_text
+        header_words = [
+            "سایز",
+            "قیمت",
+            "طول",
+            "ناودانی",
+            "وزن",
+        ]
+
+        if any(
+            word in row_text
+            for word in header_words
         ):
+
             continue
 
         # -------------------------------------------------
-        # Find size
+        # SIZE
         # -------------------------------------------------
 
-        size = None
-
-        for value in values:
-
-            number = clean_number(
-                value
-            )
-
-            if number is not None:
-
-                # U-channel sizes are normally
-                # between 6 and 30.
-                if 6 <= number <= 30:
-
-                    size = number
-
-                    break
+        size = find_size(
+            values
+        )
 
         if size is None:
 
             continue
 
         # -------------------------------------------------
-        # Find length
+        # LENGTH
         # -------------------------------------------------
 
-        length = None
-
-        for value in values:
-
-            number = clean_number(
-                value
-            )
-
-            if number in (
-                6,
-                12
-            ):
-
-                length = number
+        length = find_length(
+            values
+        )
 
         # -------------------------------------------------
-        # Find price
+        # PRICE
         # -------------------------------------------------
 
         price = None
 
-        for value in reversed(values):
+        # از آخرین سلول‌ها شروع می‌کنیم
+        # چون قیمت معمولاً سمت راست جدول است.
 
-            number = clean_number(
+        for value in reversed(
+            values
+        ):
+
+            candidate = find_price_in_cell(
                 value
             )
 
-            if number is not None:
+            if candidate is not None:
 
-                # Price should be considerably
-                # larger than dimensions.
-                if number >= 1000:
+                price = candidate
 
-                    price = number
-
-                    break
+                break
 
         if price is None:
 
@@ -342,6 +491,10 @@ def parse_uchannel_table(
             )
 
             continue
+
+        # -------------------------------------------------
+        # DEFAULT LENGTH
+        # -------------------------------------------------
 
         if length is None:
 
@@ -355,11 +508,14 @@ def parse_uchannel_table(
 
             "price": price,
 
-            "factory": factory["key"],
+            "factory":
+                factory["key"],
 
-            "factory_name": factory["name"],
+            "factory_name":
+                factory["name"],
 
-            "type": factory["type"]
+            "type":
+                factory["type"]
         }
 
         products.append(
@@ -432,7 +588,7 @@ def fetch_factory(
         )
 
         # -------------------------------------------------
-        # Remove duplicates
+        # REMOVE DUPLICATES
         # -------------------------------------------------
 
         unique = {}
@@ -546,9 +702,14 @@ def main():
 
         print()
 
+        status = (
+            "ok"
+            if factory["prices"]
+            else "FAILED"
+        )
+
         print(
-            f"{factory['key']} -> "
-            f"{'ok' if factory['prices'] else 'FAILED'}"
+            f"{factory['key']} -> {status}"
         )
 
         for item in factory["prices"]:
