@@ -13,25 +13,15 @@ from price import get_all_prices
 # =========================================================
 
 TOKEN = os.environ["BOT_TOKEN"]
+
 CHANNEL = os.environ["CHANNEL_ID"]
 
-# Telegram numeric private chat ID
+# Telegram numeric chat ID for private management message
 PRIVATE_CHAT_ID = os.environ.get("PRIVATE_CHAT_ID")
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 HISTORY_FILE = "steel_history.json"
-
-
-# =========================================================
-# MAIN FACTORIES
-# =========================================================
-
-MAIN_FACTORIES = [
-    "نیشابور",
-    "هیربد",
-    "امیرکبیر"
-]
 
 
 # =========================================================
@@ -48,18 +38,15 @@ COMPANY_FOOTER = """
 
 
 # =========================================================
-# FORMAT PRICE
+# PRICE FORMAT
 # =========================================================
 
-def price(value):
+def format_price(value):
 
     if value is None:
         return "تماس بگیرید"
 
-    try:
-        return f"{int(float(value)):,}"
-    except Exception:
-        return "تماس بگیرید"
+    return f"{int(value):,}"
 
 
 # =========================================================
@@ -115,75 +102,7 @@ def save_history(history):
 
 
 # =========================================================
-# NORMALIZE PRICES
-# =========================================================
-
-def normalize_prices(prices):
-
-    result = []
-
-    if not prices:
-        return result
-
-    for item in prices:
-
-        try:
-
-            size = item.get("size")
-            value = item.get("price")
-
-            if size is None:
-                continue
-
-            if value is not None:
-                value = float(value)
-
-            result.append({
-                "size": str(size),
-                "price": value
-            })
-
-        except Exception as e:
-
-            print(
-                "Price normalize error:",
-                e
-            )
-
-    return result
-
-
-# =========================================================
-# BUILD PRICE MAP
-# =========================================================
-
-def price_map(prices):
-
-    result = {}
-
-    for item in normalize_prices(prices):
-
-        try:
-
-            size = int(
-                str(item["size"]).strip()
-            )
-
-            value = item.get("price")
-
-            if value is not None:
-
-                result[size] = float(value)
-
-        except Exception:
-
-            continue
-
-    return result
-
-
-# =========================================================
-# OVERALL FACTORY COMPARISON
+# FACTORY COMPARISON
 # =========================================================
 
 def compare_factory(
@@ -191,33 +110,66 @@ def compare_factory(
     previous
 ):
 
-    current_map = price_map(current)
-    previous_map = price_map(previous)
-
-    if not current_map or not previous_map:
+    if not current or not previous:
         return None
+
+    previous_map = {}
+
+    for item in previous:
+
+        if item.get("price") is None:
+            continue
+
+        try:
+
+            size = int(item["size"])
+            old_price = float(item["price"])
+
+            previous_map[size] = old_price
+
+        except Exception:
+            continue
+
 
     changes = []
 
-    for size, current_price in current_map.items():
+    for item in current:
 
-        old_price = previous_map.get(size)
-
-        if (
-            old_price is None
-            or old_price == 0
-        ):
+        if item.get("price") is None:
             continue
 
-        percent = (
-            (current_price - old_price)
-            / old_price
-        ) * 100
+        try:
 
-        changes.append(percent)
+            size = int(item["size"])
+
+            current_price = float(
+                item["price"]
+            )
+
+            old_price = previous_map.get(
+                size
+            )
+
+            if (
+                old_price is None
+                or old_price == 0
+            ):
+                continue
+
+            percent = (
+                (current_price - old_price)
+                / old_price
+            ) * 100
+
+            changes.append(percent)
+
+        except Exception:
+            continue
+
 
     if not changes:
         return None
+
 
     return (
         sum(changes)
@@ -239,143 +191,111 @@ def comparison_text(
         previous
     )
 
+
     if result is None:
 
         return (
-            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+            "📊 <b>مقایسه با آخرین قیمت</b>\n"
             "⚪ اطلاعات کافی برای مقایسه وجود ندارد."
         )
+
 
     if result > 0.01:
 
         return (
-            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+            "📊 <b>مقایسه با آخرین قیمت</b>\n"
             f"🟢 قیمت میلگرد در مجموع "
             f"<b>{result:+.2f}٪</b> افزایش داشته است."
         )
 
+
     if result < -0.01:
 
         return (
-            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+            "📊 <b>مقایسه با آخرین قیمت</b>\n"
             f"🔴 قیمت میلگرد در مجموع "
-            f"<b>{result:+.2f}٪</b> کاهش داشته است."
+            f"<b>{result:.2f}٪</b> کاهش داشته است."
         )
 
+
     return (
-        "📊 <b>مقایسه با آخرین قیمت:</b>\n"
+        "📊 <b>مقایسه با آخرین قیمت</b>\n"
         "⚪ قیمت میلگرد در مجموع بدون تغییر بوده است."
     )
 
 
 # =========================================================
-# BUILD TWO-COLUMN PRICE TABLE
+# PRICE TABLE
 # =========================================================
 
 def build_price_table(prices):
 
-    prices = normalize_prices(prices)
-
     if not prices:
 
-        return (
-            "اطلاعات قیمت در دسترس نیست."
-        )
+        return "⚪ اطلاعات قیمت در دسترس نیست."
 
-    # مرتب‌سازی بر اساس سایز
-    try:
 
-        prices.sort(
-            key=lambda x: int(x["size"])
-        )
+    # فقط محصولاتی که قیمت دارند
+    valid_prices = [
+        item
+        for item in prices
+        if item.get("price") is not None
+    ]
 
-    except Exception:
-        pass
+
+    if not valid_prices:
+
+        return "⚪ اطلاعات قیمت در دسترس نیست."
+
 
     lines = []
 
-    # -----------------------------------------------------
-    # Header
-    # -----------------------------------------------------
 
-    header = (
-        "<code>"
-        "سایز   قیمت          سایز   قیمت"
-        "</code>"
-    )
-
-    # -----------------------------------------------------
-    # Two columns
-    # -----------------------------------------------------
-
+    # دو ستون کنار هم
     for i in range(
         0,
-        len(prices),
+        len(valid_prices),
         2
     ):
 
-        left = prices[i]
+        left = valid_prices[i]
 
         right = (
-            prices[i + 1]
-            if i + 1 < len(prices)
+            valid_prices[i + 1]
+            if i + 1 < len(valid_prices)
             else None
         )
 
-        left_size = str(
-            left["size"]
-        )
-
-        left_price = price(
-            left.get("price")
-        )
 
         left_text = (
-            f"{left_size:>4}  "
-            f"{left_price:>12}"
+            f"▫️ {left['size']}  "
+            f"{format_price(left['price'])}"
         )
+
 
         if right:
 
-            right_size = str(
-                right["size"]
-            )
-
-            right_price = price(
-                right.get("price")
-            )
-
             right_text = (
-                f"{right_size:>4}  "
-                f"{right_price:>12}"
+                f"▫️ {right['size']}  "
+                f"{format_price(right['price'])}"
             )
 
-            line = (
-                "<code>"
-                f"{left_text}    "
-                f"{right_text}"
-                "</code>"
+            lines.append(
+                f"{left_text:<25}{right_text}"
             )
 
         else:
 
-            line = (
-                "<code>"
-                f"{left_text}"
-                "</code>"
+            lines.append(
+                left_text
             )
 
-        lines.append(line)
 
-    return (
-        header
-        + "\n"
-        + "\n".join(lines)
-    )
+    return "\n".join(lines)
 
 
 # =========================================================
-# BUILD CHANNEL POST
+# FACTORY POST
 # =========================================================
 
 def build_factory_post(
@@ -387,50 +307,48 @@ def build_factory_post(
     message = (
 
         f"🏗 <b>{factory_name}</b>\n"
-        f"📌 <b>قیمت روز میلگرد</b>\n"
-        f"💰 واحد قیمت: تومان\n\n"
+        "📌 <b>قیمت روز میلگرد</b>\n"
+        "💰 <b>واحد قیمت: تومان</b>\n\n"
 
-        f"{build_price_table(prices)}\n\n"
+        "سایز       قیمت       سایز       قیمت\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
 
-        f"{comparison_text(prices, previous)}\n\n"
+    )
 
+
+    message += build_price_table(
+        prices
+    )
+
+
+    message += "\n\n"
+
+
+    message += comparison_text(
+        prices,
+        previous
+    )
+
+
+    message += (
+
+        "\n\n"
         "📞 جهت اطلاع از قیمت سایر کارخانه‌ها "
-        "با واحد فروش تماس حاصل نمایید.\n\n"
-
-        f"{COMPANY_FOOTER}"
+        "با واحد فروش تماس حاصل نمایید."
     )
+
+
+    message += (
+        "\n\n"
+        + COMPANY_FOOTER
+    )
+
 
     return message
 
 
 # =========================================================
-# BUILD PRIVATE POST
-# =========================================================
-
-def build_private_post(
-    factory_name,
-    prices,
-    previous
-):
-
-    message = (
-
-        f"🔐 <b>{factory_name}</b>\n"
-        f"📌 <b>قیمت روز میلگرد</b>\n"
-        f"💰 واحد قیمت: تومان\n\n"
-
-        f"{build_price_table(prices)}\n\n"
-
-        f"{comparison_text(prices, previous)}\n\n"
-
-        f"{COMPANY_FOOTER}"
-    )
-
-    return message
-
-
-# =========================================================
-# SEND TELEGRAM MESSAGE
+# TELEGRAM
 # =========================================================
 
 def send_message(
@@ -441,10 +359,11 @@ def send_message(
     if not chat_id:
 
         print(
-            "Chat ID is empty."
+            "Chat ID not configured."
         )
 
         return False
+
 
     try:
 
@@ -471,20 +390,15 @@ def send_message(
             timeout=30
         )
 
+
         print(
             "Telegram response:",
             response.text
         )
 
-        if response.ok:
 
-            return True
+        return response.ok
 
-        print(
-            "Telegram send failed."
-        )
-
-        return False
 
     except Exception as e:
 
@@ -497,6 +411,97 @@ def send_message(
 
 
 # =========================================================
+# PRIVATE OTHER FACTORIES
+# =========================================================
+
+def send_private_message(
+    all_prices
+):
+
+    if not PRIVATE_CHAT_ID:
+
+        print(
+            "PRIVATE_CHAT_ID not configured."
+        )
+
+        return
+
+
+    message = (
+        "🔐 <b>قیمت سایر کارخانه‌ها</b>\n\n"
+    )
+
+
+    main_factories = {
+        "نیشابور",
+        "هیربد",
+        "امیرکبیر"
+    }
+
+
+    found = False
+
+
+    for factory_key, factory_data in all_prices.items():
+
+        if factory_key in main_factories:
+            continue
+
+
+        prices = factory_data.get(
+            "prices",
+            []
+        )
+
+
+        if not prices:
+            continue
+
+
+        found = True
+
+
+        message += (
+            f"🏗 <b>{factory_data.get('name', factory_key)}</b>\n"
+        )
+
+
+        for item in prices:
+
+            if item.get("price") is None:
+                continue
+
+
+            message += (
+                f"▫️ سایز {item['size']}: "
+                f"{format_price(item['price'])} تومان\n"
+            )
+
+
+        message += "\n"
+
+
+    if not found:
+
+        message += (
+            "⚪ در حال حاضر قیمت کارخانه‌های "
+            "دیگر دریافت نشد."
+        )
+
+
+    message += (
+        "\n"
+        + COMPANY_FOOTER
+    )
+
+
+    send_message(
+        PRIVATE_CHAT_ID,
+        message
+    )
+
+
+# =========================================================
 # MAIN
 # =========================================================
 
@@ -505,6 +510,7 @@ def main():
     now = datetime.now(
         TEHRAN
     )
+
 
     print(
         "======================================"
@@ -525,18 +531,10 @@ def main():
         "======================================"
     )
 
+
     # =====================================================
     # FRIDAY
     # =====================================================
-
-    # Python:
-    # Monday = 0
-    # Tuesday = 1
-    # Wednesday = 2
-    # Thursday = 3
-    # Friday = 4
-    # Saturday = 5
-    # Sunday = 6
 
     if now.weekday() == 4:
 
@@ -545,10 +543,11 @@ def main():
         )
 
         print(
-            "No steel post today."
+            "Steel post will NOT be sent."
         )
 
         return
+
 
     # =====================================================
     # GET ALL PRICES
@@ -558,293 +557,157 @@ def main():
         "Getting steel prices..."
     )
 
-    try:
 
-        all_prices = get_all_prices()
+    all_prices = get_all_prices()
 
-    except Exception as e:
-
-        print(
-            "ERROR getting prices:",
-            e
-        )
-
-        raise
 
     if not all_prices:
 
         print(
-            "No factory prices returned."
+            "No factory prices received."
         )
 
         return
 
+
     print(
-        "Factories found:",
+        "Factories received:",
         len(all_prices)
     )
 
-    for key in all_prices:
-
-        print(
-            "Factory:",
-            key
-        )
 
     # =====================================================
-    # LOAD HISTORY
+    # HISTORY
     # =====================================================
 
     history = load_history()
+
 
     previous_factories = history.get(
         "factories",
         {}
     )
 
-    if not isinstance(
-        previous_factories,
-        dict
-    ):
-
-        previous_factories = {}
 
     # =====================================================
-    # MAIN CHANNEL
+    # MAIN FACTORIES
     # =====================================================
 
-    print()
-    print(
-        "======================================"
-    )
+    main_factories = [
 
-    print(
-        "CHANNEL POSTS"
-    )
+        "نیشابور",
+        "هیربد",
+        "امیرکبیر"
 
-    print(
-        "======================================"
-    )
+    ]
 
-    for factory_key in MAIN_FACTORIES:
+
+    for factory_key in main_factories:
 
         factory_data = all_prices.get(
             factory_key
         )
 
+
         if not factory_data:
 
             print(
-                "Factory missing:",
+                "Factory data missing:",
                 factory_key
             )
 
             continue
 
-        factory_name = factory_data.get(
-            "name",
-            factory_key
+
+        prices = factory_data.get(
+            "prices",
+            []
         )
 
-        prices = normalize_prices(
-            factory_data.get(
-                "prices",
-                []
-            )
-        )
 
         if not prices:
 
             print(
                 "No prices:",
-                factory_name
+                factory_key
             )
 
             continue
+
 
         previous = previous_factories.get(
             factory_key,
             []
         )
 
+
         message = build_factory_post(
-            factory_name,
+
+            factory_data.get(
+                "name",
+                factory_key
+            ),
+
             prices,
+
             previous
+
         )
+
 
         print()
         print(
-            "Sending channel post:",
-            factory_name
+            "Sending:",
+            factory_data.get(
+                "name",
+                factory_key
+            )
         )
 
+
         success = send_message(
+
             CHANNEL,
+
             message
+
         )
+
 
         if success:
 
             print(
-                "CHANNEL POST SENT:",
-                factory_name
+                "POST SENT:",
+                factory_key
             )
+
 
             previous_factories[
                 factory_key
             ] = prices
 
-        else:
-
-            print(
-                "CHANNEL POST FAILED:",
-                factory_name
-            )
-
-    # =====================================================
-    # PRIVATE MESSAGE
-    # =====================================================
-
-    print()
-    print(
-        "======================================"
-    )
-
-    print(
-        "PRIVATE MESSAGE"
-    )
-
-    print(
-        "======================================"
-    )
-
-    if not PRIVATE_CHAT_ID:
-
-        print(
-            "PRIVATE_CHAT_ID is not configured."
-        )
-
-    else:
-
-        private_messages = []
-
-        for factory_key, factory_data in all_prices.items():
-
-            if factory_key in MAIN_FACTORIES:
-                continue
-
-            if not isinstance(
-                factory_data,
-                dict
-            ):
-                continue
-
-            factory_name = factory_data.get(
-                "name",
-                factory_key
-            )
-
-            prices = normalize_prices(
-                factory_data.get(
-                    "prices",
-                    []
-                )
-            )
-
-            if not prices:
-
-                print(
-                    "No prices for private factory:",
-                    factory_name
-                )
-
-                continue
-
-            previous = previous_factories.get(
-                factory_key,
-                []
-            )
-
-            private_messages.append(
-                build_private_post(
-                    factory_name,
-                    prices,
-                    previous
-                )
-            )
-
-            previous_factories[
-                factory_key
-            ] = prices
-
-        # -------------------------------------------------
-        # Send private messages
-        # -------------------------------------------------
-
-        if private_messages:
-
-            private_header = (
-                "🔐 <b>گزارش قیمت سایر کارخانه‌ها</b>\n\n"
-                "این گزارش فقط برای مدیریت ارسال شده است.\n\n"
-            )
-
-            private_message = (
-                private_header
-                + "\n\n"
-                .join(private_messages)
-            )
-
-            # Telegram message limit protection
-            if len(private_message) <= 3900:
-
-                success = send_message(
-                    PRIVATE_CHAT_ID,
-                    private_message
-                )
-
-                if success:
-
-                    print(
-                        "PRIVATE POST SENT SUCCESSFULLY"
-                    )
-
-                else:
-
-                    print(
-                        "PRIVATE POST FAILED"
-                    )
-
-            else:
-
-                print(
-                    "Private message is too long."
-                )
-
-                for message in private_messages:
-
-                    success = send_message(
-                        PRIVATE_CHAT_ID,
-                        message
-                    )
-
-                    if success:
-
-                        print(
-                            "PRIVATE FACTORY POST SENT"
-                        )
-
-                    else:
-
-                        print(
-                            "PRIVATE FACTORY POST FAILED"
-                        )
 
         else:
 
             print(
-                "No other factories available."
+                "POST FAILED:",
+                factory_key
             )
+
+
+    # =====================================================
+    # PRIVATE OTHER FACTORIES
+    # =====================================================
+
+    print(
+        "Sending other factories privately..."
+    )
+
+
+    send_private_message(
+        all_prices
+    )
+
 
     # =====================================================
     # SAVE HISTORY
@@ -856,16 +719,19 @@ def main():
         "%Y-%m-%d %H:%M:%S"
     )
 
+
     history[
         "factories"
     ] = previous_factories
+
 
     save_history(
         history
     )
 
+
     # =====================================================
-    # FINISH
+    # SUCCESS
     # =====================================================
 
     print()
@@ -874,7 +740,7 @@ def main():
     )
 
     print(
-        "STEEL BOT FINISHED SUCCESSFULLY"
+        "STEEL BOT FINISHED"
     )
 
     print(
