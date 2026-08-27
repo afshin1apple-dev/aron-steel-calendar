@@ -5,6 +5,8 @@ import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from PIL import Image, ImageDraw, ImageFont
+
 from price import get_all_prices
 
 
@@ -16,12 +18,25 @@ TOKEN = os.environ["BOT_TOKEN"]
 
 CHANNEL = os.environ["CHANNEL_ID"]
 
-# Telegram numeric chat ID for private management message
+# آیدی عددی خصوصی افشین
 PRIVATE_CHAT_ID = os.environ.get("PRIVATE_CHAT_ID")
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 HISTORY_FILE = "steel_history.json"
+
+IMAGE_FILE = "steel_market.png"
+
+
+# =========================================================
+# MAIN FACTORIES
+# =========================================================
+
+MAIN_FACTORIES = [
+    "نیشابور",
+    "هیربد",
+    "امیرکبیر"
+]
 
 
 # =========================================================
@@ -38,6 +53,42 @@ COMPANY_FOOTER = """
 
 
 # =========================================================
+# FONT
+# =========================================================
+
+def get_font(size, bold=False):
+
+    possible_fonts = []
+
+    if bold:
+
+        possible_fonts = [
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ]
+
+    else:
+
+        possible_fonts = [
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+
+    for path in possible_fonts:
+
+        if os.path.exists(path):
+
+            return ImageFont.truetype(
+                path,
+                size
+            )
+
+    return ImageFont.load_default()
+
+
+# =========================================================
 # PRICE FORMAT
 # =========================================================
 
@@ -46,7 +97,13 @@ def format_price(value):
     if value is None:
         return "تماس بگیرید"
 
-    return f"{int(value):,}"
+    try:
+
+        return f"{int(float(value)):,}"
+
+    except Exception:
+
+        return "تماس بگیرید"
 
 
 # =========================================================
@@ -55,7 +112,10 @@ def format_price(value):
 
 def load_history():
 
-    if not os.path.exists(HISTORY_FILE):
+    if not os.path.exists(
+        HISTORY_FILE
+    ):
+
         return {}
 
     try:
@@ -68,7 +128,11 @@ def load_history():
 
             data = json.load(f)
 
-            if isinstance(data, dict):
+            if isinstance(
+                data,
+                dict
+            ):
+
                 return data
 
     except Exception as e:
@@ -102,7 +166,7 @@ def save_history(history):
 
 
 # =========================================================
-# FACTORY COMPARISON
+# COMPARISON
 # =========================================================
 
 def compare_factory(
@@ -111,9 +175,12 @@ def compare_factory(
 ):
 
     if not current or not previous:
+
         return None
 
+
     previous_map = {}
+
 
     for item in previous:
 
@@ -122,16 +189,23 @@ def compare_factory(
 
         try:
 
-            size = int(item["size"])
-            old_price = float(item["price"])
+            size = int(
+                item["size"]
+            )
+
+            old_price = float(
+                item["price"]
+            )
 
             previous_map[size] = old_price
 
         except Exception:
+
             continue
 
 
     changes = []
+
 
     for item in current:
 
@@ -140,7 +214,9 @@ def compare_factory(
 
         try:
 
-            size = int(item["size"])
+            size = int(
+                item["size"]
+            )
 
             current_price = float(
                 item["price"]
@@ -154,20 +230,30 @@ def compare_factory(
                 old_price is None
                 or old_price == 0
             ):
+
                 continue
 
+
             percent = (
-                (current_price - old_price)
+                (
+                    current_price
+                    - old_price
+                )
                 / old_price
             ) * 100
 
-            changes.append(percent)
+
+            changes.append(
+                percent
+            )
 
         except Exception:
+
             continue
 
 
     if not changes:
+
         return None
 
 
@@ -195,7 +281,7 @@ def comparison_text(
     if result is None:
 
         return (
-            "📊 <b>مقایسه با آخرین قیمت</b>\n"
+            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
             "⚪ اطلاعات کافی برای مقایسه وجود ندارد."
         )
 
@@ -203,7 +289,7 @@ def comparison_text(
     if result > 0.01:
 
         return (
-            "📊 <b>مقایسه با آخرین قیمت</b>\n"
+            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
             f"🟢 قیمت میلگرد در مجموع "
             f"<b>{result:+.2f}٪</b> افزایش داشته است."
         )
@@ -212,34 +298,37 @@ def comparison_text(
     if result < -0.01:
 
         return (
-            "📊 <b>مقایسه با آخرین قیمت</b>\n"
+            "📊 <b>مقایسه با آخرین قیمت:</b>\n"
             f"🔴 قیمت میلگرد در مجموع "
             f"<b>{result:.2f}٪</b> کاهش داشته است."
         )
 
 
     return (
-        "📊 <b>مقایسه با آخرین قیمت</b>\n"
+        "📊 <b>مقایسه با آخرین قیمت:</b>\n"
         "⚪ قیمت میلگرد در مجموع بدون تغییر بوده است."
     )
 
 
 # =========================================================
-# PRICE TABLE
+# TEXT PRICE LIST
 # =========================================================
 
-def build_price_table(prices):
+def build_price_list(prices):
 
     if not prices:
 
         return "⚪ اطلاعات قیمت در دسترس نیست."
 
 
-    # فقط محصولاتی که قیمت دارند
     valid_prices = [
+
         item
+
         for item in prices
+
         if item.get("price") is not None
+
     ]
 
 
@@ -251,51 +340,24 @@ def build_price_table(prices):
     lines = []
 
 
-    # دو ستون کنار هم
-    for i in range(
-        0,
-        len(valid_prices),
-        2
-    ):
+    for item in valid_prices:
 
-        left = valid_prices[i]
+        lines.append(
 
-        right = (
-            valid_prices[i + 1]
-            if i + 1 < len(valid_prices)
-            else None
+            f"▫️ سایز {item['size']}"
+            f"   │   "
+            f"{format_price(item['price'])} تومان"
+
         )
 
 
-        left_text = (
-            f"▫️ {left['size']}  "
-            f"{format_price(left['price'])}"
-        )
-
-
-        if right:
-
-            right_text = (
-                f"▫️ {right['size']}  "
-                f"{format_price(right['price'])}"
-            )
-
-            lines.append(
-                f"{left_text:<25}{right_text}"
-            )
-
-        else:
-
-            lines.append(
-                left_text
-            )
-
-
-    return "\n".join(lines)
+    return "\n".join(
+        lines
+    )
 
 
 # =========================================================
-# FACTORY POST
+# BUILD TELEGRAM TEXT
 # =========================================================
 
 def build_factory_post(
@@ -310,13 +372,10 @@ def build_factory_post(
         "📌 <b>قیمت روز میلگرد</b>\n"
         "💰 <b>واحد قیمت: تومان</b>\n\n"
 
-        "سایز       قیمت       سایز       قیمت\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-
     )
 
 
-    message += build_price_table(
+    message += build_price_list(
         prices
     )
 
@@ -335,6 +394,7 @@ def build_factory_post(
         "\n\n"
         "📞 جهت اطلاع از قیمت سایر کارخانه‌ها "
         "با واحد فروش تماس حاصل نمایید."
+
     )
 
 
@@ -348,7 +408,368 @@ def build_factory_post(
 
 
 # =========================================================
-# TELEGRAM
+# IMAGE - FACTORY PRICE CARD
+# =========================================================
+
+def create_price_image(
+    factory_name,
+    prices
+):
+
+    width = 1200
+
+    row_height = 85
+
+    header_height = 260
+
+    footer_height = 120
+
+
+    valid_prices = [
+
+        item
+
+        for item in prices
+
+        if item.get("price") is not None
+
+    ]
+
+
+    height = (
+
+        header_height
+        + len(valid_prices) * row_height
+        + footer_height
+
+    )
+
+
+    image = Image.new(
+        "RGB",
+        (width, height),
+        "#F5F7FA"
+    )
+
+
+    draw = ImageDraw.Draw(
+        image
+    )
+
+
+    # =====================================================
+    # FONTS
+    # =====================================================
+
+    title_font = get_font(
+        58,
+        bold=True
+    )
+
+    subtitle_font = get_font(
+        34,
+        bold=True
+    )
+
+    header_font = get_font(
+        30,
+        bold=True
+    )
+
+    body_font = get_font(
+        34,
+        bold=False
+    )
+
+    price_font = get_font(
+        36,
+        bold=True
+    )
+
+    footer_font = get_font(
+        26,
+        bold=False
+    )
+
+
+    # =====================================================
+    # HEADER
+    # =====================================================
+
+    draw.rectangle(
+        [
+            0,
+            0,
+            width,
+            header_height
+        ],
+        fill="#172B4D"
+    )
+
+
+    title = (
+        f"🏗 {factory_name}"
+    )
+
+
+    bbox = draw.textbbox(
+        (0, 0),
+        title,
+        font=title_font
+    )
+
+
+    title_width = (
+        bbox[2] - bbox[0]
+    )
+
+
+    draw.text(
+        (
+            (width - title_width) / 2,
+            55
+        ),
+        title,
+        font=title_font,
+        fill="white"
+    )
+
+
+    subtitle = (
+        "قیمت روز میلگرد"
+    )
+
+
+    bbox = draw.textbbox(
+        (0, 0),
+        subtitle,
+        font=subtitle_font
+    )
+
+
+    subtitle_width = (
+        bbox[2] - bbox[0]
+    )
+
+
+    draw.text(
+        (
+            (width - subtitle_width) / 2,
+            145
+        ),
+        subtitle,
+        font=subtitle_font,
+        fill="white"
+    )
+
+
+    unit = (
+        "واحد قیمت: تومان"
+    )
+
+
+    bbox = draw.textbbox(
+        (0, 0),
+        unit,
+        font=header_font
+    )
+
+
+    unit_width = (
+        bbox[2] - bbox[0]
+    )
+
+
+    draw.text(
+        (
+            (width - unit_width) / 2,
+            200
+        ),
+        unit,
+        font=header_font,
+        fill="white"
+    )
+
+
+    # =====================================================
+    # TABLE HEADER
+    # =====================================================
+
+    y = header_height
+
+
+    draw.rectangle(
+        [
+            0,
+            y,
+            width,
+            y + row_height
+        ],
+        fill="#DDE3EA"
+    )
+
+
+    draw.text(
+        (
+            170,
+            y + 22
+        ),
+        "سایز",
+        font=header_font,
+        fill="#172B4D"
+    )
+
+
+    draw.text(
+        (
+            760,
+            y + 22
+        ),
+        "قیمت",
+        font=header_font,
+        fill="#172B4D"
+    )
+
+
+    y += row_height
+
+
+    # =====================================================
+    # TABLE ROWS
+    # =====================================================
+
+    for index, item in enumerate(
+        valid_prices
+    ):
+
+        if index % 2 == 0:
+
+            fill = "#FFFFFF"
+
+        else:
+
+            fill = "#EEF2F6"
+
+
+        draw.rectangle(
+            [
+                0,
+                y,
+                width,
+                y + row_height
+            ],
+            fill=fill
+        )
+
+
+        # separator
+        draw.line(
+            [
+                80,
+                y + row_height,
+                width - 80,
+                y + row_height
+            ],
+            fill="#D0D5DB",
+            width=2
+        )
+
+
+        size_text = (
+            f"سایز {item['size']}"
+        )
+
+
+        price_text = (
+            f"{format_price(item['price'])} تومان"
+        )
+
+
+        draw.text(
+            (
+                150,
+                y + 20
+            ),
+            size_text,
+            font=body_font,
+            fill="#222222"
+        )
+
+
+        draw.text(
+            (
+                650,
+                y + 17
+            ),
+            price_text,
+            font=price_font,
+            fill="#172B4D"
+        )
+
+
+        y += row_height
+
+
+    # =====================================================
+    # FOOTER
+    # =====================================================
+
+    draw.rectangle(
+        [
+            0,
+            y,
+            width,
+            height
+        ],
+        fill="#172B4D"
+    )
+
+
+    footer_text = (
+        "آروند آرون استیل  |  021-22122239"
+    )
+
+
+    bbox = draw.textbbox(
+        (0, 0),
+        footer_text,
+        font=footer_font
+    )
+
+
+    footer_width = (
+        bbox[2] - bbox[0]
+    )
+
+
+    draw.text(
+        (
+            (width - footer_width) / 2,
+            y + 38
+        ),
+        footer_text,
+        font=footer_font,
+        fill="white"
+    )
+
+
+    image.save(
+        IMAGE_FILE,
+        quality=95
+    )
+
+
+    print(
+        "Price image created:",
+        IMAGE_FILE
+    )
+
+
+    return IMAGE_FILE
+
+
+# =========================================================
+# SEND TEXT MESSAGE
 # =========================================================
 
 def send_message(
@@ -385,6 +806,7 @@ def send_message(
 
                 "disable_web_page_preview":
                     True
+
             },
 
             timeout=30
@@ -403,7 +825,81 @@ def send_message(
     except Exception as e:
 
         print(
-            "Telegram error:",
+            "Telegram send error:",
+            e
+        )
+
+        return False
+
+
+# =========================================================
+# SEND PHOTO
+# =========================================================
+
+def send_photo(
+    chat_id,
+    image_path,
+    caption
+):
+
+    if not chat_id:
+
+        print(
+            "Chat ID not configured."
+        )
+
+        return False
+
+
+    try:
+
+        with open(
+            image_path,
+            "rb"
+        ) as photo:
+
+            response = requests.post(
+
+                f"https://api.telegram.org/"
+                f"bot{TOKEN}/sendPhoto",
+
+                data={
+
+                    "chat_id":
+                        chat_id,
+
+                    "caption":
+                        caption,
+
+                    "parse_mode":
+                        "HTML"
+
+                },
+
+                files={
+
+                    "photo":
+                        photo
+
+                },
+
+                timeout=60
+            )
+
+
+        print(
+            "Telegram photo response:",
+            response.text
+        )
+
+
+        return response.ok
+
+
+    except Exception as e:
+
+        print(
+            "Telegram photo error:",
             e
         )
 
@@ -432,19 +928,13 @@ def send_private_message(
     )
 
 
-    main_factories = {
-        "نیشابور",
-        "هیربد",
-        "امیرکبیر"
-    }
-
-
     found = False
 
 
     for factory_key, factory_data in all_prices.items():
 
-        if factory_key in main_factories:
+        if factory_key in MAIN_FACTORIES:
+
             continue
 
 
@@ -455,6 +945,7 @@ def send_private_message(
 
 
         if not prices:
+
             continue
 
 
@@ -462,19 +953,24 @@ def send_private_message(
 
 
         message += (
-            f"🏗 <b>{factory_data.get('name', factory_key)}</b>\n"
+            f"🏗 <b>"
+            f"{factory_data.get('name', factory_key)}"
+            f"</b>\n"
         )
 
 
         for item in prices:
 
             if item.get("price") is None:
+
                 continue
 
 
             message += (
+
                 f"▫️ سایز {item['size']}: "
                 f"{format_price(item['price'])} تومان\n"
+
             )
 
 
@@ -543,14 +1039,14 @@ def main():
         )
 
         print(
-            "Steel post will NOT be sent."
+            "Steel posts will NOT be sent."
         )
 
         return
 
 
     # =====================================================
-    # GET ALL PRICES
+    # GET PRICES
     # =====================================================
 
     print(
@@ -590,19 +1086,10 @@ def main():
 
 
     # =====================================================
-    # MAIN FACTORIES
+    # MAIN CHANNEL POSTS
     # =====================================================
 
-    main_factories = [
-
-        "نیشابور",
-        "هیربد",
-        "امیرکبیر"
-
-    ]
-
-
-    for factory_key in main_factories:
+    for factory_key in MAIN_FACTORIES:
 
         factory_data = all_prices.get(
             factory_key
@@ -641,12 +1128,19 @@ def main():
         )
 
 
+        factory_name = factory_data.get(
+            "name",
+            factory_key
+        )
+
+
+        # =================================================
+        # TEXT
+        # =================================================
+
         message = build_factory_post(
 
-            factory_data.get(
-                "name",
-                factory_key
-            ),
+            factory_name,
 
             prices,
 
@@ -655,19 +1149,35 @@ def main():
         )
 
 
-        print()
-        print(
-            "Sending:",
-            factory_data.get(
-                "name",
-                factory_key
-            )
+        # =================================================
+        # IMAGE
+        # =================================================
+
+        image_path = create_price_image(
+
+            factory_name,
+
+            prices
+
         )
 
 
-        success = send_message(
+        print()
+        print(
+            "Sending:",
+            factory_name
+        )
+
+
+        # =================================================
+        # SEND PHOTO + CAPTION
+        # =================================================
+
+        success = send_photo(
 
             CHANNEL,
+
+            image_path,
 
             message
 
@@ -677,7 +1187,7 @@ def main():
         if success:
 
             print(
-                "POST SENT:",
+                "STEEL POST SENT SUCCESSFULLY:",
                 factory_key
             )
 
@@ -690,7 +1200,7 @@ def main():
         else:
 
             print(
-                "POST FAILED:",
+                "STEEL POST FAILED:",
                 factory_key
             )
 
