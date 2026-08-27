@@ -6,6 +6,12 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# =========================================================
+# PIVAN PRICE
+# =========================================================
+
+from price import get_prices
+
 
 # =========================================================
 # SETTINGS
@@ -510,6 +516,42 @@ print(
 bitcoin, bitcoin_change = (
     get_bitcoin()
 )
+
+
+# =========================================================
+# GET STEEL PRICES FROM PIVAN
+# =========================================================
+
+print(
+    "Getting steel prices..."
+)
+
+steel_prices = get_prices()
+
+print(
+    "Steel products found:",
+    len(steel_prices)
+)
+
+for steel in steel_prices:
+
+    steel_price = steel.get(
+        "price"
+    )
+
+    if steel_price is not None:
+
+        print(
+            f"Steel size {steel['size']}: "
+            f"{steel_price:,} تومان"
+        )
+
+    else:
+
+        print(
+            f"Steel size {steel['size']}: "
+            f"PRICE NOT AVAILABLE"
+        )
 
 
 # =========================================================
