@@ -58,7 +58,7 @@ CHANNEL_PRODUCTS = [
 # =========================================================
 def normalize_number(value):
     if value is None:
-        return None
+        return ""
     text = str(value)
     persian = "۰۱۲۳۴۵۶۷۸۹"
     arabic = "٠١٢٣٤٥٦٧٨٩"
@@ -95,136 +95,92 @@ def fetch_page(url):
     response.raise_for_status()
     return response
 # =========================================================
-# PARSE
+# PARSE ONE FACTORY
 # =========================================================
 def parse_channel_product(product):
-    name = product["name"]
     try:
         response = fetch_page(product["url"])
-    except Exception:
-        return {
-            "name": name,
-            "factory": product["factory"],
-            "type": product["type"],
-            "ok": False,
-            "products": [],
-            "error": "Request failed",
-        }
-    try:
         tables = pd.read_html(response.text)
-    except Exception:
-        # مهم:
-        # خطای pandas ممکن است شامل کل HTML صفحه باشد.
-        # عمداً متن خطا را چاپ نمی‌کنیم.
+        if not tables:
+            return {
+                "name": product["name"],
+                "factory": product["factory"],
+                "type": product["type"],
+                "ok": False,
+                "products": [],
+                "error": "جدول قیمت پیدا نشد",
+            }
+        df = tables[0]
+        products = []
+        for _, row in df.iterrows():
+            values = [str(x).strip() for x in row.tolist()]
+            if len(values) < 5:
+                continue
+            size = normalize_number(values[0])
+            length = normalize_number(values[1])
+            delivery = values[2].strip()
+            unit = values[3].strip()
+            raw_price = values[4]
+            # -------------------------------------------------
+            # فقط سایز عددی
+            # -------------------------------------------------
+            if not re.fullmatch(r"\d+(?:\.\d+)?", size):
+                continue
+            # -------------------------------------------------
+            # فقط طول عددی
+            # -------------------------------------------------
+            if not re.fullmatch(r"\d+(?:\.\d+)?", length):
+                continue
+            # -------------------------------------------------
+            # فقط کیلوگرم
+            # -------------------------------------------------
+            if "کیلو" not in unit:
+                continue
+            # -------------------------------------------------
+            # حذف تمام قیمت‌های انبار تهران
+            # -------------------------------------------------
+            delivery_normalized = delivery.replace("‌", " ").strip()
+            if "تهران" in delivery_normalized:
+                continue
+            if "انبار" in delivery_normalized:
+                continue
+            # -------------------------------------------------
+            # قیمت جاری
+            # -------------------------------------------------
+            price = extract_current_price(raw_price)
+            if price is None:
+                continue
+            products.append(
+                {
+                    "size": size,
+                    "length": length,
+                    "delivery": delivery,
+                    "unit": unit,
+                    "price": price,
+                }
+            )
         return {
-            "name": name,
+            "name": product["name"],
+            "factory": product["factory"],
+            "type": product["type"],
+            "ok": len(products) > 0,
+            "products": products,
+        }
+    except Exception as e:
+        error_text = str(e)
+        # کوتاه کردن خطا برای جلوگیری از لاگ چند هزار خطی
+        if len(error_text) > 300:
+            error_text = error_text[:300] + "..."
+        return {
+            "name": product["name"],
             "factory": product["factory"],
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": "Could not read price table",
+            "error": error_text,
         }
-    if not tables:
-        return {
-            "name": name,
-            "factory": product["factory"],
-            "type": product["type"],
-            "ok": False,
-            "products": [],
-            "error": "No table found",
-        }
-    # =====================================================
-    # TABLE 0
-    # =====================================================
-    df = tables[0]
-    products = []
-    # =====================================================
-    # READ ROWS
-    # =====================================================
-    for _, row in df.iterrows():
-        values = [
-            str(x).strip()
-            for x in row.tolist()
-        ]
-        if len(values) < 5:
-            continue
-        size = values[0]
-        length = values[1]
-        delivery = values[2]
-        unit = values[3]
-        raw_price = values[4]
-        # =================================================
-        # فقط کارخانه
-        # انبار تهران حذف
-        # انبار اختصاصی پیوان حذف
-        # =================================================
-        if delivery.strip() != "کارخانه":
-            continue
-        # =================================================
-        # SIZE
-        # =================================================
-        size = normalize_number(size)
-        if not re.fullmatch(
-            r"\d+(?:\.\d+)?",
-            size
-        ):
-            continue
-        # =================================================
-        # LENGTH
-        # =================================================
-        length = normalize_number(length)
-        if not re.fullmatch(
-            r"\d+(?:\.\d+)?",
-            length
-        ):
-            continue
-        # =================================================
-        # UNIT
-        # =================================================
-        if "کیلو" not in unit:
-            continue
-        # =================================================
-        # PRICE
-        # =================================================
-        price = extract_current_price(raw_price)
-        if price is None:
-            continue
-        products.append({
-            "size": size,
-            "length": length,
-            "delivery": "کارخانه",
-            "unit": unit,
-            "price": price,
-        })
-    # =====================================================
-    # REMOVE DUPLICATES
-    # =====================================================
-    unique = {}
-    for item in products:
-        key = (
-            item["size"],
-            item["length"],
-        )
-        unique[key] = item
-    products = list(unique.values())
-    # =====================================================
-    # SORT
-    # =====================================================
-    products.sort(
-        key=lambda x: (
-            float(x["size"]),
-            float(x["length"]),
-        )
-    )
-    return {
-        "name": name,
-        "factory": product["factory"],
-        "type": product["type"],
-        "ok": len(products) > 0,
-        "products": products,
-    }
 # =========================================================
-# GET ALL
+# GET ALL PRICES
 # =========================================================
 def get_channel_prices():
     results = []
@@ -236,37 +192,35 @@ def get_channel_prices():
 # FINAL RESULT
 # =========================================================
 def print_final_result(results):
+    print()
+    print("=" * 45)
+    print("CHANNEL PRICE TEST")
+    print("=" * 45)
     factories_ok = 0
     total_products = 0
-    print()
-    print("========================================")
-    print("CHANNEL PRICE TEST")
-    print("========================================")
     for result in results:
-        name = result["name"]
-        if not result["ok"]:
-            print(f"{name}: ERROR")
-            continue
-        factories_ok += 1
-        count = len(result["products"])
-        total_products += count
-        print(f"{name}: OK ({count})")
-        for item in result["products"]:
+        if result["ok"]:
+            factories_ok += 1
+            total_products += len(result["products"])
             print(
-                f"  {item['size']}x{item['length']} "
-                f"-> {item['price']:,}"
+                f"{result['name']}: OK "
+                f"({len(result['products'])} قیمت)"
             )
+            # فقط خروجی نهایی، بدون RAW ROW
+            for item in result["products"]:
+                print(
+                    f"  {item['size']}×{item['length']} متر : "
+                    f"{item['price']:,} تومان"
+                )
+        else:
+            print(f"{result['name']}: ERROR")
+            if result.get("error"):
+                print(f"  علت: {result['error']}")
     print()
-    print("========================================")
-    print(
-        f"FACTORIES: "
-        f"{factories_ok}/{len(results)}"
-    )
-    print(
-        f"PRODUCTS: "
-        f"{total_products}"
-    )
-    print("========================================")
+    print("=" * 45)
+    print(f"FACTORIES: {factories_ok}/{len(results)}")
+    print(f"PRODUCTS: {total_products}")
+    print("=" * 45)
 # =========================================================
 # MAIN
 # =========================================================
