@@ -22,8 +22,20 @@ TIMEOUT = 30
 # =========================================================
 # FACTORIES
 # =========================================================
+#
+# مهم:
+# سه کارخانه اول برای کانال هستند.
+#
+# کارخانه‌های بعدی فقط برای PRIVATE_CHAT_ID
+# استفاده می‌شوند و وارد کانال نمی‌شوند.
+#
+# =========================================================
 
 FACTORIES = {
+
+    # =====================================================
+    # CHANNEL FACTORIES
+    # =====================================================
 
     "نیشابور": {
         "name": "فولاد خراسان (نیشابور)",
@@ -46,6 +58,59 @@ FACTORIES = {
         "url": (
             "https://pivan.co/brands/"
             "folad-amir-kabir-khazar-factory/rebar/"
+        )
+    },
+
+
+    # =====================================================
+    # PRIVATE FACTORIES
+    # =====================================================
+
+    "میانه": {
+        "name": "فولاد میانه (آذربایجان)",
+        "url": (
+            "https://pivan.co/brands/"
+            "miyane-factory/rebar/"
+        )
+    },
+
+    "سیرجان": {
+        "name": "جهان فولاد سیرجان",
+        "url": (
+            "https://pivan.co/brands/"
+            "jahan-folad-sirjan/rebar/"
+        )
+    },
+
+    "بافق": {
+        "name": "فولاد بافق یزد",
+        "url": (
+            "https://pivan.co/brands/"
+            "bafgh-steel/rebar/"
+        )
+    },
+
+    "آریان": {
+        "name": "آریان فولاد",
+        "url": (
+            "https://pivan.co/brands/"
+            "arian-steel-factory/rebar/"
+        )
+    },
+
+    "فایکو": {
+        "name": "فولاد البرز ایرانیان (فایکو)",
+        "url": (
+            "https://pivan.co/brands/"
+            "iranian-alborz-steel-factory-faiko/rebar/"
+        )
+    },
+
+    "راد همدان": {
+        "name": "فولاد راد همدان",
+        "url": (
+            "https://pivan.co/brands/"
+            "folad-rad-hamedan-factory/rebar/"
         )
     }
 }
@@ -219,7 +284,10 @@ def parse_factory(
             cell_texts
         )
 
+        # -------------------------------------------------
         # Ignore header
+        # -------------------------------------------------
+
         if "سایز" in full_text:
             continue
 
@@ -242,7 +310,6 @@ def parse_factory(
                 nums[0]
             )
 
-            # Steel sizes
             if 6 <= candidate <= 40:
 
                 size = candidate
@@ -265,7 +332,6 @@ def parse_factory(
 
             for value in nums:
 
-                # Ignore size / small numbers
                 if value >= 10000:
 
                     price_candidates.append(
@@ -282,9 +348,8 @@ def parse_factory(
             continue
 
         # -------------------------------------------------
-        # PIVAN TABLE
-        # Usually first = with VAT
-        # Last = without VAT
+        # PIVAN:
+        # last large number = EX-TAX PRICE
         # -------------------------------------------------
 
         steel_price = price_candidates[-1]
@@ -333,7 +398,7 @@ def parse_factory(
 
 
 # =========================================================
-# GET ALL THREE FACTORIES
+# GET ALL FACTORIES
 # =========================================================
 
 def get_all_prices():
@@ -386,7 +451,7 @@ def get_prices():
     """
     Compatibility with previous code.
 
-    Returns Nishabour prices only.
+    فقط قیمت نیشابور را برمی‌گرداند.
     """
 
     return parse_factory(
