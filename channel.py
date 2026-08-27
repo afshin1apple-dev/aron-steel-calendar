@@ -1,5 +1,4 @@
 import re
-from io import StringIO
 import requests
 import pandas as pd
 # =========================================================
@@ -15,6 +14,7 @@ HEADERS = {
 }
 # =========================================================
 # CHANNEL PRODUCTS
+# فایکو عمداً حذف شده است
 # =========================================================
 CHANNEL_PRODUCTS = [
     {
@@ -36,12 +36,6 @@ CHANNEL_PRODUCTS = [
         "url": "https://pivan.co/brands/tabriz-pure-steel/uchannel/",
     },
     {
-        "name": "سنگین فایکو",
-        "factory": "ناودانی سنگین فایکو",
-        "type": "سنگین",
-        "url": "https://pivan.co/brands/iranian-alborz-steel-factory-faiko/uchannel/",
-    },
-    {
         "name": "سنگین ابهر",
         "factory": "ناودانی سنگین ابهر",
         "type": "سنگین",
@@ -59,7 +53,7 @@ CHANNEL_PRODUCTS = [
 # =========================================================
 def normalize_number(value):
     if value is None:
-        return ""
+        return None
     text = str(value)
     persian = "۰۱۲۳۴۵۶۷۸۹"
     arabic = "٠١٢٣٤٥٦٧٨٩"
@@ -68,10 +62,13 @@ def normalize_number(value):
     for i, ch in enumerate(arabic):
         text = text.replace(ch, str(i))
     return text
-# =========================================================
-# PRICE
-# =========================================================
 def extract_current_price(value):
+    """
+    مثال:
+    88000 80000 -> 80000
+    89000 80900 -> 80900
+    تماس بگیرید -> None
+    """
     if value is None:
         return None
     text = normalize_number(value)
@@ -94,119 +91,103 @@ def fetch_page(url):
         timeout=TIMEOUT,
     )
     response.raise_for_status()
-    return response.text
+    return response
 # =========================================================
-# PARSE CHANNEL TABLE
+# PARSE
 # =========================================================
 def parse_channel_product(product):
     try:
-        html = fetch_page(product["url"])
-        # -------------------------------------------------
-        # IMPORTANT:
-        # StringIO prevents pandas from treating HTML
-        # as a filename.
-        # -------------------------------------------------
-        tables = pd.read_html(StringIO(html))
-        if not tables:
-            return {
-                "name": product["name"],
-                "type": product["type"],
-                "ok": False,
-                "products": [],
-                "error": "جدول قیمت پیدا نشد",
-            }
-        df = tables[0]
-        products = []
-        for _, row in df.iterrows():
-            values = [
-                str(x).strip()
-                for x in row.tolist()
-            ]
-            if len(values) < 5:
-                continue
-            size = normalize_number(values[0])
-            length = normalize_number(values[1])
-            delivery = values[2].strip()
-            unit = values[3].strip()
-            raw_price = values[4]
-            # -------------------------------------------------
-            # SIZE
-            # -------------------------------------------------
-            if not re.fullmatch(
-                r"\d+(?:\.\d+)?",
-                size
-            ):
-                continue
-            # -------------------------------------------------
-            # LENGTH
-            # -------------------------------------------------
-            if not re.fullmatch(
-                r"\d+(?:\.\d+)?",
-                length
-            ):
-                continue
-            # -------------------------------------------------
-            # UNIT
-            # -------------------------------------------------
-            if "کیلو" not in unit:
-                continue
-            # -------------------------------------------------
-            # REMOVE WAREHOUSE / TEHRAN
-            # -------------------------------------------------
-            delivery_clean = (
-                delivery
-                .replace("‌", " ")
-                .strip()
-            )
-            if "تهران" in delivery_clean:
-                continue
-            if "انبار" in delivery_clean:
-                continue
-            # -------------------------------------------------
-            # PRICE
-            # -------------------------------------------------
-            price = extract_current_price(raw_price)
-            if price is None:
-                continue
-            products.append(
-                {
-                    "size": size,
-                    "length": length,
-                    "delivery": delivery_clean,
-                    "unit": unit,
-                    "price": price,
-                }
-            )
-        return {
-            "name": product["name"],
-            "type": product["type"],
-            "ok": len(products) > 0,
-            "products": products,
-        }
-    except requests.exceptions.Timeout:
-        return {
-            "name": product["name"],
-            "type": product["type"],
-            "ok": False,
-            "products": [],
-            "error": "Timeout",
-        }
-    except requests.exceptions.RequestException as e:
-        return {
-            "name": product["name"],
-            "type": product["type"],
-            "ok": False,
-            "products": [],
-            "error": f"Request error: {str(e)[:120]}",
-        }
+        response = fetch_page(product["url"])
     except Exception as e:
         return {
             "name": product["name"],
+            "factory": product["factory"],
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": str(e)[:200],
+            "error": f"Request error: {type(e).__name__}",
         }
+    try:
+        # مهم:
+        # html را مستقیماً به read_html می‌دهیم.
+        # هیچ‌وقت متن کامل HTML را داخل خطا چاپ نمی‌کنیم.
+        tables = pd.read_html(response.text)
+    except Exception as e:
+        return {
+            "name": product["name"],
+            "factory": product["factory"],
+            "type": product["type"],
+            "ok": False,
+            "products": [],
+            "error": f"Table error: {type(e).__name__}",
+        }
+    if not tables:
+        return {
+            "name": product["name"],
+            "factory": product["factory"],
+            "type": product["type"],
+            "ok": False,
+            "products": [],
+            "error": "No table found",
+        }
+    # جدول اصلی قیمت
+    df = tables[0]
+    products = []
+    for _, row in df.iterrows():
+        values = [
+            str(x).strip()
+            for x in row.tolist()
+        ]
+        if len(values) < 5:
+            continue
+        size = normalize_number(values[0])
+        length = normalize_number(values[1])
+        delivery = values[2]
+        unit = values[3]
+        raw_price = values[4]
+        # -------------------------------------------------
+        # Size
+        # -------------------------------------------------
+        if not re.fullmatch(
+            r"\d+(?:\.\d+)?",
+            size
+        ):
+            continue
+        # -------------------------------------------------
+        # Length
+        # -------------------------------------------------
+        if not re.fullmatch(
+            r"\d+(?:\.\d+)?",
+            length
+        ):
+            continue
+        # -------------------------------------------------
+        # Unit
+        # -------------------------------------------------
+        if "کیلو" not in unit:
+            continue
+        # -------------------------------------------------
+        # Price
+        # -------------------------------------------------
+        price = extract_current_price(raw_price)
+        if price is None:
+            continue
+        products.append(
+            {
+                "size": size,
+                "length": length,
+                "delivery": delivery,
+                "unit": unit,
+                "price": price,
+            }
+        )
+    return {
+        "name": product["name"],
+        "factory": product["factory"],
+        "type": product["type"],
+        "ok": len(products) > 0,
+        "products": products,
+    }
 # =========================================================
 # GET ALL PRICES
 # =========================================================
@@ -218,6 +199,7 @@ def get_channel_prices():
     return results
 # =========================================================
 # FINAL RESULT
+# لاگ بسیار کم
 # =========================================================
 def print_final_result(results):
     print()
@@ -227,19 +209,17 @@ def print_final_result(results):
     factories_ok = 0
     total_products = 0
     for result in results:
-        print()
         if result["ok"]:
             factories_ok += 1
-            count = len(result["products"])
-            total_products += count
+            total_products += len(result["products"])
             print(
-                f"{result['name']}: OK "
-                f"({count} قیمت)"
+                f"{result['name']}: "
+                f"OK ({len(result['products'])} قیمت)"
             )
+            # فقط قیمت‌ها را چاپ می‌کنیم
             for item in result["products"]:
                 print(
-                    f"  ناودانی "
-                    f"{item['size']} - "
+                    f"  ناودانی {item['size']} - "
                     f"{item['length']} متر : "
                     f"{item['price']:,} تومان"
                 )
@@ -247,6 +227,7 @@ def print_final_result(results):
             print(
                 f"{result['name']}: ERROR"
             )
+            # فقط نوع خطا، بدون HTML
             if result.get("error"):
                 print(
                     f"  علت: {result['error']}"
@@ -255,11 +236,10 @@ def print_final_result(results):
     print("=" * 45)
     print(
         f"FACTORIES: "
-        f"{factories_ok}/{len(results)}"
+        f"{factories_ok}/{len(CHANNEL_PRODUCTS)}"
     )
     print(
-        f"PRODUCTS: "
-        f"{total_products}"
+        f"PRODUCTS: {total_products}"
     )
     print("=" * 45)
 # =========================================================
