@@ -1,7 +1,5 @@
-import os
 import re
 import requests
-import pandas as pd
 from bs4 import BeautifulSoup
 # =========================================================
 # SETTINGS
@@ -70,12 +68,6 @@ def normalize_number(value):
         text = text.replace(ch, str(i))
     return text
 def extract_current_price(value):
-    """
-    Example:
-        '88000 80000' -> 80000
-        '89000 80900' -> 80900
-        'تماس بگیرید تماس بگیرید' -> None
-    """
     if value is None:
         return None
     text = normalize_number(value)
@@ -85,9 +77,6 @@ def extract_current_price(value):
     if not numbers:
         return None
     try:
-        # Pivan usually returns:
-        # OLD/UPPER PRICE + CURRENT PRICE
-        # The last number is the current price.
         price = numbers[-1].replace(",", "")
         return int(price)
     except Exception:
@@ -119,7 +108,11 @@ def parse_channel_product(product):
             "error": f"REQUEST ERROR: {e}",
         }
     try:
-        tables = pd.read_html(response.text)
+        soup = BeautifulSoup(
+            response.text,
+            "lxml"
+        )
+        tables = soup.find_all("table")
     except Exception as e:
         return {
             "name": product["name"],
@@ -127,7 +120,7 @@ def parse_channel_product(product):
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": f"TABLE READ ERROR: {e}",
+            "error": f"HTML PARSE ERROR: {e}",
         }
     if not tables:
         return {
@@ -136,69 +129,70 @@ def parse_channel_product(product):
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": "No tables found",
+            "error": "No HTML table found",
         }
-    # -----------------------------------------------------
-    # CHANNEL TABLE
-    # -----------------------------------------------------
-    table_index = 0
-    if table_index >= len(tables):
-        return {
-            "name": product["name"],
-            "factory": product["factory"],
-            "type": product["type"],
-            "ok": False,
-            "products": [],
-            "error": "Channel table not found",
-        }
-    df = tables[table_index]
+    # =====================================================
+    # IMPORTANT
+    # The Pivan channel table is currently table 0.
+    # =====================================================
+    table = tables[0]
+    rows = table.find_all("tr")
     products = []
-    for _, row in df.iterrows():
-        values = [str(x).strip() for x in row.tolist()]
+    for row in rows:
+        cells = row.find_all(["th", "td"])
+        values = [
+            cell.get_text(
+                " ",
+                strip=True
+            )
+            for cell in cells
+        ]
         if len(values) < 5:
+            continue
+        # Skip header
+        if "سایز" in values[0]:
             continue
         size = values[0]
         length = values[1]
         delivery = values[2]
         unit = values[3]
         raw_price = values[4]
-        # -------------------------------------------------
-        # Validate size
-        # -------------------------------------------------
+        # =================================================
+        # VALIDATE SIZE
+        # =================================================
         size_normalized = normalize_number(size)
         if not re.fullmatch(
             r"\d+(?:\.\d+)?",
             size_normalized
         ):
             continue
-        # -------------------------------------------------
-        # Validate length
-        # -------------------------------------------------
+        # =================================================
+        # VALIDATE LENGTH
+        # =================================================
         length_normalized = normalize_number(length)
         if not re.fullmatch(
             r"\d+(?:\.\d+)?",
             length_normalized
         ):
             continue
-        # -------------------------------------------------
-        # Unit must be kilogram
-        # -------------------------------------------------
+        # =================================================
+        # UNIT
+        # =================================================
         if "کیلو" not in unit:
             continue
-        # -------------------------------------------------
-        # Extract current price
-        # -------------------------------------------------
+        # =================================================
+        # PRICE
+        # =================================================
         price = extract_current_price(raw_price)
         if price is None:
             continue
-        item = {
+        products.append({
             "size": size_normalized,
             "length": length_normalized,
             "delivery": delivery,
             "unit": unit,
             "price": price,
-        }
-        products.append(item)
+        })
     return {
         "name": product["name"],
         "factory": product["factory"],
@@ -227,18 +221,23 @@ def print_final_result(results):
     successful_factories = 0
     for result in results:
         print()
-        status = "OK" if result["ok"] else "ERROR"
         print(
-            f"{result['name']} -> {status}"
+            f"{result['name']} -> "
+            f"{'OK' if result['ok'] else 'ERROR'}"
         )
         if not result["ok"]:
             if result.get("error"):
-                print(f"  {result['error']}")
+                print(
+                    f"  {result['error']}"
+                )
             continue
         successful_factories += 1
-        total_products += len(result["products"])
+        total_products += len(
+            result["products"]
+        )
         print(
-            f"  {len(result['products'])} قیمت پیدا شد"
+            f"  {len(result['products'])} "
+            f"قیمت پیدا شد"
         )
         for item in result["products"]:
             print(
