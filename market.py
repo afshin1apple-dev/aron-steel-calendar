@@ -47,17 +47,23 @@ COMPANY_FOOTER = """
 
 def number(text):
 
+    if text is None:
+        return None
+
+    text = str(text)
+
     text = (
         text
         .replace(",", "")
         .replace("٬", "")
+        .replace(" ", "")
         .strip()
     )
 
     try:
         return float(text)
 
-    except:
+    except Exception:
         return None
 
 
@@ -284,8 +290,8 @@ def calculate_change(
     if (
         previous is None
         or previous == 0
+        or current is None
     ):
-
         return None
 
     return (
@@ -372,7 +378,7 @@ def change(value):
 
 
 # =========================================================
-# COMPARE WITH LAST POST
+# COMPARE PRICES
 # =========================================================
 
 def compare_prices(
@@ -387,7 +393,9 @@ def compare_prices(
 
     for name, current in current_prices.items():
 
-        previous = previous_prices.get(name)
+        previous = previous_prices.get(
+            name
+        )
 
         if (
             previous is None
@@ -403,6 +411,10 @@ def compare_prices(
 
     return changes
 
+
+# =========================================================
+# SIGNIFICANT CHANGE
+# =========================================================
 
 def has_significant_change(
     changes
@@ -466,7 +478,7 @@ last_post_prices = history.get(
 
 
 # =========================================================
-# GET PRICES
+# GET GOLD WORLD
 # =========================================================
 
 print(
@@ -480,6 +492,10 @@ gold_world, gold_world_change = (
 )
 
 
+# =========================================================
+# GET GOLD 18
+# =========================================================
+
 print(
     "Getting gold 18..."
 )
@@ -490,6 +506,10 @@ gold18, gold18_change = (
     )
 )
 
+
+# =========================================================
+# GET COIN
+# =========================================================
 
 print(
     "Getting coin..."
@@ -502,12 +522,20 @@ coin, coin_change = (
 )
 
 
+# =========================================================
+# GET TETHER
+# =========================================================
+
 print(
     "Getting tether..."
 )
 
 tether = get_tether()
 
+
+# =========================================================
+# GET BITCOIN
+# =========================================================
 
 print(
     "Getting bitcoin..."
@@ -519,7 +547,7 @@ bitcoin, bitcoin_change = (
 
 
 # =========================================================
-# GET STEEL PRICES FROM PIVAN
+# GET STEEL FROM PIVAN
 # =========================================================
 
 print(
@@ -555,7 +583,7 @@ for steel in steel_prices:
 
 
 # =========================================================
-# TETHER DAILY CHANGE
+# TETHER CHANGE
 # =========================================================
 
 previous_tether = history.get(
@@ -566,6 +594,34 @@ tether_change = calculate_change(
     tether,
     previous_tether
 )
+
+
+# =========================================================
+# STEEL PRICE DICTIONARY
+# =========================================================
+
+steel_current_prices = {}
+
+for steel in steel_prices:
+
+    size = steel.get(
+        "size"
+    )
+
+    steel_price = steel.get(
+        "price"
+    )
+
+    if (
+        size is not None
+        and steel_price is not None
+    ):
+
+        key = f"steel_{size}"
+
+        steel_current_prices[key] = (
+            steel_price
+        )
 
 
 # =========================================================
@@ -587,7 +643,9 @@ current_prices = {
         bitcoin,
 
     "tether":
-        tether
+        tether,
+
+    **steel_current_prices
 }
 
 
@@ -681,7 +739,6 @@ else:
                 "No comparable prices found."
             )
 
-
         if has_significant_change(
             price_changes
         ):
@@ -755,7 +812,7 @@ r = requests.get(
     params={
 
         "query":
-            "gold bitcoin finance trading",
+            "gold bitcoin steel finance trading",
 
         "orientation":
             "landscape",
@@ -768,7 +825,6 @@ r = requests.get(
 )
 
 r.raise_for_status()
-
 
 photos = r.json().get(
     "photos",
@@ -797,12 +853,63 @@ image_url = photo[
 
 
 # =========================================================
+# STEEL MESSAGE
+# =========================================================
+
+steel_message = ""
+
+if steel_prices:
+
+    steel_message += (
+        "🏭 <b>میلگرد فولاد خراسان نیشابور</b>\n"
+    )
+
+    steel_message += (
+        "📍 محل تحویل: کارخانه\n\n"
+    )
+
+    for steel in steel_prices:
+
+        steel_price = steel.get(
+            "price"
+        )
+
+        if steel_price is None:
+            continue
+
+        size = steel.get(
+            "size"
+        )
+
+        fluctuation = steel.get(
+            "fluctuation_percent"
+        )
+
+        steel_message += (
+            f"📏 سایز {size}: "
+            f"<b>{price(steel_price)}</b> تومان"
+        )
+
+        if fluctuation is not None:
+
+            steel_message += (
+                f"  ({change(fluctuation)})"
+            )
+
+        steel_message += "\n"
+
+    steel_message += "\n"
+
+
+# =========================================================
 # MESSAGE
 # =========================================================
 
 message = (
 
     "📊 <b>گزارش بازار امروز</b>\n\n"
+
+    "━━━━━━━━━━━━━━\n"
 
     f"🥇 <b>طلای جهانی</b>\n"
     f"💰 {price(gold_world, 2)} دلار\n"
@@ -829,12 +936,16 @@ message = (
     f"📈 تغییر: "
     f"{change(tether_change)}\n\n"
 
+    "━━━━━━━━━━━━━━\n\n"
+
+    f"{steel_message}"
+
     f"{COMPANY_FOOTER}"
 )
 
 
 # =========================================================
-# SEND TO TELEGRAM
+# SEND TELEGRAM
 # =========================================================
 
 print(
@@ -882,8 +993,7 @@ if not r.ok:
 
 
 # =========================================================
-# ONLY AFTER SUCCESS:
-# SAVE POST INFORMATION
+# SAVE HISTORY
 # =========================================================
 
 history["last_post_date"] = (
@@ -927,6 +1037,11 @@ print(
 
 print(
     "Saved prices for 5% comparison."
+)
+
+print(
+    "Steel prices included:",
+    len(steel_prices)
 )
 
 print(
