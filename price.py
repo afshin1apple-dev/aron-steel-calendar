@@ -1,8 +1,5 @@
-import requests
-import json
 import re
-
-from datetime import datetime, timezone
+import requests
 from bs4 import BeautifulSoup
 
 
@@ -10,366 +7,170 @@ from bs4 import BeautifulSoup
 # SETTINGS
 # =========================================================
 
-PIVAN_URL = (
-    "https://pivan.co/brands/"
-    "khorasan-steel-neishabour/rebar/"
-)
-
-OUTPUT_FILE = "prices.json"
-
-FACTORY = "فولاد خراسان نیشابور"
-BRAND = "KSC"
-PRODUCT = "میلگرد"
-
-
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
         "Chrome/139.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,"
-        "application/xml;q=0.9,image/avif,image/webp,"
-        "image/apng,*/*;q=0.8"
-    ),
-    "Accept-Language": (
-        "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7"
-    ),
+    )
+}
+
+TIMEOUT = 30
+
+
+# =========================================================
+# FACTORIES
+# =========================================================
+
+FACTORIES = {
+
+    "نیشابور": {
+        "name": "فولاد خراسان (نیشابور)",
+        "url": (
+            "https://pivan.co/brands/"
+            "khorasan-steel-neishabour/rebar/"
+        )
+    },
+
+    "هیربد": {
+        "name": "فولاد هیربد زرندیه",
+        "url": (
+            "https://pivan.co/brands/"
+            "zirandieh-hirbod-steel-factory/rebar/"
+        )
+    },
+
+    "امیرکبیر": {
+        "name": "فولاد امیرکبیر خزر",
+        "url": (
+            "https://pivan.co/brands/"
+            "folad-amir-kabir-khazar-factory/rebar/"
+        )
+    }
 }
 
 
 # =========================================================
-# SESSION
-# =========================================================
-
-session = requests.Session()
-session.headers.update(HEADERS)
-
-
-# =========================================================
-# CLEAN TEXT
-# =========================================================
-
-def clean_text(text):
-
-    if text is None:
-        return ""
-
-    text = str(text)
-
-    text = text.replace("\xa0", " ")
-    text = text.replace("\u200c", " ")
-    text = text.replace("\u200f", "")
-    text = text.replace("\u200e", "")
-
-    return " ".join(
-        text.split()
-    ).strip()
-
-
-# =========================================================
-# NORMALIZE DIGITS
+# NUMBER
 # =========================================================
 
 def normalize_digits(text):
 
-    if text is None:
+    if not text:
         return ""
-
-    text = str(text)
 
     translation = str.maketrans(
         "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
         "01234567890123456789"
     )
 
-    return text.translate(
-        translation
-    )
+    return text.translate(translation)
 
 
-# =========================================================
-# PARSE NUMBER
-# =========================================================
+def extract_numbers(text):
 
-def parse_number(text):
+    text = normalize_digits(text)
 
-    if text is None:
-        return None
+    text = text.replace(",", "")
+    text = text.replace("٬", "")
 
-    text = normalize_digits(
-        clean_text(text)
-    )
-
-    text = text.replace(
-        ",",
-        ""
-    )
-
-    text = text.replace(
-        "٬",
-        ""
-    )
-
-    match = re.search(
+    numbers = re.findall(
         r"\d+(?:\.\d+)?",
         text
     )
 
-    if not match:
-        return None
-
-    try:
-
-        value = float(
-            match.group()
-        )
-
-        if value.is_integer():
-            return int(value)
-
-        return value
-
-    except Exception:
-
-        return None
+    return [
+        float(x)
+        for x in numbers
+    ]
 
 
 # =========================================================
-# EXTRACT SIZE
+# PARSE FACTORY PAGE
 # =========================================================
 
-def extract_size(text):
-
-    text = normalize_digits(
-        clean_text(text)
-    )
-
-    match = re.search(
-        r"\d+",
-        text
-    )
-
-    if not match:
-        return None
-
-    try:
-
-        size = int(
-            match.group()
-        )
-
-    except Exception:
-
-        return None
-
-    # سایز منطقی میلگرد
-    if size < 8 or size > 50:
-        return None
-
-    return size
-
-
-# =========================================================
-# EXTRACT EX-TAX PRICE
-# =========================================================
-
-def extract_price_from_cell(cell):
-
-    """
-    فقط قیمت قبل از ارزش افزوده را می‌خواند.
-
-    ساختار مورد انتظار Pivan:
-
-        <span class="in-tax">79,000</span>
-        <span class="ex-tax">71,800</span>
-
-    بنابراین قیمت اصلی پروژه:
-
-        ex-tax
-
-    است.
-
-    اگر ex-tax وجود نداشته باشد،
-    قیمت را حدس نمی‌زنیم.
-    """
-
-    if cell is None:
-        return None
-
-    ex_tax = cell.select_one(
-        "span.ex-tax"
-    )
-
-    if ex_tax is None:
-        return None
-
-    return parse_number(
-        ex_tax.get_text(
-            " ",
-            strip=True
-        )
-    )
-
-
-# =========================================================
-# EXTRACT FLUCTUATION
-# =========================================================
-
-def extract_fluctuation(cell):
-
-    if cell is None:
-        return None
-
-    text = normalize_digits(
-        clean_text(
-            cell.get_text(
-                " ",
-                strip=True
-            )
-        )
-    )
-
-    match = re.search(
-        r"[-+]?\d+(?:\.\d+)?",
-        text
-    )
-
-    if not match:
-        return None
-
-    try:
-
-        return float(
-            match.group()
-        )
-
-    except Exception:
-
-        return None
-
-
-# =========================================================
-# FETCH PIVAN
-# =========================================================
-
-def fetch_pivan():
+def parse_factory(
+    factory_key,
+    factory_data
+):
 
     print()
     print("=" * 70)
     print("PIVAN STEEL PRICE")
     print("=" * 70)
 
-    print(
-        "URL:",
-        PIVAN_URL
+    url = factory_data["url"]
+
+    print("FACTORY:", factory_data["name"])
+    print("URL:", url)
+
+    response = requests.get(
+        url,
+        headers=HEADERS,
+        timeout=TIMEOUT
     )
 
-    try:
+    response.raise_for_status()
 
-        response = session.get(
-            PIVAN_URL,
-            timeout=30
-        )
+    print("HTTP:", response.status_code)
+    print("LENGTH:", len(response.text))
 
-        print(
-            "HTTP:",
-            response.status_code
-        )
-
-        print(
-            "LENGTH:",
-            len(response.text)
-        )
-
-        response.raise_for_status()
-
-        return response.text
-
-    except Exception as e:
-
-        print(
-            "REQUEST ERROR:",
-            e
-        )
-
-        return ""
-
-
-# =========================================================
-# FIND PRICE TABLE
-# =========================================================
-
-def find_price_table(soup):
-
-    tables = soup.find_all(
-        "table"
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser"
     )
 
-    print(
-        "TABLE COUNT:",
-        len(tables)
-    )
+    tables = soup.find_all("table")
 
-    for index, table in enumerate(
-        tables,
-        start=1
-    ):
+    print("TABLE COUNT:", len(tables))
 
-        text = clean_text(
-            table.get_text(
-                " ",
-                strip=True
-            )
+    if not tables:
+
+        raise RuntimeError(
+            f"No table found for {factory_key}"
         )
 
-        # جدول اصلی قیمت میلگرد
+    selected_table = None
+
+    # -----------------------------------------------------
+    # Find table containing size / price
+    # -----------------------------------------------------
+
+    for index, table in enumerate(tables):
+
+        table_text = table.get_text(
+            " ",
+            strip=True
+        )
+
         if (
-            "سایز" in text
-            and "قیمت" in text
-            and "نوسان" in text
+            "سایز" in table_text
+            and "قیمت" in table_text
         ):
+
+            selected_table = table
 
             print(
                 "SELECTED PRICE TABLE:",
                 index
             )
 
-            return table
+            break
 
-    return None
+    if selected_table is None:
 
-
-# =========================================================
-# EXTRACT PRODUCTS
-# =========================================================
-
-def extract_products(html):
-
-    soup = BeautifulSoup(
-        html,
-        "html.parser"
-    )
-
-    table = find_price_table(
-        soup
-    )
-
-    if table is None:
-
-        print()
-        print(
-            "ERROR: PRICE TABLE NOT FOUND"
+        raise RuntimeError(
+            f"Price table not found for {factory_key}"
         )
 
-        return []
+    # -----------------------------------------------------
+    # Extract rows
+    # -----------------------------------------------------
 
     products = []
 
-    rows = table.find_all(
-        "tr"
-    )
+    rows = selected_table.find_all("tr")
 
     print()
     print("=" * 70)
@@ -379,385 +180,211 @@ def extract_products(html):
     for row in rows:
 
         cells = row.find_all(
-            "td"
+            ["td", "th"]
         )
 
-        if len(cells) < 5:
+        if not cells:
             continue
 
-        values = [
-
-            clean_text(
-                cell.get_text(
-                    " ",
-                    strip=True
-                )
+        cell_texts = [
+            c.get_text(
+                " ",
+                strip=True
             )
-
-            for cell in cells
+            for c in cells
         ]
 
+        full_text = " ".join(
+            cell_texts
+        )
+
+        # Ignore header
+        if "سایز" in full_text:
+            continue
+
         # -------------------------------------------------
-        # COLUMN STRUCTURE
-        #
-        # 0 = سایز
-        # 1 = استاندارد
-        # 2 = محل تحویل
-        # 3 = واحد
-        # 4 = قیمت
-        # 5 = نوسان
+        # SIZE
         # -------------------------------------------------
 
-        size = extract_size(
-            values[0]
-        )
+        size = None
+
+        for text in cell_texts:
+
+            nums = extract_numbers(text)
+
+            if not nums:
+                continue
+
+            candidate = int(nums[0])
+
+            # Steel sizes
+            if 6 <= candidate <= 40:
+
+                size = candidate
+                break
 
         if size is None:
             continue
-
-        standard = values[1]
-
-        delivery = values[2]
-
-        unit = values[3]
 
         # -------------------------------------------------
         # PRICE
         # -------------------------------------------------
 
-        price = extract_price_from_cell(
-            cells[4]
-        )
+        price_candidates = []
 
-        # قیمت ex-tax الزامی است
-        if price is None:
+        for text in cell_texts:
+
+            nums = extract_numbers(text)
+
+            for value in nums:
+
+                # Ignore size / small numbers
+                if value >= 10000:
+
+                    price_candidates.append(
+                        int(value)
+                    )
+
+        if not price_candidates:
 
             print(
                 f"⚠️ SIZE {size}: "
-                "EX-TAX PRICE NOT AVAILABLE"
+                "PRICE NOT AVAILABLE"
             )
 
             continue
 
         # -------------------------------------------------
-        # FLUCTUATION
+        # PIVAN TABLE:
+        # usually first = with VAT
+        # last = without VAT
         # -------------------------------------------------
 
-        fluctuation = None
-
-        if len(cells) >= 6:
-
-            fluctuation = extract_fluctuation(
-                cells[5]
-            )
-
-        # -------------------------------------------------
-        # PRODUCT
-        # -------------------------------------------------
-
-        product = {
-
-            "factory":
-                FACTORY,
-
-            "brand":
-                BRAND,
-
-            "product":
-                PRODUCT,
-
-            "size":
-                size,
-
-            "standard":
-                standard,
-
-            "delivery":
-                delivery,
-
-            "unit":
-                unit,
-
-            # قیمت اصلی:
-            # قبل از ارزش افزوده
-            "price":
-                price,
-
-            "price_unit":
-                "تومان/کیلوگرم",
-
-            "price_basis":
-                "ex_tax",
-
-            "fluctuation_percent":
-                fluctuation,
-
-            "source":
-                "Pivan",
-
-            "source_url":
-                PIVAN_URL
-        }
-
-        products.append(
-            product
-        )
+        steel_price = price_candidates[-1]
 
         print(
             f"SIZE {size}: "
-            f"EX-TAX PRICE = {price:,}"
+            f"EX-TAX PRICE = "
+            f"{steel_price:,}"
         )
 
-    # =====================================================
-    # REMOVE DUPLICATES
-    # =====================================================
+        products.append({
+            "size": size,
+            "price": steel_price
+        })
 
-    unique = []
+    # -----------------------------------------------------
+    # Remove duplicate sizes
+    # -----------------------------------------------------
 
-    seen = set()
+    unique = {}
 
     for product in products:
 
-        key = (
+        size = product["size"]
 
-            product["factory"],
+        unique[size] = product
 
-            product["size"],
+    products = list(
+        unique.values()
+    )
 
-            product["standard"],
-
-            product["delivery"]
-        )
-
-        if key in seen:
-            continue
-
-        seen.add(
-            key
-        )
-
-        unique.append(
-            product
-        )
-
-    # =====================================================
-    # SORT
-    # =====================================================
-
-    unique.sort(
+    products.sort(
         key=lambda x: x["size"]
     )
 
-    return unique
-
-
-# =========================================================
-# PUBLIC FUNCTION
-# =========================================================
-
-def get_prices():
-
-    """
-    تابع عمومی مورد استفاده market.py
-
-    خروجی:
-
-        [
-            {
-                "factory": "...",
-                "brand": "KSC",
-                "product": "میلگرد",
-                "size": 14,
-                "standard": "A3",
-                "delivery": "کارخانه",
-                "unit": "...",
-                "price": 71800,
-                ...
-            }
-        ]
-    """
-
-    html = fetch_pivan()
-
-    if not html:
-
-        raise RuntimeError(
-            "Pivan HTML دریافت نشد."
-        )
-
-    products = extract_products(
-        html
+    print(
+        "Steel products found:",
+        len(products)
     )
-
-    if not products:
-
-        raise RuntimeError(
-            "هیچ قیمت میلگردی از Pivan استخراج نشد."
-        )
 
     return products
 
 
 # =========================================================
-# SAVE JSON
+# GET ALL THREE FACTORIES
 # =========================================================
 
-def save_json(products):
+def get_all_prices():
 
-    data = {
+    result = {}
 
-        "source":
-            "Pivan",
+    for key, factory in FACTORIES.items():
 
-        "source_url":
-            PIVAN_URL,
+        try:
 
-        "factory":
-            FACTORY,
+            prices = parse_factory(
+                key,
+                factory
+            )
 
-        "brand":
-            BRAND,
+            result[key] = {
+                "name":
+                    factory["name"],
 
-        "product":
-            PRODUCT,
+                "prices":
+                    prices
+            }
 
-        "price_basis":
-            "ex_tax",
+        except Exception as e:
 
-        "price_description":
-            "قیمت قبل از ارزش افزوده",
+            print(
+                f"ERROR {key}:",
+                e
+            )
 
-        "updated_at":
-            datetime.now(
-                timezone.utc
-            ).isoformat(),
+            result[key] = {
+                "name":
+                    factory["name"],
 
-        "count":
-            len(products),
+                "prices":
+                    []
+            }
 
-        "prices":
-            products
-    }
-
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            data,
-            file,
-            ensure_ascii=False,
-            indent=2
-        )
-
-    return data
+    return result
 
 
 # =========================================================
-# PRINT RESULT
+# COMPATIBILITY
 # =========================================================
 
-def print_result(products):
+def get_prices():
+
+    """
+    Compatibility with previous code.
+
+    Returns Nishabour prices only.
+    """
+
+    return parse_factory(
+        "نیشابور",
+        FACTORIES["نیشابور"]
+    )
+
+
+# =========================================================
+# TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    data = get_all_prices()
 
     print()
     print("=" * 70)
     print("FINAL RESULT")
     print("=" * 70)
 
-    print(
-        "PRODUCTS FOUND:",
-        len(products)
-    )
-
-    print()
-
-    for product in products:
-
-        price = product[
-            "price"
-        ]
-
-        print(
-
-            f"🏭 {product['factory']} | "
-
-            f"📏 سایز {product['size']} | "
-
-            f"📋 {product['standard']} | "
-
-            f"💰 {price:,} تومان | "
-
-            f"📍 {product['delivery']}"
-        )
-
-    print()
-    print("=" * 70)
-
-
-# =========================================================
-# MAIN
-# =========================================================
-
-def main():
-
-    try:
-
-        products = get_prices()
-
-        save_json(
-            products
-        )
-
-        print_result(
-            products
-        )
+    for factory_key, factory in data.items():
 
         print()
         print(
-            "JSON FILE:",
-            OUTPUT_FILE
+            factory["name"]
         )
 
-        print(
-            "TOTAL:",
-            len(products)
-        )
+        for item in factory["prices"]:
 
-        print(
-            "PRICE BASIS:",
-            "قیمت قبل از ارزش افزوده"
-        )
-
-        print()
-        print("=" * 70)
-        print(
-            "PRICE TEST FINISHED SUCCESSFULLY"
-        )
-        print("=" * 70)
-
-    except Exception as e:
-
-        print()
-        print("=" * 70)
-        print(
-            "PRICE TEST FAILED"
-        )
-        print("=" * 70)
-
-        print(
-            "ERROR:",
-            e
-        )
-
-        raise
-
-
-# =========================================================
-# RUN
-# =========================================================
-
-if __name__ == "__main__":
-
-    main()
+            print(
+                f"{item['size']} : "
+                f"{item['price']:,} تومان"
+            )
