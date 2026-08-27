@@ -29,7 +29,9 @@ HEADERS = {
         "application/xml;q=0.9,image/avif,image/webp,"
         "image/apng,*/*;q=0.8"
     ),
-    "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Language": (
+        "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7"
+    ),
 }
 
 
@@ -70,6 +72,7 @@ def clean_number(text):
 
     try:
         return int(float(match.group()))
+
     except Exception:
         return None
 
@@ -91,15 +94,16 @@ def extract_size(text):
         return None
 
     try:
+
         size = int(match.group())
 
-        # فقط سایزهای منطقی میلگرد
         if size < 8 or size > 50:
             return None
 
         return size
 
     except Exception:
+
         return None
 
 
@@ -112,7 +116,10 @@ def extract_price(price_cell):
     if price_cell is None:
         return None
 
+    # -----------------------------------------------------
     # فقط قیمت قبل از ارزش افزوده
+    # -----------------------------------------------------
+
     ex_tax = price_cell.select_one(
         "span.ex-tax"
     )
@@ -120,11 +127,47 @@ def extract_price(price_cell):
     if ex_tax is None:
         return None
 
+    price_text = ex_tax.get_text(
+        " ",
+        strip=True
+    )
+
+    # اگر سایت نوشته باشد:
+    # تماس بگیرید
+    if "تماس" in price_text:
+        return None
+
     return clean_number(
-        ex_tax.get_text(
-            " ",
-            strip=True
-        )
+        price_text
+    )
+
+
+# =========================================================
+# IN TAX PRICE
+# =========================================================
+
+def extract_in_tax_price(price_cell):
+
+    if price_cell is None:
+        return None
+
+    in_tax = price_cell.select_one(
+        "span.in-tax"
+    )
+
+    if in_tax is None:
+        return None
+
+    price_text = in_tax.get_text(
+        " ",
+        strip=True
+    )
+
+    if "تماس" in price_text:
+        return None
+
+    return clean_number(
+        price_text
     )
 
 
@@ -153,9 +196,13 @@ def extract_fluctuation(cell):
         return None
 
     try:
-        return float(match.group())
+
+        return float(
+            match.group()
+        )
 
     except Exception:
+
         return None
 
 
@@ -182,7 +229,9 @@ def get_page():
 
 def find_price_table(soup):
 
-    tables = soup.find_all("table")
+    tables = soup.find_all(
+        "table"
+    )
 
     for table in tables:
 
@@ -217,23 +266,28 @@ def parse_prices(html):
     )
 
     if table is None:
+
         raise RuntimeError(
             "جدول قیمت میلگرد در Pivan پیدا نشد."
         )
 
     products = []
 
-    rows = table.find_all("tr")
+    rows = table.find_all(
+        "tr"
+    )
 
     for row in rows:
 
-        cells = row.find_all("td")
+        cells = row.find_all(
+            ["th", "td"]
+        )
 
         if len(cells) < 5:
             continue
 
         # -------------------------------------------------
-        # COLUMNS
+        # SIZE
         # -------------------------------------------------
 
         size = extract_size(
@@ -246,27 +300,53 @@ def parse_prices(html):
         if size is None:
             continue
 
+        # -------------------------------------------------
+        # STANDARD
+        # -------------------------------------------------
+
         standard = cells[1].get_text(
             " ",
             strip=True
-        )
+        ).strip()
+
+        # -------------------------------------------------
+        # DELIVERY
+        # -------------------------------------------------
 
         delivery = cells[2].get_text(
             " ",
             strip=True
-        )
+        ).strip()
+
+        # -------------------------------------------------
+        # UNIT
+        # -------------------------------------------------
 
         unit = cells[3].get_text(
             " ",
             strip=True
-        )
+        ).strip()
+
+        # -------------------------------------------------
+        # PRICE CELL
+        # -------------------------------------------------
+
+        price_cell = cells[4]
 
         # -------------------------------------------------
         # EX-TAX PRICE
         # -------------------------------------------------
 
         price = extract_price(
-            cells[4]
+            price_cell
+        )
+
+        # -------------------------------------------------
+        # IN-TAX PRICE
+        # -------------------------------------------------
+
+        in_tax_price = extract_in_tax_price(
+            price_cell
         )
 
         # -------------------------------------------------
@@ -282,37 +362,64 @@ def parse_prices(html):
             )
 
         # -------------------------------------------------
+        # IMPORTANT
+        # -------------------------------------------------
+        # محصول بدون قیمت واقعی وارد خروجی نشود
+        # -------------------------------------------------
+
+        if price is None:
+            continue
+
+        # -------------------------------------------------
         # PRODUCT
         # -------------------------------------------------
 
         products.append({
 
-            "factory": FACTORY,
+            "factory":
+                FACTORY,
 
-            "brand": BRAND,
+            "brand":
+                BRAND,
 
-            "product": PRODUCT,
+            "product":
+                PRODUCT,
 
-            "size": size,
+            "size":
+                size,
 
-            "standard": standard,
+            "standard":
+                standard,
 
-            "delivery": delivery,
+            "delivery":
+                delivery,
 
-            "unit": unit,
+            "unit":
+                unit,
 
-            # قیمت قبل از ارزش افزوده
-            "price": price,
+            # قیمت اصلی پروژه
+            # قبل از ارزش افزوده
+            "price":
+                price,
 
-            "price_unit": "تومان/کیلوگرم",
+            # قیمت با ارزش افزوده
+            "in_tax_price":
+                in_tax_price,
 
-            "price_basis": "ex_tax",
+            "price_unit":
+                "تومان/کیلوگرم",
 
-            "fluctuation_percent": fluctuation,
+            "price_basis":
+                "ex_tax",
 
-            "source": "Pivan",
+            "fluctuation_percent":
+                fluctuation,
 
-            "source_url": URL,
+            "source":
+                "Pivan",
+
+            "source_url":
+                URL,
         })
 
     # =====================================================
@@ -337,9 +444,14 @@ def parse_prices(html):
 
         seen.add(key)
 
-        unique.append(item)
+        unique.append(
+            item
+        )
 
-    # مرتب‌سازی سایز
+    # =====================================================
+    # SORT BY SIZE
+    # =====================================================
+
     unique.sort(
         key=lambda x: x["size"]
     )
