@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-import json
 
 
 # =========================================================
@@ -12,6 +11,7 @@ URL = "https://pivan.co/brands/khorasan-steel-neishabour/rebar/"
 
 FACTORY = "فولاد خراسان نیشابور"
 PRODUCT = "میلگرد"
+BRAND = "KSC"
 
 
 # =========================================================
@@ -29,30 +29,18 @@ HEADERS = {
         "application/xml;q=0.9,image/avif,image/webp,"
         "image/apng,*/*;q=0.8"
     ),
-    "Accept-Language": (
-        "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7"
-    ),
+    "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
 
 # =========================================================
-# SESSION
-# =========================================================
-
-session = requests.Session()
-session.headers.update(HEADERS)
-
-
-# =========================================================
-# NORMALIZE DIGITS
+# NUMBER
 # =========================================================
 
 def normalize_digits(text):
 
-    if text is None:
+    if not text:
         return ""
-
-    text = str(text)
 
     table = str.maketrans(
         "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
@@ -62,43 +50,13 @@ def normalize_digits(text):
     return text.translate(table)
 
 
-# =========================================================
-# CLEAN TEXT
-# =========================================================
-
-def clean_text(text):
-
-    if text is None:
-        return ""
-
-    text = normalize_digits(text)
-
-    text = text.replace("\xa0", " ")
-    text = text.replace("\u200c", " ")
-    text = text.replace("\u200f", "")
-    text = text.replace("\u200e", "")
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
-
-    return text.strip()
-
-
-# =========================================================
-# PARSE NUMBER
-# =========================================================
-
-def parse_number(text):
-
-    text = clean_text(text)
+def clean_number(text):
 
     if not text:
         return None
 
-    # حذف جداکننده‌های هزارگان
+    text = normalize_digits(text)
+
     text = text.replace(",", "")
     text = text.replace("٬", "")
 
@@ -111,25 +69,18 @@ def parse_number(text):
         return None
 
     try:
-
-        value = float(
-            match.group()
-        )
-
-        return int(value)
-
+        return int(float(match.group()))
     except Exception:
-
         return None
 
 
 # =========================================================
-# EXTRACT SIZE
+# SIZE
 # =========================================================
 
 def extract_size(text):
 
-    text = clean_text(text)
+    text = normalize_digits(text)
 
     match = re.search(
         r"\d+",
@@ -140,78 +91,87 @@ def extract_size(text):
         return None
 
     try:
+        size = int(match.group())
 
-        size = int(
-            match.group()
-        )
+        # فقط سایزهای منطقی میلگرد
+        if size < 8 or size > 50:
+            return None
+
+        return size
 
     except Exception:
-
         return None
-
-    # محدوده منطقی میلگرد
-    if size < 8 or size > 50:
-        return None
-
-    return size
 
 
 # =========================================================
-# EXTRACT EX-TAX PRICE
+# PRICE
 # =========================================================
 
-def extract_ex_tax_price(cell):
+def extract_price(price_cell):
+
+    if price_cell is None:
+        return None
+
+    # فقط قیمت قبل از ارزش افزوده
+    ex_tax = price_cell.select_one(
+        "span.ex-tax"
+    )
+
+    if ex_tax is None:
+        return None
+
+    return clean_number(
+        ex_tax.get_text(
+            " ",
+            strip=True
+        )
+    )
+
+
+# =========================================================
+# FLUCTUATION
+# =========================================================
+
+def extract_fluctuation(cell):
 
     if cell is None:
         return None
 
-    # -----------------------------------------------------
-    # اولویت قطعی:
-    # span.ex-tax
-    # -----------------------------------------------------
-
-    ex_tax = cell.select_one(
-        "span.ex-tax"
+    text = normalize_digits(
+        cell.get_text(
+            " ",
+            strip=True
+        )
     )
 
-    if ex_tax:
+    match = re.search(
+        r"[-+]?\d+(?:\.\d+)?",
+        text
+    )
 
-        price = parse_number(
-            ex_tax.get_text(
-                " ",
-                strip=True
-            )
-        )
+    if not match:
+        return None
 
-        if price is not None:
-            return price
+    try:
+        return float(match.group())
 
-    # -----------------------------------------------------
-    # مهم:
-    # اگر ex-tax وجود نداشت، از متن کامل سلول
-    # قیمت استخراج نمی‌کنیم.
-    #
-    # چون ممکن است قیمت in-tax باشد.
-    # -----------------------------------------------------
-
-    return None
+    except Exception:
+        return None
 
 
 # =========================================================
-# FETCH PAGE
+# GET PAGE
 # =========================================================
 
 def get_page():
 
-    response = session.get(
+    response = requests.get(
         URL,
+        headers=HEADERS,
         timeout=30
     )
 
     response.raise_for_status()
-
-    # تشخیص encoding واقعی
-    response.encoding = response.apparent_encoding
 
     return response.text
 
@@ -222,27 +182,13 @@ def get_page():
 
 def find_price_table(soup):
 
-    tables = soup.find_all(
-        "table"
-    )
-
-    if not tables:
-
-        raise RuntimeError(
-            "هیچ جدول قیمتی در صفحه پیدا نشد."
-        )
-
-    # -----------------------------------------------------
-    # جستجوی جدول اصلی
-    # -----------------------------------------------------
+    tables = soup.find_all("table")
 
     for table in tables:
 
-        text = clean_text(
-            table.get_text(
-                " ",
-                strip=True
-            )
+        text = table.get_text(
+            " ",
+            strip=True
         )
 
         if (
@@ -250,37 +196,13 @@ def find_price_table(soup):
             and "قیمت" in text
             and "نوسان" in text
         ):
-
             return table
 
-    # -----------------------------------------------------
-    # حالت دوم:
-    # بعضی تغییرات HTML ممکن است "سایز" را نداشته باشند.
-    # -----------------------------------------------------
-
-    for table in tables:
-
-        text = clean_text(
-            table.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if (
-            "قیمت" in text
-            and "نوسان" in text
-        ):
-
-            return table
-
-    raise RuntimeError(
-        "جدول قیمت میلگرد پیدا نشد."
-    )
+    return None
 
 
 # =========================================================
-# PARSE TABLE
+# PARSE
 # =========================================================
 
 def parse_prices(html):
@@ -294,83 +216,57 @@ def parse_prices(html):
         soup
     )
 
-    rows = table.find_all(
-        "tr"
-    )
+    if table is None:
+        raise RuntimeError(
+            "جدول قیمت میلگرد در Pivan پیدا نشد."
+        )
 
     products = []
 
-    # =====================================================
-    # READ ROWS
-    # =====================================================
+    rows = table.find_all("tr")
 
     for row in rows:
 
-        cells = row.find_all(
-            ["td", "th"]
-        )
+        cells = row.find_all("td")
 
         if len(cells) < 5:
             continue
 
         # -------------------------------------------------
-        # ستون‌ها
-        #
-        # 0 = سایز
-        # 1 = استاندارد
-        # 2 = محل تحویل
-        # 3 = واحد
-        # 4 = قیمت
-        # 5 = نوسان
+        # COLUMNS
         # -------------------------------------------------
 
-        size_text = clean_text(
+        size = extract_size(
             cells[0].get_text(
                 " ",
                 strip=True
             )
         )
 
-        standard = clean_text(
-            cells[1].get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        delivery = clean_text(
-            cells[2].get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        unit = clean_text(
-            cells[3].get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        price_cell = cells[4]
-
-        # -------------------------------------------------
-        # SIZE
-        # -------------------------------------------------
-
-        size = extract_size(
-            size_text
-        )
-
         if size is None:
             continue
 
+        standard = cells[1].get_text(
+            " ",
+            strip=True
+        )
+
+        delivery = cells[2].get_text(
+            " ",
+            strip=True
+        )
+
+        unit = cells[3].get_text(
+            " ",
+            strip=True
+        )
+
         # -------------------------------------------------
-        # PRICE
+        # EX-TAX PRICE
         # -------------------------------------------------
 
-        price = extract_ex_tax_price(
-            price_cell
+        price = extract_price(
+            cells[4]
         )
 
         # -------------------------------------------------
@@ -379,82 +275,45 @@ def parse_prices(html):
 
         fluctuation = None
 
-        if len(cells) >= 6:
+        if len(cells) > 5:
 
-            fluctuation_text = clean_text(
-                cells[5].get_text(
-                    " ",
-                    strip=True
-                )
+            fluctuation = extract_fluctuation(
+                cells[5]
             )
-
-            fluctuation_text = (
-                fluctuation_text
-                .replace("%", "")
-            )
-
-            match = re.search(
-                r"[-+]?\d+(?:\.\d+)?",
-                fluctuation_text
-            )
-
-            if match:
-
-                try:
-
-                    fluctuation = float(
-                        match.group()
-                    )
-
-                except Exception:
-
-                    fluctuation = None
 
         # -------------------------------------------------
         # PRODUCT
         # -------------------------------------------------
 
-        product = {
+        products.append({
 
-            "factory":
-                FACTORY,
+            "factory": FACTORY,
 
-            "product":
-                PRODUCT,
+            "brand": BRAND,
 
-            "size":
-                size,
+            "product": PRODUCT,
 
-            "standard":
-                standard,
+            "size": size,
 
-            "delivery":
-                delivery,
+            "standard": standard,
 
-            "unit":
-                unit,
+            "delivery": delivery,
 
-            # قیمت اصلی:
-            # قبل از ارزش افزوده
-            "price":
-                price,
+            "unit": unit,
 
-            "price_unit":
-                "تومان/کیلوگرم",
+            # قیمت قبل از ارزش افزوده
+            "price": price,
 
-            "fluctuation_percent":
-                fluctuation,
+            "price_unit": "تومان/کیلوگرم",
 
-            "source":
-                "Pivan",
+            "price_basis": "ex_tax",
 
-            "source_url":
-                URL
-        }
+            "fluctuation_percent": fluctuation,
 
-        products.append(
-            product
-        )
+            "source": "Pivan",
+
+            "source_url": URL,
+        })
 
     # =====================================================
     # REMOVE DUPLICATES
@@ -464,31 +323,25 @@ def parse_prices(html):
 
     seen = set()
 
-    for product in products:
+    for item in products:
 
         key = (
-            product["size"],
-            product["standard"],
-            product["delivery"]
+            item["factory"],
+            item["size"],
+            item["standard"],
+            item["delivery"],
         )
 
         if key in seen:
             continue
 
-        seen.add(
-            key
-        )
+        seen.add(key)
 
-        unique.append(
-            product
-        )
+        unique.append(item)
 
-    # =====================================================
-    # SORT BY SIZE
-    # =====================================================
-
+    # مرتب‌سازی سایز
     unique.sort(
-        key=lambda item: item["size"]
+        key=lambda x: x["size"]
     )
 
     return unique
@@ -502,130 +355,6 @@ def get_prices():
 
     html = get_page()
 
-    products = parse_prices(
+    return parse_prices(
         html
     )
-
-    return products
-
-
-# =========================================================
-# SAVE JSON
-# =========================================================
-
-def save_json(
-    products,
-    filename="pivan_prices.json"
-):
-
-    data = {
-
-        "source":
-            "Pivan",
-
-        "factory":
-            FACTORY,
-
-        "product":
-            PRODUCT,
-
-        "url":
-            URL,
-
-        "price_basis":
-            "ex_tax",
-
-        "price_description":
-            "قیمت قبل از ارزش افزوده",
-
-        "count":
-            len(products),
-
-        "prices":
-            products
-    }
-
-    with open(
-        filename,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            data,
-            file,
-            ensure_ascii=False,
-            indent=2
-        )
-
-    return data
-
-
-# =========================================================
-# DIRECT TEST
-# =========================================================
-
-if __name__ == "__main__":
-
-    print()
-    print("=" * 70)
-    print("PIVAN PRICE SCRAPER")
-    print("=" * 70)
-
-    try:
-
-        prices = get_prices()
-
-        print()
-        print(
-            f"PRODUCTS FOUND: {len(prices)}"
-        )
-
-        print()
-
-        for item in prices:
-
-            if item["price"] is None:
-
-                price_text = "تماس بگیرید"
-
-            else:
-
-                price_text = (
-                    f'{item["price"]:,}'
-                )
-
-            print(
-                f'🏭 {item["factory"]} | '
-                f'📏 {item["size"]} | '
-                f'📋 {item["standard"]} | '
-                f'💰 {price_text} تومان | '
-                f'📍 {item["delivery"]}'
-            )
-
-        save_json(
-            prices
-        )
-
-        print()
-        print(
-            "JSON SAVED: pivan_prices.json"
-        )
-
-        print()
-        print("=" * 70)
-        print("PIVAN TEST FINISHED")
-        print("=" * 70)
-
-    except Exception as e:
-
-        print()
-        print(
-            "❌ ERROR:"
-        )
-
-        print(
-            str(e)
-        )
-
-        raise
