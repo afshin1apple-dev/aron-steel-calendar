@@ -1,86 +1,65 @@
-import os
 import re
 import requests
 from bs4 import BeautifulSoup
 # =========================================================
 # SETTINGS
 # =========================================================
-PIVAN_BASE = "https://pivan.co"
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0 Safari/537.36"
+    )
+}
 TIMEOUT = 30
 # =========================================================
 # CHANNEL FACTORIES
 # =========================================================
 CHANNEL_FACTORIES = [
-    # -----------------------------------------------------
-    # ناودانی سبک
-    # -----------------------------------------------------
     {
-        "key": "سبک ناب",
         "name": "ناودانی سبک ناب تبریز",
+        "display": "سبک ناب",
         "type": "سبک",
-        "url": (
-            "https://pivan.co/brands/"
-            "tabriz-pure-steel/uchannel/"
-        )
+        "url": "https://pivan.co/brands/tabriz-pure-steel/uchannel/",
     },
     {
-        "key": "سبک شکفته",
         "name": "ناودانی سبک شکفته",
+        "display": "سبک شکفته",
         "type": "سبک",
-        "url": (
-            "https://pivan.co/brands/"
-            "shekofteh-steel/uchannel/"
-        )
+        "url": "https://pivan.co/brands/shekofteh-steel/uchannel/",
     },
-    # -----------------------------------------------------
-    # ناودانی سنگین
-    # -----------------------------------------------------
     {
-        "key": "سنگین ناب",
         "name": "ناودانی سنگین ناب تبریز",
+        "display": "سنگین ناب",
         "type": "سنگین",
-        "url": (
-            "https://pivan.co/brands/"
-            "tabriz-pure-steel/uchannel/"
-        )
+        "url": "https://pivan.co/brands/tabriz-pure-steel/uchannel/",
     },
     {
-        "key": "سنگین فایکو",
         "name": "ناودانی سنگین فایکو",
+        "display": "سنگین فایکو",
         "type": "سنگین",
-        "url": (
-            "https://pivan.co/brands/"
-            "iranian-alborz-steel-factory-faiko/"
-            "uchannel/"
-        )
+        "url": "https://pivan.co/brands/iranian-alborz-steel-factory-faiko/uchannel/",
     },
     {
-        "key": "سنگین ابهر",
         "name": "ناودانی سنگین ابهر",
+        "display": "سنگین ابهر",
         "type": "سنگین",
-        "url": (
-            "https://pivan.co/brands/"
-            "west-alborz-steel-complex-and-factory/"
-            "uchannel/"
-        )
+        "url": "https://pivan.co/brands/west-alborz-steel-complex-and-factory/uchannel/",
     },
     {
-        "key": "سنگین شکفته",
         "name": "ناودانی سنگین شکفته",
+        "display": "سنگین شکفته",
         "type": "سنگین",
-        "url": (
-            "https://pivan.co/brands/"
-            "shekofteh-steel/uchannel/"
-        )
-    }
+        "url": "https://pivan.co/brands/shekofteh-steel/uchannel/",
+    },
 ]
 # =========================================================
-# NUMBER NORMALIZER
+# NORMALIZE
 # =========================================================
-def normalize_digits(text):
-    if text is None:
+def normalize_text(value):
+    if value is None:
         return ""
-    text = str(text)
+    text = str(value)
     replacements = {
         "۰": "0",
         "۱": "1",
@@ -108,470 +87,295 @@ def normalize_digits(text):
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
-    return text
+    return re.sub(r"\s+", " ", text).strip()
 # =========================================================
-# CLEAN TEXT
+# PRICE PARSER
 # =========================================================
-def clean_text(text):
-    if text is None:
-        return ""
-    text = normalize_digits(text)
-    text = text.replace("\n", " ")
-    text = text.replace("\r", " ")
-    text = text.replace("\t", " ")
-    return " ".join(
-        text.split()
-    ).strip()
-# =========================================================
-# EXTRACT INTEGER
-# =========================================================
-def extract_number(text):
-    text = normalize_digits(text)
-    matches = re.findall(
-        r"\d+(?:\.\d+)?",
-        text
-    )
-    if not matches:
+def parse_channel_price(raw_price):
+    """
+    Pivan sometimes returns prices like:
+        88000 80000
+        89000 80900
+        91500 83200
+        110000 100000
+    For the channel we MUST use the SECOND number.
+    Examples:
+        88000 80000   -> 80000
+        89000 80900   -> 80900
+        91500 83200   -> 83200
+        110000 100000 -> 100000
+    If only one numeric value exists, use that value.
+    "تماس بگیرید" is NOT a price.
+    """
+    text = normalize_text(raw_price)
+    if not text:
+        return None
+    # Contact / unavailable
+    contact_words = [
+        "تماس بگیرید",
+        "تماس",
+        "استعلام",
+        "ناموجود",
+        "موجود نیست",
+        "-"
+    ]
+    if any(word in text for word in contact_words):
+        return None
+    # Extract all integer numbers
+    numbers = re.findall(r"\d+(?:\.\d+)?", text)
+    if not numbers:
         return None
     try:
-        value = matches[0]
-        if "." in value:
-            return float(value)
-        return int(value)
+        # IMPORTANT:
+        # When Pivan provides two prices, the SECOND is the
+        # actual current/channel price.
+        if len(numbers) >= 2:
+            price = float(numbers[-1])
+        else:
+            price = float(numbers[0])
+        return int(price)
     except Exception:
         return None
 # =========================================================
-# EXTRACT ALL NUMBERS
+# PRICE FORMAT
 # =========================================================
-def extract_numbers(text):
-    text = normalize_digits(text)
-    matches = re.findall(
-        r"\d+(?:\.\d+)?",
-        text
-    )
-    result = []
-    for value in matches:
-        try:
-            if "." in value:
-                result.append(float(value))
-            else:
-                result.append(int(value))
-        except Exception:
-            pass
-    return result
-# =========================================================
-# GET PAGE
-# =========================================================
-def get_page(url):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 "
-            "(Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 "
-            "(KHTML, like Gecko) "
-            "Chrome/126.0 Safari/537.36"
-        ),
-        "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
-        "Accept": (
-            "text/html,application/xhtml+xml,"
-            "application/xml;q=0.9,*/*;q=0.8"
-        )
-    }
-    response = requests.get(
-        url,
-        headers=headers,
-        timeout=TIMEOUT
-    )
-    response.raise_for_status()
-    return response.text
-# =========================================================
-# FIND PRICE IN CELL
-# =========================================================
-def extract_price_from_cell(cell):
-    if cell is None:
-        return None
-    # -----------------------------------------------------
-    # First inspect the complete visible text.
-    # -----------------------------------------------------
-    text = clean_text(
-        cell.get_text(
-            " ",
-            strip=True
-        )
-    )
-    if not text:
-        return None
-    # -----------------------------------------------------
-    # Ignore cells that clearly contain dimensions.
-    # -----------------------------------------------------
-    lower = text.lower()
-    if (
-        "طول" in text
-        or "سایز" in text
-        or "اندازه" in text
-    ):
-        return None
-    # -----------------------------------------------------
-    # Look for price-like numbers.
-    # -----------------------------------------------------
-    numbers = extract_numbers(
-        text
-    )
-    if not numbers:
-        return None
-    candidates = []
-    for number in numbers:
-        if not isinstance(number, (int, float)):
-            continue
-        # Dimensions are not prices.
-        if number in (6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30):
-            continue
-        # Percentage / small values.
-        if number < 1000:
-            continue
-        candidates.append(
-            int(number)
-        )
-    if not candidates:
-        return None
-    # -----------------------------------------------------
-    # Pivan prices are normally the largest numeric value
-    # inside the price cell.
-    # -----------------------------------------------------
-    return max(candidates)
-# =========================================================
-# PARSE ROW
-# =========================================================
-def parse_row(row, factory):
-    cells = row.find_all(
-        "td"
-    )
-    if not cells:
-        return None
-    cell_texts = [
-        clean_text(
-            cell.get_text(
-                " ",
-                strip=True
-            )
-        )
-        for cell in cells
-    ]
-    row_text = " | ".join(
-        cell_texts
-    )
-    # -----------------------------------------------------
-    # Ignore obvious header rows
-    # -----------------------------------------------------
-    if (
-        "سایز" in row_text
-        or "قیمت" in row_text
-        or "طول" in row_text
-        or "وزن" in row_text
-    ):
-        return None
-    # -----------------------------------------------------
-    # DEBUG: print exact row structure
-    # -----------------------------------------------------
-    print(
-        "RAW ROW:",
-        cell_texts
-    )
-    # -----------------------------------------------------
-    # SIZE
-    # -----------------------------------------------------
-    size = None
-    size_index = None
-    for index, text in enumerate(cell_texts):
-        numbers = extract_numbers(
-            text
-        )
-        for number in numbers:
-            if (
-                isinstance(number, int)
-                and 6 <= number <= 30
-            ):
-                size = number
-                size_index = index
-                break
-        if size is not None:
-            break
-    if size is None:
-        return None
-    # -----------------------------------------------------
-    # LENGTH
-    # -----------------------------------------------------
-    length = None
-    length_index = None
-    # First try cells other than size cell.
-    for index, text in enumerate(cell_texts):
-        if index == size_index:
-            continue
-        numbers = extract_numbers(
-            text
-        )
-        for number in numbers:
-            if number in (6, 12):
-                length = int(number)
-                length_index = index
-                break
-        if length is not None:
-            break
-    # -----------------------------------------------------
-    # PRICE
-    # -----------------------------------------------------
-    price = None
-    price_index = None
-    # Prefer cells after size/length.
-    for index, cell in enumerate(cells):
-        if index == size_index:
-            continue
-        if index == length_index:
-            continue
-        candidate = extract_price_from_cell(
-            cell
-        )
-        if candidate is not None:
-            price = candidate
-            price_index = index
-            break
-    # -----------------------------------------------------
-    # If price wasn't found, inspect every cell again.
-    # -----------------------------------------------------
+def format_price(price):
     if price is None:
-        for index, cell in enumerate(cells):
-            candidate = extract_price_from_cell(
-                cell
-            )
-            if candidate is not None:
-                price = candidate
-                price_index = index
-                break
-    # -----------------------------------------------------
-    # Validate
-    # -----------------------------------------------------
-    if price is None:
-        print(
-            f"SIZE {size}: PRICE NOT FOUND"
-        )
         return None
-    # -----------------------------------------------------
-    # If length is missing, do NOT blindly guess 12.
-    # -----------------------------------------------------
-    if length is None:
-        print(
-            f"SIZE {size} | "
-            f"PRICE {price:,} | "
-            f"LENGTH NOT FOUND"
-        )
+    return f"{price:,}"
+# =========================================================
+# SIZE PARSER
+# =========================================================
+def parse_size(value):
+    value = normalize_text(value)
+    match = re.search(r"\d+", value)
+    if not match:
         return None
-    product = {
-        "size": size,
-        "length": length,
-        "price": price,
-        "factory": factory["key"],
-        "factory_name": factory["name"],
-        "type": factory["type"]
-    }
-    print(
-        f"SIZE {size} | "
-        f"LENGTH {length} | "
-        f"PRICE {price:,}"
-    )
-    return product
+    try:
+        return int(match.group())
+    except Exception:
+        return None
 # =========================================================
-# PARSE UCHANNEL TABLE
+# LENGTH PARSER
 # =========================================================
-def parse_uchannel_table(
-    html,
-    factory
-):
-    soup = BeautifulSoup(
-        html,
-        "html.parser"
-    )
-    tables = soup.find_all(
-        "table"
-    )
-    print(
-        "TABLE COUNT:",
-        len(tables)
-    )
-    if not tables:
+def parse_length(value):
+    value = normalize_text(value)
+    match = re.search(r"\d+(?:\.\d+)?", value)
+    if not match:
+        return None
+    try:
+        number = float(match.group())
+        if number.is_integer():
+            return int(number)
+        return number
+    except Exception:
+        return None
+# =========================================================
+# FIND CHANNEL TABLE
+# =========================================================
+def find_channel_table(tables):
+    """
+    Pivan pages can contain several tables.
+    The channel table is normally the table whose rows contain
+    size + length + warehouse/factory + unit + price.
+    """
+    best_table = None
+    best_score = -1
+    for index, table in enumerate(tables):
+        rows = table.find_all("tr")
+        if not rows:
+            continue
+        score = 0
+        for row in rows:
+            cells = row.find_all(["td", "th"])
+            if not cells:
+                continue
+            values = [
+                normalize_text(cell.get_text(" ", strip=True))
+                for cell in cells
+            ]
+            row_text = " ".join(values)
+            # Size
+            if any(re.fullmatch(r"\d{1,2}", x) for x in values):
+                score += 2
+            # Length
+            if any(x in ["6", "12", "6 متر", "12 متر"] for x in values):
+                score += 2
+            # Unit
+            if "کیلوگرم" in row_text:
+                score += 2
+            # Price-like values
+            if re.search(r"\d{4,}", row_text):
+                score += 2
+        if score > best_score:
+            best_score = score
+            best_table = index
+    return best_table
+# =========================================================
+# EXTRACT TABLE
+# =========================================================
+def extract_channel_products(factory):
+    print()
+    print("=" * 70)
+    print("CHANNEL PRICE")
+    print("=" * 70)
+    print(f"FACTORY: {factory['name']}")
+    print(f"TYPE: {factory['type']}")
+    print(f"URL: {factory['url']}")
+    try:
+        response = requests.get(
+            factory["url"],
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        print(f"HTTP: {response.status_code}")
+        print(f"LENGTH: {len(response.text)}")
+        response.raise_for_status()
+    except Exception as e:
+        print(f"REQUEST ERROR: {e}")
         return []
-    # -----------------------------------------------------
-    # Current Pivan structure:
-    # first table = channel price table
-    # -----------------------------------------------------
-    table = tables[0]
-    print(
-        "SELECTED CHANNEL TABLE: 0"
-    )
-    rows = table.find_all(
-        "tr"
-    )
-    print(
-        "ROWS:",
-        len(rows)
-    )
+    soup = BeautifulSoup(response.text, "html.parser")
+    tables = soup.find_all("table")
+    print(f"TABLE COUNT: {len(tables)}")
+    if not tables:
+        print("NO TABLE FOUND")
+        return []
+    table_index = find_channel_table(tables)
+    if table_index is None:
+        print("CHANNEL TABLE NOT FOUND")
+        return []
+    print(f"SELECTED CHANNEL TABLE: {table_index}")
+    table = tables[table_index]
+    rows = table.find_all("tr")
+    print(f"ROWS: {len(rows)}")
     products = []
     for row in rows:
-        product = parse_row(
-            row,
-            factory
-        )
-        if product is not None:
-            products.append(
-                product
+        cells = row.find_all(["td", "th"])
+        if len(cells) < 5:
+            continue
+        values = [
+            normalize_text(cell.get_text(" ", strip=True))
+            for cell in cells
+        ]
+        # Debug
+        print(f"RAW ROW: {values}")
+        # -------------------------------------------------
+        # Expected Pivan structure:
+        #
+        # [size, length, location, unit, price, change, ...]
+        # -------------------------------------------------
+        size = parse_size(values[0])
+        length = parse_length(values[1])
+        if size is None:
+            continue
+        if length is None:
+            continue
+        # Unit must normally be kilogram
+        row_text = " ".join(values)
+        if "کیلوگرم" not in row_text:
+            continue
+        # Price normally lives in column 5
+        raw_price = values[4] if len(values) > 4 else ""
+        price = parse_channel_price(raw_price)
+        if price is None:
+            print(
+                f"SIZE {size}: PRICE NOT FOUND"
             )
+            continue
+        print(
+            f"SIZE {size} | "
+            f"LENGTH {length} | "
+            f"PRICE {format_price(price)}"
+        )
+        products.append(
+            {
+                "size": size,
+                "length": length,
+                "price": price,
+                "location": values[2] if len(values) > 2 else "",
+            }
+        )
+    # =====================================================
+    # REMOVE DUPLICATES
+    # =====================================================
+    # Same size + length can appear more than once.
+    # For example Shekofteh can have:
+    #
+    # 8 / 6 / warehouse
+    # 8 / 6 / factory
+    #
+    # For the channel we keep the FACTORY price when available.
+    #
+    # Otherwise keep the first valid record.
+    grouped = {}
+    for product in products:
+        key = (
+            product["size"],
+            product["length"]
+        )
+        location = normalize_text(product.get("location", ""))
+        is_factory = "کارخانه" in location
+        if key not in grouped:
+            grouped[key] = product
+            grouped[key]["_factory"] = is_factory
+        else:
+            old = grouped[key]
+            old_factory = old.get("_factory", False)
+            # Prefer کارخانه over انبار
+            if is_factory and not old_factory:
+                grouped[key] = product
+                grouped[key]["_factory"] = True
+    products = list(grouped.values())
+    # Sort by size then length
+    products.sort(
+        key=lambda x: (
+            x["size"],
+            x["length"]
+        )
+    )
+    # Remove internal field
+    for product in products:
+        product.pop("_factory", None)
+    print(f"VALID CHANNEL PRODUCTS: {len(products)}")
     return products
 # =========================================================
-# FETCH FACTORY
+# ALL FACTORIES
 # =========================================================
-def fetch_factory(factory):
+def get_all_channel_prices():
+    result = {}
+    for factory in CHANNEL_FACTORIES:
+        products = extract_channel_products(factory)
+        result[factory["display"]] = {
+            "name": factory["name"],
+            "type": factory["type"],
+            "products": products,
+        }
+    return result
+# =========================================================
+# FINAL RESULT
+# =========================================================
+def print_final_result(data):
     print()
-    print(
-        "=" * 70
-    )
-    print(
-        "CHANNEL PRICE"
-    )
-    print(
-        "=" * 70
-    )
-    print(
-        "FACTORY:",
-        factory["name"]
-    )
-    print(
-        "TYPE:",
-        factory["type"]
-    )
-    print(
-        "URL:",
-        factory["url"]
-    )
-    try:
-        html = get_page(
-            factory["url"]
-        )
-        print(
-            "HTTP: 200"
-        )
-        print(
-            "LENGTH:",
-            len(html)
-        )
-        prices = parse_uchannel_table(
-            html,
-            factory
-        )
-        # -------------------------------------------------
-        # Remove duplicate size + length.
-        #
-        # IMPORTANT:
-        # Last value wins only if the same exact
-        # size/length combination appears twice.
-        # -------------------------------------------------
-        unique = {}
-        for item in prices:
-            key = (
-                item["size"],
-                item["length"]
-            )
-            unique[key] = item
-        prices = list(
-            unique.values()
-        )
-        prices.sort(
-            key=lambda x: (
-                x["size"],
-                x["length"]
-            )
-        )
-        print(
-            "VALID CHANNEL PRODUCTS:",
-            len(prices)
-        )
-        return {
-            "key":
-                factory["key"],
-            "name":
-                factory["name"],
-            "type":
-                factory["type"],
-            "url":
-                factory["url"],
-            "prices":
-                prices
-        }
-    except Exception as e:
-        print(
-            "FACTORY ERROR:",
-            factory["name"],
-            e
-        )
-        return {
-            "key":
-                factory["key"],
-            "name":
-                factory["name"],
-            "type":
-                factory["type"],
-            "url":
-                factory["url"],
-            "prices":
-                []
-        }
+    print("=" * 70)
+    print("FINAL CHANNEL RESULT")
+    print("=" * 70)
+    for display, factory in data.items():
+        products = factory["products"]
+        print()
+        if products:
+            print(f"{display} -> ok")
+            for product in products:
+                print(
+                    f"ناودانی "
+                    f"{product['size']} - "
+                    f"{product['length']} متر : "
+                    f"{format_price(product['price'])} تومان"
+                )
+        else:
+            print(f"{display} -> NO VALID PRICE")
 # =========================================================
 # MAIN
 # =========================================================
-def main():
-    results = []
-    for factory in CHANNEL_FACTORIES:
-        result = fetch_factory(
-            factory
-        )
-        results.append(
-            result
-        )
-    # =====================================================
-    # FINAL RESULT
-    # =====================================================
-    print()
-    print(
-        "=" * 70
-    )
-    print(
-        "FINAL CHANNEL RESULT"
-    )
-    print(
-        "=" * 70
-    )
-    for factory in results:
-        print()
-        status = (
-            "ok"
-            if factory["prices"]
-            else "FAILED"
-        )
-        print(
-            f"{factory['key']} -> {status}"
-        )
-        for item in factory["prices"]:
-            print(
-                f"ناودانی "
-                f"{item['size']} - "
-                f"{item['length']} متر : "
-                f"{item['price']:,} تومان"
-            )
-    print()
-    print(
-        "=" * 70
-    )
-    return results
-# =========================================================
-# RUN
-# =========================================================
 if __name__ == "__main__":
-    main()
+    data = get_all_channel_prices()
+    print_final_result(data)
