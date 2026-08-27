@@ -1,6 +1,6 @@
 import re
 import requests
-from bs4 import BeautifulSoup
+import pandas as pd
 # =========================================================
 # SETTINGS
 # =========================================================
@@ -54,7 +54,7 @@ CHANNEL_PRODUCTS = [
     },
 ]
 # =========================================================
-# NUMBER
+# NUMBER NORMALIZATION
 # =========================================================
 def normalize_number(value):
     if value is None:
@@ -67,7 +67,16 @@ def normalize_number(value):
     for i, ch in enumerate(arabic):
         text = text.replace(ch, str(i))
     return text
+# =========================================================
+# PRICE EXTRACTION
+# =========================================================
 def extract_current_price(value):
+    """
+    Examples:
+    88000 80000 -> 80000
+    89000 80900 -> 80900
+    تماس بگیرید تماس بگیرید -> None
+    """
     if value is None:
         return None
     text = normalize_number(value)
@@ -82,7 +91,7 @@ def extract_current_price(value):
     except Exception:
         return None
 # =========================================================
-# FETCH
+# FETCH PAGE
 # =========================================================
 def fetch_page(url):
     response = requests.get(
@@ -93,7 +102,7 @@ def fetch_page(url):
     response.raise_for_status()
     return response
 # =========================================================
-# PARSE CHANNEL TABLE
+# PARSE CHANNEL PRODUCT
 # =========================================================
 def parse_channel_product(product):
     try:
@@ -105,14 +114,10 @@ def parse_channel_product(product):
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": f"REQUEST ERROR: {e}",
+            "error": f"Request error: {e}",
         }
     try:
-        soup = BeautifulSoup(
-            response.text,
-            "lxml"
-        )
-        tables = soup.find_all("table")
+        tables = pd.read_html(response.text)
     except Exception as e:
         return {
             "name": product["name"],
@@ -120,7 +125,7 @@ def parse_channel_product(product):
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": f"HTML PARSE ERROR: {e}",
+            "error": f"Table read error: {e}",
         }
     if not tables:
         return {
@@ -129,34 +134,47 @@ def parse_channel_product(product):
             "type": product["type"],
             "ok": False,
             "products": [],
-            "error": "No HTML table found",
+            "error": "No tables found",
         }
     # =====================================================
-    # IMPORTANT
-    # The Pivan channel table is currently table 0.
+    # CURRENT PIVAN CHANNEL TABLE
     # =====================================================
-    table = tables[0]
-    rows = table.find_all("tr")
+    table_index = 0
+    if table_index >= len(tables):
+        return {
+            "name": product["name"],
+            "factory": product["factory"],
+            "type": product["type"],
+            "ok": False,
+            "products": [],
+            "error": "Channel table not found",
+        }
+    df = tables[table_index]
     products = []
-    for row in rows:
-        cells = row.find_all(["th", "td"])
+    # =====================================================
+    # READ ROWS
+    # =====================================================
+    for _, row in df.iterrows():
         values = [
-            cell.get_text(
-                " ",
-                strip=True
-            )
-            for cell in cells
+            str(x).strip()
+            for x in row.tolist()
         ]
         if len(values) < 5:
-            continue
-        # Skip header
-        if "سایز" in values[0]:
             continue
         size = values[0]
         length = values[1]
         delivery = values[2]
         unit = values[3]
         raw_price = values[4]
+        # =================================================
+        # ONLY FACTORY PRICES
+        #
+        # انبار تهران حذف
+        # انبار اختصاصی پیوان حذف
+        # فقط کارخانه
+        # =================================================
+        if delivery.strip() != "کارخانه":
+            continue
         # =================================================
         # VALIDATE SIZE
         # =================================================
@@ -186,13 +204,38 @@ def parse_channel_product(product):
         price = extract_current_price(raw_price)
         if price is None:
             continue
-        products.append({
+        # =================================================
+        # SAVE PRODUCT
+        # =================================================
+        item = {
             "size": size_normalized,
             "length": length_normalized,
-            "delivery": delivery,
+            "delivery": "کارخانه",
             "unit": unit,
             "price": price,
-        })
+        }
+        products.append(item)
+    # =====================================================
+    # REMOVE DUPLICATES
+    #
+    # اگر یک سایز و طول چند بار تکرار شد،
+    # فقط آخرین قیمت کارخانه باقی می‌ماند.
+    # =====================================================
+    unique_products = {}
+    for item in products:
+        key = (
+            item["size"],
+            item["length"],
+        )
+        unique_products[key] = item
+    products = list(unique_products.values())
+    # مرتب‌سازی بر اساس سایز و طول
+    products.sort(
+        key=lambda x: (
+            float(x["size"]),
+            float(x["length"]),
+        )
+    )
     return {
         "name": product["name"],
         "factory": product["factory"],
@@ -218,38 +261,41 @@ def print_final_result(results):
     print("FINAL CHANNEL RESULT")
     print("=" * 50)
     total_products = 0
-    successful_factories = 0
+    factories_ok = 0
     for result in results:
         print()
+        status = "OK" if result["ok"] else "ERROR"
         print(
-            f"{result['name']} -> "
-            f"{'OK' if result['ok'] else 'ERROR'}"
+            f"{result['name']} -> {status}"
         )
         if not result["ok"]:
             if result.get("error"):
                 print(
-                    f"  {result['error']}"
+                    f"  ERROR: {result['error']}"
                 )
             continue
-        successful_factories += 1
+        factories_ok += 1
+        print(
+            f"  {len(result['products'])} قیمت پیدا شد"
+        )
         total_products += len(
             result["products"]
         )
-        print(
-            f"  {len(result['products'])} "
-            f"قیمت پیدا شد"
-        )
         for item in result["products"]:
             print(
-                f"  ناودانی {item['size']} - "
+                f"  ناودانی "
+                f"{item['size']} - "
                 f"{item['length']} متر : "
                 f"{item['price']:,} تومان"
             )
+    # =====================================================
+    # SUMMARY
+    # =====================================================
     print()
     print("=" * 50)
     print(
         f"FACTORIES OK: "
-        f"{successful_factories}/{len(results)}"
+        f"{factories_ok}/{len(results)}"
     )
     print(
         f"TOTAL PRODUCTS: "
