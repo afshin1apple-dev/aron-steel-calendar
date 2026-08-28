@@ -1,7 +1,11 @@
+import os
 import re
 import requests
 import pandas as pd
 from io import StringIO
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from PIL import Image, ImageDraw, ImageFont
 # =========================================================
 # SETTINGS
 # =========================================================
@@ -13,16 +17,25 @@ HEADERS = {
         "Chrome/125.0 Safari/537.36"
     )
 }
-# =========================================================
-# SOURCE
-# =========================================================
+TOKEN = os.environ.get("BOT_TOKEN")
+CHANNEL = os.environ.get("CHANNEL_ID")
+PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
+TEHRAN = ZoneInfo("Asia/Tehran")
 SOURCE_URL = (
     "https://pivan.co/brands/"
     "introduction-of-isfahan-steel-factory/"
     "iron-girder/"
 )
+IMAGE_FILE = "ipe_price_card.jpg"
+FONT_FILE = "NotoSansArabic-Regular.ttf"
+FONT_URL = (
+    "https://github.com/googlefonts/noto-fonts/"
+    "raw/main/hinted/ttf/NotoSansArabic/"
+    "NotoSansArabic-Regular.ttf"
+)
+PEXELS_URL = "https://api.pexels.com/v1/search"
 # =========================================================
-# ALLOWED SIZES
+# IPE SIZES
 # =========================================================
 ALLOWED_SIZES = {
     "12",
@@ -54,33 +67,14 @@ def normalize_number(value):
 # =========================================================
 def clean_text(value):
     text = normalize_number(value)
-    text = text.replace(
-        "\u200c",
-        " "
-    )
-    text = text.replace(
-        "\n",
-        " "
-    )
+    text = text.replace("\u200c", " ")
+    text = text.replace("\n", " ")
     text = re.sub(
         r"\s+",
         " ",
         text
     )
     return text.strip()
-# =========================================================
-# EXTRACT NUMBERS
-# =========================================================
-def extract_numbers(value):
-    text = normalize_number(value)
-    text = text.replace(
-        "٬",
-        ","
-    )
-    return re.findall(
-        r"\d[\d,]*(?:\.\d+)?",
-        text
-    )
 # =========================================================
 # EXTRACT PRICE
 # =========================================================
@@ -90,22 +84,18 @@ def extract_price(value):
     text = clean_text(value)
     if "تماس" in text:
         return None
-    numbers = extract_numbers(
+    text = text.replace("٬", ",")
+    numbers = re.findall(
+        r"\d[\d,]*",
         text
     )
-    if not numbers:
-        return None
     candidates = []
     for number in numbers:
         try:
-            number_clean = (
-                number
-                .replace(",", "")
-            )
             value_int = int(
-                float(number_clean)
+                number.replace(",", "")
             )
-            if value_int >= 1000:
+            if value_int >= 10000:
                 candidates.append(
                     value_int
                 )
@@ -117,14 +107,8 @@ def extract_price(value):
 # =========================================================
 # EXTRACT SIZE
 # =========================================================
-def extract_size(row_text):
-    text = clean_text(
-        row_text
-    )
-    # حالت‌هایی مثل:
-    # تیرآهن 14
-    # IPE 14
-    # 14
+def extract_size(text):
+    text = clean_text(text)
     patterns = [
         r"IPE\s*(\d{2})",
         r"تیرآهن\s*(\d{2})",
@@ -143,12 +127,10 @@ def extract_size(row_text):
             return size
     return None
 # =========================================================
-# DETECT DELIVERY
+# DELIVERY
 # =========================================================
-def detect_delivery(row_text):
-    text = clean_text(
-        row_text
-    )
+def detect_delivery(text):
+    text = clean_text(text)
     if "کارخانه" in text:
         return "کارخانه"
     if (
@@ -158,12 +140,10 @@ def detect_delivery(row_text):
         return "تهران"
     return None
 # =========================================================
-# DETECT UNIT
+# UNIT
 # =========================================================
-def detect_unit(row_text):
-    text = clean_text(
-        row_text
-    )
+def detect_unit(text):
+    text = clean_text(text)
     if "کیلوگرم" in text:
         return "کیلوگرم"
     if "کیلو" in text:
@@ -172,116 +152,17 @@ def detect_unit(row_text):
         return "شاخه"
     return None
 # =========================================================
-# EXTRACT WEIGHT
-# =========================================================
-def extract_weight(values):
-    # ابتدا دنبال سلولی می‌گردیم که
-    # وزن یا کیلو در آن ذکر شده باشد.
-    for value in values:
-        text = clean_text(
-            value
-        )
-        if (
-            "وزن" not in text
-            and "کیلو" not in text
-            and "kg" not in text.lower()
-        ):
-            continue
-        numbers = extract_numbers(
-            text
-        )
-        if not numbers:
-            continue
-        try:
-            number = (
-                numbers[0]
-                .replace(",", "")
-            )
-            weight = float(
-                number
-            )
-            if 1 <= weight <= 500:
-                return weight
-        except Exception:
-            continue
-    return None
-# =========================================================
-# PARSE TABLE ROW
-# =========================================================
-def parse_row(values):
-    if len(values) < 4:
-        return None
-    row_text = " | ".join(
-        values
-    )
-    size = extract_size(
-        row_text
-    )
-    if size is None:
-        return None
-    delivery = detect_delivery(
-        row_text
-    )
-    if delivery is None:
-        return None
-    unit = detect_unit(
-        row_text
-    )
-    if unit is None:
-        return None
-    # -----------------------------------------------------
-    # وزن
-    # -----------------------------------------------------
-    weight = extract_weight(
-        values
-    )
-    # -----------------------------------------------------
-    # قیمت
-    # -----------------------------------------------------
-    price = None
-    # قیمت معمولاً در انتهای ردیف است،
-    # بنابراین از آخر به اول بررسی می‌کنیم.
-    for value in reversed(values):
-        candidate = extract_price(
-            value
-        )
-        if candidate is None:
-            continue
-        # جلوگیری از اشتباه گرفتن وزن،
-        # سایز یا اعداد کوچک با قیمت
-        if candidate < 10000:
-            continue
-        price = candidate
-        break
-    if price is None:
-        return None
-    return {
-        "size": size,
-        "delivery": delivery,
-        "unit": unit,
-        "weight": weight,
-        "price": price,
-    }
-# =========================================================
-# FETCH
-# =========================================================
-def fetch_page():
-    response = requests.get(
-        SOURCE_URL,
-        headers=HEADERS,
-        timeout=TIMEOUT
-    )
-    response.raise_for_status()
-    return response
-# =========================================================
-# PARSE IPE
+# PARSE
 # =========================================================
 def parse_ipe_prices():
-    print(
-        "Getting IPE prices..."
-    )
+    print("Getting IPE prices...")
     try:
-        response = fetch_page()
+        response = requests.get(
+            SOURCE_URL,
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        response.raise_for_status()
     except Exception as e:
         print(
             "FETCH ERROR:",
@@ -291,9 +172,7 @@ def parse_ipe_prices():
         return []
     try:
         tables = pd.read_html(
-            StringIO(
-                response.text
-            )
+            StringIO(response.text)
         )
     except Exception as e:
         print(
@@ -305,19 +184,9 @@ def parse_ipe_prices():
     print(
         f"Tables found: {len(tables)}"
     )
-    if not tables:
-        print(
-            "ERROR: No tables found"
-        )
-        return []
-    factory_prices = {}
-    tehran_prices = {}
-    # =====================================================
-    # CHECK ALL TABLES
-    # =====================================================
-    for table_index, df in enumerate(
-        tables
-    ):
+    factory = {}
+    tehran = {}
+    for table_index, df in enumerate(tables):
         print(
             f"Checking table {table_index + 1}: "
             f"{df.shape}"
@@ -327,178 +196,613 @@ def parse_ipe_prices():
                 clean_text(x)
                 for x in row.tolist()
             ]
-            result = parse_row(
-                values
-            )
-            if result is None:
+            if len(values) < 4:
                 continue
-            size = result[
-                "size"
-            ]
-            delivery = result[
-                "delivery"
-            ]
-            # -------------------------------------------------
-            # کارخانه
-            # -------------------------------------------------
+            row_text = " | ".join(values)
+            size = extract_size(
+                row_text
+            )
+            if size is None:
+                continue
+            delivery = detect_delivery(
+                row_text
+            )
+            if delivery is None:
+                continue
+            unit = detect_unit(
+                row_text
+            )
+            if unit is None:
+                continue
+            price = None
+            for value in reversed(values):
+                candidate = extract_price(
+                    value
+                )
+                if candidate is None:
+                    continue
+                price = candidate
+                break
+            if price is None:
+                continue
+            item = {
+                "size": size,
+                "delivery": delivery,
+                "unit": unit,
+                "price": price,
+            }
             if delivery == "کارخانه":
-                factory_prices[
-                    size
-                ] = result
-            # -------------------------------------------------
-            # تهران
-            # -------------------------------------------------
+                factory[size] = item
             elif delivery == "تهران":
-                tehran_prices[
-                    size
-                ] = result
-    # =====================================================
-    # BUILD FINAL RESULT
-    # =====================================================
+                tehran[size] = item
     results = []
     for size in sorted(
         ALLOWED_SIZES,
         key=lambda x: int(x)
     ):
-        factory = factory_prices.get(
-            size
-        )
-        tehran = tehran_prices.get(
-            size
-        )
-        if factory is None and tehran is None:
-            continue
-        results.append(
-            {
-                "size": size,
-                "factory": (
-                    factory
-                    if factory
-                    else None
-                ),
-                "tehran": (
-                    tehran
-                    if tehran
-                    else None
-                ),
-            }
-        )
+        results.append({
+            "size": size,
+            "factory": factory.get(size),
+            "tehran": tehran.get(size),
+        })
     return results
 # =========================================================
-# PRINT RESULTS
+# FONT
 # =========================================================
-def print_results(results):
-    print(
-        "========================================"
-    )
-    print(
-        "IPE / ZOOB AHAAN ISFAHAN"
-    )
-    print(
-        "========================================"
-    )
-    if not results:
-        print(
-            "NO VALID IPE PRODUCTS FOUND"
+def get_font(size):
+    if not os.path.exists(FONT_FILE):
+        response = requests.get(
+            FONT_URL,
+            timeout=30
         )
-        return
-    print(
-        f"VALID SIZES: {len(results)}"
+        response.raise_for_status()
+        with open(
+            FONT_FILE,
+            "wb"
+        ) as f:
+            f.write(
+                response.content
+            )
+    return ImageFont.truetype(
+        FONT_FILE,
+        size
     )
-    print()
-    for item in results:
-        size = item[
-            "size"
-        ]
-        factory = item[
-            "factory"
-        ]
-        tehran = item[
-            "tehran"
-        ]
-        print(
-            f"---------- IPE {size} ----------"
+# =========================================================
+# BACKGROUND
+# =========================================================
+def get_background():
+    if not PEXELS_KEY:
+        raise RuntimeError(
+            "PEXELS_API_KEY is missing"
         )
-        # -------------------------------------------------
-        # کارخانه
-        # -------------------------------------------------
-        if factory:
-            print(
-                "FACTORY:"
-            )
-            print(
-                f"  Delivery: "
-                f"{factory['delivery']}"
-            )
-            print(
-                f"  Unit: "
-                f"{factory['unit']}"
-            )
-            print(
-                f"  Weight: "
-                f"{factory['weight']}"
-            )
-            print(
-                f"  Price: "
-                f"{factory['price']:,} تومان"
-            )
-        else:
-            print(
-                "FACTORY: NOT FOUND"
-            )
-        # -------------------------------------------------
-        # تهران
-        # -------------------------------------------------
-        if tehran:
-            print(
-                "TEHRAN:"
-            )
-            print(
-                f"  Delivery: "
-                f"{tehran['delivery']}"
-            )
-            print(
-                f"  Unit: "
-                f"{tehran['unit']}"
-            )
-            print(
-                f"  Weight: "
-                f"{tehran['weight']}"
-            )
-            print(
-                f"  Price: "
-                f"{tehran['price']:,} تومان"
-            )
-        else:
-            print(
-                "TEHRAN: NOT FOUND"
-            )
-        print()
-    print(
-        "========================================"
+    response = requests.get(
+        PEXELS_URL,
+        headers={
+            "Authorization": PEXELS_KEY
+        },
+        params={
+            "query": "steel beam construction",
+            "orientation": "landscape",
+            "per_page": 20,
+        },
+        timeout=30
     )
-    print(
-        "IPE TEST FINISHED"
+    response.raise_for_status()
+    photos = response.json().get(
+        "photos",
+        []
     )
-    print(
-        "========================================"
+    if not photos:
+        raise RuntimeError(
+            "No Pexels image found"
+        )
+    now = datetime.now(
+        TEHRAN
     )
+    photo = photos[
+        now.date().toordinal()
+        % len(photos)
+    ]
+    image_url = photo["src"]["large2x"]
+    image_response = requests.get(
+        image_url,
+        timeout=30
+    )
+    image_response.raise_for_status()
+    with open(
+        IMAGE_FILE,
+        "wb"
+    ) as f:
+        f.write(
+            image_response.content
+        )
+    return Image.open(
+        IMAGE_FILE
+    ).convert("RGB")
+# =========================================================
+# IMAGE
+# =========================================================
+def create_price_image(results):
+    background = get_background()
+    width = 1200
+    height = 1600
+    background = background.resize(
+        (
+            width,
+            height
+        )
+    )
+    image = background.copy()
+    draw = ImageDraw.Draw(
+        image,
+        "RGBA"
+    )
+    # -----------------------------------------------------
+    # DARK OVERLAY
+    # -----------------------------------------------------
+    draw.rectangle(
+        [
+            0,
+            0,
+            width,
+            height
+        ],
+        fill=(
+            0,
+            0,
+            0,
+            130
+        )
+    )
+    # -----------------------------------------------------
+    # PANEL
+    # -----------------------------------------------------
+    draw.rounded_rectangle(
+        [
+            60,
+            60,
+            width - 60,
+            height - 60
+        ],
+        radius=40,
+        fill=(
+            255,
+            255,
+            255,
+            238
+        )
+    )
+    # -----------------------------------------------------
+    # FONTS
+    # -----------------------------------------------------
+    title_font = get_font(52)
+    subtitle_font = get_font(31)
+    header_font = get_font(29)
+    row_font = get_font(27)
+    watermark_font = get_font(29)
+    footer_font = get_font(25)
+    # -----------------------------------------------------
+    # TITLE
+    # -----------------------------------------------------
+    title = "🏗 تیرآهن ذوب‌آهن اصفهان"
+    bbox = draw.textbbox(
+        (0, 0),
+        title,
+        font=title_font
+    )
+    title_width = bbox[2] - bbox[0]
+    draw.text(
+        (
+            (width - title_width) / 2,
+            105
+        ),
+        title,
+        font=title_font,
+        fill=(
+            20,
+            40,
+            60,
+            255
+        )
+    )
+    # -----------------------------------------------------
+    # SUBTITLE
+    # -----------------------------------------------------
+    subtitle = "قیمت روز تیرآهن IPE"
+    bbox = draw.textbbox(
+        (0, 0),
+        subtitle,
+        font=subtitle_font
+    )
+    subtitle_width = bbox[2] - bbox[0]
+    draw.text(
+        (
+            (width - subtitle_width) / 2,
+            180
+        ),
+        subtitle,
+        font=subtitle_font,
+        fill=(
+            80,
+            80,
+            80,
+            255
+        )
+    )
+    # -----------------------------------------------------
+    # TABLE HEADER
+    # -----------------------------------------------------
+    y = 270
+    draw.rounded_rectangle(
+        [
+            110,
+            y,
+            width - 110,
+            y + 70
+        ],
+        radius=15,
+        fill=(
+            35,
+            55,
+            70,
+            255
+        )
+    )
+    draw.text(
+        (175, y + 18),
+        "سایز",
+        font=header_font,
+        fill=(255, 255, 255, 255)
+    )
+    draw.text(
+        (430, y + 18),
+        "کارخانه / کیلو",
+        font=header_font,
+        fill=(255, 255, 255, 255)
+    )
+    draw.text(
+        (800, y + 18),
+        "تهران / شاخه",
+        font=header_font,
+        fill=(255, 255, 255, 255)
+    )
+    y += 85
+    # -----------------------------------------------------
+    # ROWS
+    # -----------------------------------------------------
+    for result in results:
+        size = result["size"]
+        factory = result["factory"]
+        tehran = result["tehran"]
+        factory_price = (
+            f"{factory['price']:,}"
+            if factory
+            else "نامشخص"
+        )
+        tehran_price = (
+            f"{tehran['price']:,}"
+            if tehran
+            else "نامشخص"
+        )
+        draw.text(
+            (175, y),
+            f"IPE {size}",
+            font=row_font,
+            fill=(25, 25, 25, 255)
+        )
+        draw.text(
+            (430, y),
+            factory_price,
+            font=row_font,
+            fill=(25, 25, 25, 255)
+        )
+        draw.text(
+            (800, y),
+            tehran_price,
+            font=row_font,
+            fill=(25, 25, 25, 255)
+        )
+        draw.line(
+            [
+                140,
+                y + 55,
+                width - 140,
+                y + 55
+            ],
+            fill=(
+                190,
+                190,
+                190,
+                180
+            ),
+            width=2
+        )
+        y += 105
+    # -----------------------------------------------------
+    # FOOTER
+    # -----------------------------------------------------
+    draw.text(
+        (150, y + 10),
+        "💰 کارخانه: تومان / کیلوگرم",
+        font=footer_font,
+        fill=(70, 70, 70, 255)
+    )
+    draw.text(
+        (150, y + 55),
+        "🏙 تهران: تومان / شاخه",
+        font=footer_font,
+        fill=(70, 70, 70, 255)
+    )
+    # -----------------------------------------------------
+    # WATERMARK
+    # -----------------------------------------------------
+    watermark = "@arvand_aron_steel"
+    bbox = draw.textbbox(
+        (0, 0),
+        watermark,
+        font=watermark_font
+    )
+    watermark_width = (
+        bbox[2] - bbox[0]
+    )
+    draw.rounded_rectangle(
+        [
+            width - watermark_width - 105,
+            height - 135,
+            width - 45,
+            height - 65
+        ],
+        radius=18,
+        fill=(
+            0,
+            0,
+            0,
+            150
+        )
+    )
+    draw.text(
+        (
+            width - watermark_width - 78,
+            height - 122
+        ),
+        watermark,
+        font=watermark_font,
+        fill=(
+            255,
+            255,
+            255,
+            235
+        )
+    )
+    # -----------------------------------------------------
+    # SAVE
+    # -----------------------------------------------------
+    image.save(
+        IMAGE_FILE,
+        "JPEG",
+        quality=95
+    )
+    return IMAGE_FILE
+# =========================================================
+# CAPTION
+# =========================================================
+def build_caption(results):
+    now = datetime.now(
+        TEHRAN
+    )
+    parts = [
+        "🏗 <b>تیرآهن ذوب‌آهن اصفهان</b>",
+        "📌 <b>قیمت روز تیرآهن IPE</b>",
+        (
+            f"📅 {now.strftime('%Y/%m/%d')} "
+            f"⏰ {now.strftime('%H:%M')}"
+        ),
+        "",
+    ]
+    for result in results:
+        size = result["size"]
+        factory = result["factory"]
+        tehran = result["tehran"]
+        factory_price = (
+            f"{factory['price']:,}"
+            if factory
+            else "نامشخص"
+        )
+        tehran_price = (
+            f"{tehran['price']:,}"
+            if tehran
+            else "نامشخص"
+        )
+        parts.append(
+            f"🔩 <b>IPE {size}</b>"
+        )
+        parts.append(
+            f"🏭 کارخانه: "
+            f"<b>{factory_price}</b> تومان/کیلو"
+        )
+        parts.append(
+            f"🏙 تهران: "
+            f"<b>{tehran_price}</b> تومان/شاخه"
+        )
+        parts.append("")
+    parts.extend([
+        "📞 جهت اطلاع از قیمت سایر محصولات "
+        "با واحد فروش تماس حاصل نمایید.",
+        "",
+        "━━━━━━━━━━━━━━",
+        "🏭 آروند آرون استیل",
+        "👤 مدیریت: افشین آورزمانی",
+        "📞 021-22122239",
+        "🆔 @arvand_aron_steel",
+    ])
+    return "\n".join(parts)
+# =========================================================
+# SEND PHOTO
+# =========================================================
+def send_photo(
+    image_file,
+    caption
+):
+    if not TOKEN:
+        print(
+            "ERROR: BOT_TOKEN missing"
+        )
+        return False
+    if not CHANNEL:
+        print(
+            "ERROR: CHANNEL_ID missing"
+        )
+        return False
+    try:
+        with open(
+            image_file,
+            "rb"
+        ) as photo:
+            response = requests.post(
+                f"https://api.telegram.org/"
+                f"bot{TOKEN}/sendPhoto",
+                data={
+                    "chat_id": CHANNEL,
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                },
+                files={
+                    "photo": photo
+                },
+                timeout=60
+            )
+        if response.ok:
+            return True
+        print(
+            "TELEGRAM ERROR:",
+            response.text
+        )
+        return False
+    except Exception as e:
+        print(
+            "SEND ERROR:",
+            type(e).__name__,
+            str(e)
+        )
+        return False
 # =========================================================
 # MAIN
 # =========================================================
 def main():
-    print(
-        "========================================"
-    )
-    print(
-        "IPE PRICE BOT - TEST"
+    now = datetime.now(
+        TEHRAN
     )
     print(
         "========================================"
     )
+    print(
+        "IPE CHANNEL TEST"
+    )
+    print(
+        "Iran time:",
+        now.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    )
+    print(
+        "========================================"
+    )
+    # -----------------------------------------------------
+    # ENV
+    # -----------------------------------------------------
+    missing = []
+    if not TOKEN:
+        missing.append("BOT_TOKEN")
+    if not CHANNEL:
+        missing.append("CHANNEL_ID")
+    if not PEXELS_KEY:
+        missing.append("PEXELS_API_KEY")
+    if missing:
+        print(
+            "ERROR: missing environment variables:",
+            ", ".join(missing)
+        )
+        return
+    # -----------------------------------------------------
+    # GET PRICES
+    # -----------------------------------------------------
     results = parse_ipe_prices()
-    print_results(
-        results
+    valid = [
+        x
+        for x in results
+        if x["factory"] or x["tehran"]
+    ]
+    print(
+        f"VALID SIZES: {len(valid)}"
+    )
+    if len(valid) != 9:
+        print(
+            "ERROR: Expected 9 IPE sizes."
+        )
+        return
+    # -----------------------------------------------------
+    # PRINT
+    # -----------------------------------------------------
+    for item in valid:
+        size = item["size"]
+        factory = item["factory"]
+        tehran = item["tehran"]
+        print(
+            f"IPE {size} | "
+            f"FACTORY: "
+            f"{factory['price'] if factory else 'N/A'} | "
+            f"TEHRAN: "
+            f"{tehran['price'] if tehran else 'N/A'}"
+        )
+    # -----------------------------------------------------
+    # IMAGE
+    # -----------------------------------------------------
+    print(
+        "Creating price image..."
+    )
+    try:
+        image_file = create_price_image(
+            valid
+        )
+    except Exception as e:
+        print(
+            "IMAGE ERROR:",
+            type(e).__name__,
+            str(e)
+        )
+        return
+    # -----------------------------------------------------
+    # CAPTION
+    # -----------------------------------------------------
+    caption = build_caption(
+        valid
+    )
+    # -----------------------------------------------------
+    # SEND
+    # -----------------------------------------------------
+    print(
+        "Sending to channel..."
+    )
+    success = send_photo(
+        image_file,
+        caption
+    )
+    # -----------------------------------------------------
+    # FINAL
+    # -----------------------------------------------------
+    print(
+        "========================================"
+    )
+    if success:
+        print(
+            "CHANNEL TEST: SUCCESS"
+        )
+    else:
+        print(
+            "CHANNEL TEST: FAILED"
+        )
+    print(
+        "========================================"
     )
 # =========================================================
 # RUN
