@@ -29,7 +29,8 @@ PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 SOURCE_URL = (
-    "https://pivan.co/product-category/angle/"
+    "https://pivan.co/brands/"
+    "tabriz-pure-steel/angel/"
 )
 
 IMAGE_FILE = "angle_price_card.jpg"
@@ -69,7 +70,7 @@ def normalize_number(value):
 
 
 # =========================================================
-# CLEAN TEXT
+# CLEAN
 # =========================================================
 
 def clean_text(value):
@@ -89,7 +90,7 @@ def clean_text(value):
 
 
 # =========================================================
-# EXTRACT PRICE
+# PRICE
 # =========================================================
 
 def extract_price(value):
@@ -115,12 +116,14 @@ def extract_price(value):
 
         try:
 
-            value_int = int(
+            number_int = int(
                 number.replace(",", "")
             )
 
-            if value_int >= 10000:
-                candidates.append(value_int)
+            if number_int >= 10000:
+                candidates.append(
+                    number_int
+                )
 
         except Exception:
             continue
@@ -132,79 +135,52 @@ def extract_price(value):
 
 
 # =========================================================
-# EXTRACT ANGLE SIZE
+# ANGLE SIZE
 # =========================================================
 
-def extract_angle(text):
+def extract_size(value):
 
-    text = clean_text(text).lower()
+    text = clean_text(value)
 
-    patterns = [
-        r"نبشی\s*(\d{1,3})",
-        r"نبشی\s*(\d{1,3})\s*[×x*]\s*(\d{1,3})",
-        r"angle\s*(\d{1,3})",
-        r"\b(\d{2,3})\s*[×x*]\s*(\d{1,3})",
-    ]
+    match = re.search(
+        r"(\d{2,3}\s*[x×]\s*\d{2,3})",
+        text,
+        re.IGNORECASE
+    )
 
-    for pattern in patterns:
-
-        match = re.search(
-            pattern,
-            text,
-            re.IGNORECASE
-        )
-
-        if match:
-
-            return match.group(0)
+    if match:
+        return match.group(1).replace(" ", "")
 
     return None
 
 
 # =========================================================
-# DETECT DELIVERY
+# THICKNESS
 # =========================================================
 
-def detect_delivery(text):
+def extract_thickness(value):
 
-    text = clean_text(text)
+    text = clean_text(value)
 
-    if "تهران" in text:
-        return "تهران"
+    match = re.search(
+        r"(\d+(?:[./]\d+)?)",
+        text
+    )
 
-    if "کارخانه" in text:
-        return "کارخانه"
-
-    if "انبار" in text:
-        return "انبار"
+    if match:
+        return match.group(1)
 
     return None
 
 
 # =========================================================
-# DETECT UNIT
-# =========================================================
-
-def detect_unit(text):
-
-    text = clean_text(text)
-
-    if "کیلوگرم" in text:
-        return "کیلوگرم"
-
-    if "کیلو" in text:
-        return "کیلوگرم"
-
-    return None
-
-
-# =========================================================
-# PARSE ANGLE PRICES
+# PARSE
 # =========================================================
 
 def parse_angle_prices():
 
     print("Getting ANGLE prices...")
+    print("SOURCE:", SOURCE_URL)
 
     try:
 
@@ -262,31 +238,101 @@ def parse_angle_prices():
                 for x in row.tolist()
             ]
 
-            if len(values) < 4:
+            if len(values) < 5:
                 continue
 
             row_text = " | ".join(values)
 
-            angle = extract_angle(
+            size = extract_size(
                 row_text
             )
 
-            if angle is None:
+            if size is None:
                 continue
 
-            delivery = detect_delivery(
-                row_text
-            )
+            # -------------------------------------------------
+            # THICKNESS
+            # -------------------------------------------------
+
+            thickness = None
+
+            for value in values:
+
+                clean = clean_text(value)
+
+                if re.fullmatch(
+                    r"\d+(?:[./]\d+)?",
+                    clean
+                ):
+
+                    try:
+
+                        number = float(
+                            clean.replace(
+                                "/",
+                                "."
+                            )
+                        )
+
+                        if 1 <= number <= 20:
+                            thickness = clean
+                            break
+
+                    except Exception:
+                        pass
+
+            if thickness is None:
+                continue
+
+            # -------------------------------------------------
+            # DELIVERY
+            # -------------------------------------------------
+
+            delivery = None
+
+            for value in values:
+
+                if "کارخانه" in value:
+                    delivery = "کارخانه"
+                    break
+
+                if "تهران" in value:
+                    delivery = "تهران"
+                    break
+
+                if "انبار" in value:
+                    delivery = "تهران"
+                    break
 
             if delivery is None:
                 continue
 
-            unit = detect_unit(
-                row_text
-            )
+            # -------------------------------------------------
+            # WEIGHT
+            # -------------------------------------------------
 
-            if unit is None:
-                continue
+            weight = None
+
+            for value in values:
+
+                clean = clean_text(value)
+
+                try:
+
+                    number = float(
+                        clean.replace(",", "")
+                    )
+
+                    if 1 <= number <= 500:
+                        weight = number
+                        break
+
+                except Exception:
+                    continue
+
+            # -------------------------------------------------
+            # PRICE
+            # -------------------------------------------------
 
             price = None
 
@@ -307,12 +353,34 @@ def parse_angle_prices():
 
             results.append(
                 {
-                    "angle": angle,
+                    "size": size,
+                    "thickness": thickness,
                     "delivery": delivery,
-                    "unit": unit,
+                    "weight": weight,
                     "price": price,
                 }
             )
+
+    # ---------------------------------------------------------
+    # REMOVE DUPLICATES
+    # ---------------------------------------------------------
+
+    unique = {}
+
+    for item in results:
+
+        key = (
+            item["size"],
+            item["thickness"],
+            item["delivery"],
+            item["weight"],
+        )
+
+        unique[key] = item
+
+    results = list(
+        unique.values()
+    )
 
     return results
 
@@ -365,9 +433,12 @@ def get_background():
             "Authorization": PEXELS_KEY
         },
         params={
-            "query": "steel angle iron construction",
-            "orientation": "landscape",
-            "per_page": 20,
+            "query":
+                "steel angle construction",
+            "orientation":
+                "landscape",
+            "per_page":
+                20,
         },
         timeout=30
     )
@@ -422,7 +493,7 @@ def get_background():
 
 
 # =========================================================
-# CREATE PRICE IMAGE
+# IMAGE
 # =========================================================
 
 def create_price_image(results):
@@ -446,10 +517,6 @@ def create_price_image(results):
         "RGBA"
     )
 
-    # -----------------------------------------------------
-    # OVERLAY
-    # -----------------------------------------------------
-
     draw.rectangle(
         [
             0,
@@ -464,10 +531,6 @@ def create_price_image(results):
             130
         )
     )
-
-    # -----------------------------------------------------
-    # PANEL
-    # -----------------------------------------------------
 
     draw.rounded_rectangle(
         [
@@ -485,21 +548,18 @@ def create_price_image(results):
         )
     )
 
-    # -----------------------------------------------------
-    # FONTS
-    # -----------------------------------------------------
-
     title_font = get_font(52)
     subtitle_font = get_font(32)
-    row_font = get_font(29)
-    small_font = get_font(27)
+    header_font = get_font(27)
+    row_font = get_font(26)
+    footer_font = get_font(25)
     watermark_font = get_font(29)
 
     # -----------------------------------------------------
     # TITLE
     # -----------------------------------------------------
 
-    title = "📐 قیمت نبشی"
+    title = "📐 نبشی ناب تبریز"
 
     bbox = draw.textbbox(
         (0, 0),
@@ -507,12 +567,14 @@ def create_price_image(results):
         font=title_font
     )
 
-    title_width = bbox[2] - bbox[0]
+    title_width = (
+        bbox[2] - bbox[0]
+    )
 
     draw.text(
         (
             (width - title_width) / 2,
-            110
+            105
         ),
         title,
         font=title_font,
@@ -523,10 +585,6 @@ def create_price_image(results):
             255
         )
     )
-
-    # -----------------------------------------------------
-    # SUBTITLE
-    # -----------------------------------------------------
 
     subtitle = "قیمت روز نبشی"
 
@@ -543,7 +601,7 @@ def create_price_image(results):
     draw.text(
         (
             (width - subtitle_width) / 2,
-            185
+            180
         ),
         subtitle,
         font=subtitle_font,
@@ -563,9 +621,9 @@ def create_price_image(results):
 
     draw.rounded_rectangle(
         [
-            110,
+            100,
             y,
-            width - 110,
+            width - 100,
             y + 70
         ],
         radius=15,
@@ -578,9 +636,9 @@ def create_price_image(results):
     )
 
     draw.text(
-        (180, y + 18),
-        "نبشی",
-        font=small_font,
+        (145, y + 18),
+        "سایز",
+        font=header_font,
         fill=(
             255,
             255,
@@ -590,9 +648,9 @@ def create_price_image(results):
     )
 
     draw.text(
-        (650, y + 18),
-        "محل بارگیری",
-        font=small_font,
+        (400, y + 18),
+        "ضخامت",
+        font=header_font,
         fill=(
             255,
             255,
@@ -602,9 +660,21 @@ def create_price_image(results):
     )
 
     draw.text(
-        (930, y + 18),
+        (620, y + 18),
+        "تحویل",
+        font=header_font,
+        fill=(
+            255,
+            255,
+            255,
+            255
+        )
+    )
+
+    draw.text(
+        (850, y + 18),
         "قیمت",
-        font=small_font,
+        font=header_font,
         fill=(
             255,
             255,
@@ -621,13 +691,9 @@ def create_price_image(results):
 
     for item in results:
 
-        angle = item["angle"]
-        delivery = item["delivery"]
-        price = item["price"]
-
         draw.text(
-            (180, y),
-            angle,
+            (145, y),
+            item["size"],
             font=row_font,
             fill=(
                 25,
@@ -638,8 +704,8 @@ def create_price_image(results):
         )
 
         draw.text(
-            (650, y),
-            delivery,
+            (400, y),
+            item["thickness"],
             font=row_font,
             fill=(
                 25,
@@ -650,8 +716,20 @@ def create_price_image(results):
         )
 
         draw.text(
-            (930, y),
-            f"{price:,}",
+            (620, y),
+            item["delivery"],
+            font=row_font,
+            fill=(
+                25,
+                25,
+                25,
+                255
+            )
+        )
+
+        draw.text(
+            (850, y),
+            f"{item['price']:,}",
             font=row_font,
             fill=(
                 25,
@@ -663,9 +741,9 @@ def create_price_image(results):
 
         draw.line(
             [
-                140,
+                120,
                 y + 58,
-                width - 140,
+                width - 120,
                 y + 58
             ],
             fill=(
@@ -677,22 +755,22 @@ def create_price_image(results):
             width=2
         )
 
-        y += 95
+        y += 90
 
-        if y > height - 260:
+        if y > height - 250:
             break
 
     # -----------------------------------------------------
-    # UNIT
+    # FOOTER
     # -----------------------------------------------------
 
     draw.text(
         (
-            170,
-            height - 250
+            150,
+            height - 230
         ),
-        "💰 واحد قیمت: تومان / کیلوگرم",
-        font=small_font,
+        "💰 قیمت: تومان / کیلوگرم",
+        font=footer_font,
         fill=(
             70,
             70,
@@ -748,10 +826,6 @@ def create_price_image(results):
         )
     )
 
-    # -----------------------------------------------------
-    # SAVE
-    # -----------------------------------------------------
-
     image.save(
         IMAGE_FILE,
         "JPEG",
@@ -772,7 +846,8 @@ def build_caption(results):
     )
 
     parts = [
-        "📐 <b>قیمت روز نبشی</b>",
+        "📐 <b>نبشی ناب تبریز</b>",
+        "📌 <b>قیمت روز نبشی</b>",
         (
             f"📅 {now.strftime('%Y/%m/%d')} "
             f"⏰ {now.strftime('%H:%M')}"
@@ -783,17 +858,14 @@ def build_caption(results):
 
     for item in results:
 
-        angle = item["angle"]
-        delivery = item["delivery"]
-        price = item["price"]
-
         parts.append(
-            f"🔩 <b>{angle}</b>"
+            f"🔩 <b>{item['size']}</b> "
+            f"ضخامت {item['thickness']}"
         )
 
         parts.append(
-            f"📍 {delivery}: "
-            f"<b>{price:,}</b> تومان/کیلو"
+            f"🏭 {item['delivery']}: "
+            f"<b>{item['price']:,}</b> تومان/کیلو"
         )
 
         parts.append("")
@@ -815,25 +887,13 @@ def build_caption(results):
 
 
 # =========================================================
-# SEND PHOTO
+# TELEGRAM
 # =========================================================
 
 def send_photo(
     image_file,
     caption
 ):
-
-    if not TOKEN:
-        print(
-            "ERROR: BOT_TOKEN missing"
-        )
-        return False
-
-    if not CHANNEL:
-        print(
-            "ERROR: CHANNEL_ID missing"
-        )
-        return False
 
     try:
 
@@ -860,15 +920,17 @@ def send_photo(
                 timeout=60
             )
 
-        if response.ok:
-            return True
-
         print(
-            "TELEGRAM ERROR:",
-            response.text
+            "Telegram status:",
+            response.status_code
         )
 
-        return False
+        if not response.ok:
+            print(
+                response.text
+            )
+
+        return response.ok
 
     except Exception as e:
 
@@ -911,6 +973,18 @@ def main():
     )
 
     # -----------------------------------------------------
+    # FRIDAY
+    # -----------------------------------------------------
+
+    if now.weekday() == 4:
+
+        print(
+            "Friday - no angle channel post."
+        )
+
+        return
+
+    # -----------------------------------------------------
     # ENV
     # -----------------------------------------------------
 
@@ -941,13 +1015,21 @@ def main():
         return
 
     # -----------------------------------------------------
-    # GET PRICES
+    # PRICE
     # -----------------------------------------------------
 
     results = parse_angle_prices()
 
     print(
+        "========================================"
+    )
+
+    print(
         f"VALID ANGLE PRODUCTS: {len(results)}"
+    )
+
+    print(
+        "========================================"
     )
 
     if not results:
@@ -965,9 +1047,11 @@ def main():
     for item in results:
 
         print(
-            f"{item['angle']} | "
-            f"{item['delivery']} | "
-            f"{item['price']:,} تومان"
+            f"{item['size']} | "
+            f"Thickness: {item['thickness']} | "
+            f"Delivery: {item['delivery']} | "
+            f"Weight: {item['weight']} | "
+            f"Price: {item['price']:,}"
         )
 
     # -----------------------------------------------------
