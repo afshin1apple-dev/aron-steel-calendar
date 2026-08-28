@@ -1,21 +1,31 @@
-name: Channel Test
+name: Channel Bot
+
 on:
+  schedule:
+    # 13:30 Iran time = 10:00 UTC
+    - cron: "0 10 * * 0-4"
+
   workflow_dispatch:
+
 jobs:
-  test:
+  channel:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run Channel Test
+
+      - name: Run Channel Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
