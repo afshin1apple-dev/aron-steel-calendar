@@ -69,6 +69,7 @@ ALLOWED_SIZES = {
 # =========================================================
 
 def normalize_number(value):
+
     if value is None:
         return ""
 
@@ -91,6 +92,7 @@ def normalize_number(value):
 # =========================================================
 
 def clean_text(value):
+
     text = normalize_number(value)
 
     text = text.replace("\u200c", " ")
@@ -110,6 +112,7 @@ def clean_text(value):
 # =========================================================
 
 def extract_price(value):
+
     if value is None:
         return None
 
@@ -128,12 +131,15 @@ def extract_price(value):
     candidates = []
 
     for number in numbers:
+
         try:
+
             value_int = int(
                 number.replace(",", "")
             )
 
             if value_int >= 10000:
+
                 candidates.append(
                     value_int
                 )
@@ -152,6 +158,7 @@ def extract_price(value):
 # =========================================================
 
 def extract_size(text):
+
     text = clean_text(text)
 
     patterns = [
@@ -184,6 +191,7 @@ def extract_size(text):
 # =========================================================
 
 def detect_delivery(text):
+
     text = clean_text(text)
 
     if "کارخانه" in text:
@@ -203,6 +211,7 @@ def detect_delivery(text):
 # =========================================================
 
 def detect_unit(text):
+
     text = clean_text(text)
 
     if "کیلوگرم" in text:
@@ -223,9 +232,7 @@ def detect_unit(text):
 
 def parse_ipe_prices():
 
-    print(
-        "Getting IPE prices..."
-    )
+    print("Getting IPE prices...")
 
     try:
 
@@ -350,9 +357,15 @@ def parse_ipe_prices():
     ):
 
         results.append({
+
             "size": size,
-            "factory": factory.get(size),
-            "tehran": tehran.get(size),
+
+            "factory":
+                factory.get(size),
+
+            "tehran":
+                tehran.get(size),
+
         })
 
     return results
@@ -364,9 +377,7 @@ def parse_ipe_prices():
 
 def get_font(size):
 
-    if not os.path.exists(
-        FONT_FILE
-    ):
+    if not os.path.exists(FONT_FILE):
 
         response = requests.get(
             FONT_URL,
@@ -403,15 +414,19 @@ def get_background():
         )
 
     response = requests.get(
+
         PEXELS_URL,
+
         headers={
             "Authorization": PEXELS_KEY
         },
+
         params={
             "query": "steel beam construction",
             "orientation": "landscape",
             "per_page": 20,
         },
+
         timeout=30
     )
 
@@ -576,7 +591,9 @@ def create_price_image(results):
         font=subtitle_font
     )
 
-    subtitle_width = bbox[2] - bbox[0]
+    subtitle_width = (
+        bbox[2] - bbox[0]
+    )
 
     draw.text(
         (
@@ -651,14 +668,20 @@ def create_price_image(results):
         tehran = result["tehran"]
 
         factory_price = (
+
             f"{factory['price']:,}"
+
             if factory
+
             else "نامشخص"
         )
 
         tehran_price = (
+
             f"{tehran['price']:,}"
+
             if tehran
+
             else "نامشخص"
         )
 
@@ -790,12 +813,16 @@ def build_caption(results):
     )
 
     parts = [
+
         "🏗 <b>تیرآهن ذوب‌آهن اصفهان</b>",
+
         "📌 <b>قیمت روز تیرآهن IPE</b>",
+
         (
             f"📅 {now.strftime('%Y/%m/%d')} "
             f"⏰ {now.strftime('%H:%M')}"
         ),
+
         "",
     ]
 
@@ -808,14 +835,20 @@ def build_caption(results):
         tehran = result["tehran"]
 
         factory_price = (
+
             f"{factory['price']:,}"
+
             if factory
+
             else "نامشخص"
         )
 
         tehran_price = (
+
             f"{tehran['price']:,}"
+
             if tehran
+
             else "نامشخص"
         )
 
@@ -836,14 +869,22 @@ def build_caption(results):
         parts.append("")
 
     parts.extend([
+
         "📞 جهت اطلاع از قیمت سایر محصولات "
         "با واحد فروش تماس حاصل نمایید.",
+
         "",
+
         "━━━━━━━━━━━━━━",
+
         "🏭 آروند آرون استیل",
+
         "👤 مدیریت: افشین آورزمانی",
+
         "📞 021-22122239",
+
         "🆔 @arvand_aron_steel",
+
     ])
 
     return "\n".join(parts)
@@ -882,6 +923,7 @@ def send_photo(
         ) as photo:
 
             response = requests.post(
+
                 f"https://api.telegram.org/"
                 f"bot{TOKEN}/sendPhoto",
 
@@ -899,6 +941,7 @@ def send_photo(
             )
 
         if response.ok:
+
             return True
 
         print(
@@ -934,7 +977,7 @@ def main():
     )
 
     print(
-        "IPE CHANNEL BOT"
+        "IPE CHANNEL"
     )
 
     print(
@@ -949,13 +992,27 @@ def main():
     )
 
     # -----------------------------------------------------
-    # FRIDAY
+    # FRIDAY LOCK
     # -----------------------------------------------------
+
+    # Monday = 0
+    # Tuesday = 1
+    # Wednesday = 2
+    # Thursday = 3
+    # Friday = 4
 
     if now.weekday() == 4:
 
         print(
-            "Friday - no IPE channel post."
+            "FRIDAY: IPE POST DISABLED"
+        )
+
+        print(
+            "No post will be sent."
+        )
+
+        print(
+            "========================================"
         )
 
         return
@@ -967,19 +1024,13 @@ def main():
     missing = []
 
     if not TOKEN:
-        missing.append(
-            "BOT_TOKEN"
-        )
+        missing.append("BOT_TOKEN")
 
     if not CHANNEL:
-        missing.append(
-            "CHANNEL_ID"
-        )
+        missing.append("CHANNEL_ID")
 
     if not PEXELS_KEY:
-        missing.append(
-            "PEXELS_API_KEY"
-        )
+        missing.append("PEXELS_API_KEY")
 
     if missing:
 
@@ -997,9 +1048,13 @@ def main():
     results = parse_ipe_prices()
 
     valid = [
+
         x
+
         for x in results
+
         if x["factory"] or x["tehran"]
+
     ]
 
     print(
@@ -1027,11 +1082,17 @@ def main():
         tehran = item["tehran"]
 
         print(
+
             f"IPE {size} | "
+
             f"FACTORY: "
+
             f"{factory['price'] if factory else 'N/A'} | "
+
             f"TEHRAN: "
+
             f"{tehran['price'] if tehran else 'N/A'}"
+
         )
 
     # -----------------------------------------------------
@@ -1109,4 +1170,5 @@ def main():
 # =========================================================
 
 if __name__ == "__main__":
+
     main()
