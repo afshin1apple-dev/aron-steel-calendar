@@ -324,6 +324,7 @@ def calculate_change(
     if (
         previous is None
         or previous == 0
+        or current is None
     ):
 
         return None
@@ -513,6 +514,40 @@ coin, coin_change = (
 print("Getting tether...")
 
 tether = get_tether()
+
+
+# =========================================================
+# TETHER CHANGE
+# =========================================================
+
+tether_previous = None
+
+if last_post_prices:
+
+    tether_previous = last_post_prices.get(
+        "tether"
+    )
+
+tether_change = calculate_change(
+    tether,
+    tether_previous
+)
+
+
+print(
+    "Tether current:",
+    tether
+)
+
+print(
+    "Tether previous:",
+    tether_previous
+)
+
+print(
+    "Tether change:",
+    tether_change
+)
 
 
 print("Getting bitcoin...")
