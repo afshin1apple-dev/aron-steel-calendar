@@ -1,37 +1,25 @@
 name: Daily Calendar
-
 on:
   schedule:
-    # اجرای اصلی: ساعت ۸ صبح ایران
+    # اجرای روزانه: ساعت ۸ صبح ایران
     - cron: '30 4 * * *'
-
-    # اجرای پشتیبان: ساعت ۸:۳۰ ایران
-    - cron: '0 5 * * *'
-
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   post:
     runs-on: ubuntu-latest
-
     steps:
-
       - name: Get files
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install packages
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Send today's calendar
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
@@ -47,9 +35,7 @@ jobs:
           echo "Iran time:"
           TZ=Asia/Tehran date
           echo "======================================"
-
           python calendar_bot.py
-
           echo "======================================"
           echo "Calendar job finished"
           echo "======================================"
