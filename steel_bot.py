@@ -428,7 +428,7 @@ def create_price_image(
     )
 
     # -----------------------------------------------------
-    # Dark overlay
+    # DARK OVERLAY
     # -----------------------------------------------------
 
     draw.rectangle(
@@ -447,7 +447,7 @@ def create_price_image(
     )
 
     # -----------------------------------------------------
-    # Main panel
+    # MAIN PANEL
     # -----------------------------------------------------
 
     panel_x1 = 100
@@ -472,7 +472,7 @@ def create_price_image(
     )
 
     # -----------------------------------------------------
-    # Fonts
+    # FONTS
     # -----------------------------------------------------
 
     title_font = get_font(
@@ -496,7 +496,7 @@ def create_price_image(
     )
 
     # -----------------------------------------------------
-    # Header
+    # HEADER
     # -----------------------------------------------------
 
     title = (
@@ -558,7 +558,7 @@ def create_price_image(
     )
 
     # -----------------------------------------------------
-    # Price list - ONE COLUMN
+    # PRICE LIST - ONE COLUMN
     # -----------------------------------------------------
 
     y = 330
@@ -612,7 +612,7 @@ def create_price_image(
         y += 115
 
     # -----------------------------------------------------
-    # Unit
+    # UNIT
     # -----------------------------------------------------
 
     unit_text = (
@@ -651,10 +651,6 @@ def create_price_image(
     brand_width = (
         bbox[2] - bbox[0]
     )
-
-    # -----------------------------------------------------
-    # Bottom brand
-    # -----------------------------------------------------
 
     draw.rounded_rectangle(
         [
@@ -1025,6 +1021,37 @@ def main():
     )
 
     # -----------------------------------------------------
+    # WORKING HOURS
+    # -----------------------------------------------------
+    # فقط از ساعت 08:00 تا قبل از 22:00
+    # ربات اجازه ارسال دارد.
+    #
+    # 00:00 تا 07:59 -> متوقف
+    # 08:00 تا 21:59 -> فعال
+    # 22:00 تا 23:59 -> متوقف
+
+    if now.hour < 8 or now.hour >= 22:
+
+        print(
+            "OUTSIDE WORKING HOURS"
+        )
+
+        print(
+            "Steel Bot works only from "
+            "08:00 to 22:00 Iran time."
+        )
+
+        print(
+            "No post will be sent."
+        )
+
+        print(
+            "======================================"
+        )
+
+        return
+
+    # -----------------------------------------------------
     # FRIDAY
     # -----------------------------------------------------
 
@@ -1044,7 +1071,27 @@ def main():
         "Getting steel prices..."
     )
 
-    all_prices = get_all_prices()
+    try:
+
+        all_prices = get_all_prices()
+
+    except Exception as e:
+
+        print(
+            "PRICE ERROR:",
+            type(e).__name__,
+            str(e)
+        )
+
+        return
+
+    if not all_prices:
+
+        print(
+            "ERROR: No steel prices received."
+        )
+
+        return
 
     # -----------------------------------------------------
     # HISTORY
@@ -1105,10 +1152,23 @@ def main():
         # CREATE BRANDED IMAGE
         # -------------------------------------------------
 
-        image_file = create_price_image(
-            factory_data["name"],
-            prices
-        )
+        try:
+
+            image_file = create_price_image(
+                factory_data["name"],
+                prices
+            )
+
+        except Exception as e:
+
+            print(
+                "IMAGE ERROR:",
+                factory_key,
+                type(e).__name__,
+                str(e)
+            )
+
+            continue
 
         # -------------------------------------------------
         # CAPTION
@@ -1125,6 +1185,10 @@ def main():
             "Sending:",
             factory_data["name"]
         )
+
+        # -------------------------------------------------
+        # SEND
+        # -------------------------------------------------
 
         success = send_photo(
             CHANNEL,
