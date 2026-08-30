@@ -1,113 +1,66 @@
 name: IPE Bot
-
 on:
   workflow_dispatch:
-
   schedule:
     # =====================================================
-    # اجرا به وقت ایران
+    # IPE PRICE BOT
     #
-    # 08:00 ایران = 04:30 UTC
-    # 10:00 ایران = 06:30 UTC
-    # 12:00 ایران = 08:30 UTC
+    # فقط یک بار در روز
     # 14:00 ایران = 10:30 UTC
-    # 16:00 ایران = 12:30 UTC
-    # 18:00 ایران = 14:30 UTC
-    # 20:00 ایران = 16:30 UTC
-    # 22:00 ایران = 18:30 UTC
+    #
+    # روزهای اجرا:
+    # شنبه، یکشنبه، دوشنبه، سه‌شنبه، چهارشنبه، پنجشنبه
     #
     # جمعه اجرا نمی‌شود.
     # =====================================================
-
-    - cron: "30 4 * * 0-3,5-6"
-    - cron: "30 6 * * 0-3,5-6"
-    - cron: "30 8 * * 0-3,5-6"
-    - cron: "30 10 * * 0-3,5-6"
-    - cron: "30 12 * * 0-3,5-6"
-    - cron: "30 14 * * 0-3,5-6"
-    - cron: "30 16 * * 0-3,5-6"
-    - cron: "30 18 * * 0-3,5-6"
-
-
+    - cron: "30 10 * * 0-4,6"
 jobs:
-
   ipe:
-
     runs-on: ubuntu-latest
-
     steps:
-
       # =====================================================
       # CHECKOUT
       # =====================================================
-
       - name: Checkout
         uses: actions/checkout@v4
-
-
       # =====================================================
-      # PYTHON
+      # SETUP PYTHON
       # =====================================================
-
       - name: Setup Python
         uses: actions/setup-python@v5
-
         with:
           python-version: "3.12"
-
-
       # =====================================================
       # INSTALL DEPENDENCIES
       # =====================================================
-
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-
       # =====================================================
       # CHECK PILLOW
       # =====================================================
-
       - name: Check Pillow
         run: |
           python -c "from PIL import Image, ImageDraw, ImageFont; print('Pillow OK')"
-
-
       # =====================================================
       # RUN IPE BOT
       # =====================================================
-
       - name: Run IPE Bot
-
         env:
-
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
-
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-
         run: |
-
           echo "======================================"
-
           echo "Starting IPE Bot"
-
+          echo "======================================"
           echo "UTC time:"
-
           date -u
-
           echo "Iran time:"
-
           TZ=Asia/Tehran date
-
           echo "======================================"
-
           python ipe.py
-
           echo "======================================"
-
           echo "IPE Bot finished"
-
           echo "======================================"
