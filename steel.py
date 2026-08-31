@@ -1,24 +1,93 @@
 import os
+import re
 import json
 import requests
+import pandas as pd
 
+from io import StringIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from price import get_prices
+from holiday import (
+    is_non_working_day,
+    get_holiday_name,
+)
 
 
 # =========================================================
 # SETTINGS
 # =========================================================
 
-TOKEN = os.environ["BOT_TOKEN"]
-CHANNEL = os.environ["CHANNEL_ID"]
-PEXELS_KEY = os.environ["PEXELS_API_KEY"]
+TIMEOUT = 30
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/125.0 Safari/537.36"
+    )
+}
+
+TOKEN = os.environ.get("BOT_TOKEN")
+CHANNEL = os.environ.get("CHANNEL_ID")
+PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 STEEL_HISTORY_FILE = "steel_history.json"
+
+# =========================================================
+# DIRECT PRICE SOURCE
+# =========================================================
+#
+# منبع قبلی price.py حذف شد.
+#
+# منبع مستقیم:
+# پیوان - میلگرد فولاد خراسان نیشابور
+#
+# =========================================================
+
+SOURCE_URL = (
+    "https://pivan.co/brands/"
+    "khorasan-steel-neishabour/"
+    "rebar/"
+)
+
+PEXELS_URL = (
+    "https://api.pexels.com/v1/search"
+)
+
+IMAGE_QUERY = "steel rebar construction"
+
+
+# =========================================================
+# PUBLISH SETTINGS
+# =========================================================
+
+PUBLISH_HOUR = 15
+
+PUBLISH_MINUTE = 0
+
+# فقط 15:00 تا 15:09
+PUBLISH_WINDOW_MINUTES = 10
+
+
+# =========================================================
+# EXPECTED REBAR SIZES
+# =========================================================
+
+ALLOWED_SIZES = {
+    "12",
+    "14",
+    "16",
+    "18",
+    "20",
+    "22",
+    "25",
+    "28",
+    "32",
+}
 
 
 # =========================================================
@@ -35,39 +104,435 @@ COMPANY_FOOTER = """
 
 
 # =========================================================
-# PRICE FORMAT
+# NUMBER NORMALIZATION
 # =========================================================
 
-def format_price(value):
+def normalize_number(value):
 
     if value is None:
-        return "نامشخص"
+        return ""
 
-    return f"{value:,.0f}"
+    text = str(value)
+
+    persian = "۰۱۲۳۴۵۶۷۸۹"
+    arabic = "٠١٢٣٤٥٦٧٨٩"
+
+    for i, ch in enumerate(persian):
+        text = text.replace(
+            ch,
+            str(i)
+        )
+
+    for i, ch in enumerate(arabic):
+        text = text.replace(
+            ch,
+            str(i)
+        )
+
+    return text
 
 
 # =========================================================
-# CHANGE FORMAT
+# CLEAN TEXT
 # =========================================================
 
-def format_change(value):
+def clean_text(value):
+
+    text = normalize_number(value)
+
+    text = text.replace(
+        "\u200c",
+        " "
+    )
+
+    text = text.replace(
+        "\n",
+        " "
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
+# =========================================================
+# EXTRACT SIZE
+# =========================================================
+
+def extract_size(text):
+
+    text = clean_text(text)
+
+    # -----------------------------------------------------
+    # فقط سایزهای مجاز
+    # -----------------------------------------------------
+
+    matches = re.findall(
+        r"\b(12|14|16|18|20|22|25|28|32)\b",
+        text
+    )
+
+    for size in matches:
+
+        if size in ALLOWED_SIZES:
+
+            return size
+
+    return None
+
+
+# =========================================================
+# EXTRACT PRICE
+# =========================================================
+
+def extract_price(value):
 
     if value is None:
-        return "⚪ بدون سابقه"
+        return None
 
-    if value > 0:
+    text = clean_text(value)
 
-        return f"🟢 +{value:.2f}%"
+    if "تماس" in text:
+        return None
 
-    if value < 0:
+    text = text.replace(
+        "٬",
+        ","
+    )
 
-        return f"🔴 {value:.2f}%"
+    numbers = re.findall(
+        r"\d[\d,]*",
+        text
+    )
 
-    return "⚪ 0.00%"
+    candidates = []
+
+    for number in numbers:
+
+        try:
+
+            number_int = int(
+                number.replace(
+                    ",",
+                    ""
+                )
+            )
+
+            # قیمت میلگرد به تومان
+            if number_int >= 10000:
+
+                candidates.append(
+                    number_int
+                )
+
+        except Exception:
+            continue
+
+    if not candidates:
+        return None
+
+    return candidates[-1]
 
 
 # =========================================================
-# LOAD STEEL HISTORY
+# DETECT KHORASAN / NEYSHABOUR
+# =========================================================
+
+def is_neyshabour_row(text):
+
+    text = clean_text(text)
+
+    keywords = [
+        "نیشابور",
+        "فولاد خراسان",
+        "خراسان",
+        "Khorasan",
+        "Neyshabour",
+        "Neyshabor",
+    ]
+
+    for keyword in keywords:
+
+        if keyword.lower() in text.lower():
+
+            return True
+
+    return False
+
+
+# =========================================================
+# PARSE PIVAN
+# =========================================================
+
+def get_steel_prices():
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "GETTING REBAR PRICES"
+    )
+
+    print(
+        "SOURCE:",
+        SOURCE_URL
+    )
+
+    print(
+        "======================================"
+    )
+
+    try:
+
+        response = requests.get(
+            SOURCE_URL,
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+
+        response.raise_for_status()
+
+    except Exception as e:
+
+        print(
+            "FETCH ERROR:",
+            type(e).__name__,
+            str(e)
+        )
+
+        return []
+
+
+    # -----------------------------------------------------
+    # READ HTML TABLES
+    # -----------------------------------------------------
+
+    try:
+
+        tables = pd.read_html(
+            StringIO(
+                response.text
+            )
+        )
+
+    except Exception as e:
+
+        print(
+            "TABLE ERROR:",
+            type(e).__name__,
+            str(e)
+        )
+
+        return []
+
+
+    print(
+        "Tables found:",
+        len(tables)
+    )
+
+
+    prices = {}
+
+
+    # =====================================================
+    # PARSE ALL TABLES
+    # =====================================================
+
+    for table_index, df in enumerate(
+        tables
+    ):
+
+        print(
+            f"Checking table "
+            f"{table_index + 1}: "
+            f"{df.shape}"
+        )
+
+
+        for _, row in df.iterrows():
+
+            values = [
+                clean_text(x)
+                for x in row.tolist()
+            ]
+
+
+            if not values:
+                continue
+
+
+            row_text = " | ".join(
+                values
+            )
+
+
+            # -------------------------------------------------
+            # فقط نیشابور
+            # -------------------------------------------------
+
+            # اگر جدول اختصاصی نیشابور باشد،
+            # ممکن است نام نیشابور داخل هر ردیف نباشد.
+            #
+            # بنابراین ابتدا سایز را پیدا می‌کنیم.
+            # -------------------------------------------------
+
+            size = extract_size(
+                row_text
+            )
+
+
+            if size is None:
+                continue
+
+
+            # -------------------------------------------------
+            # PRICE
+            # -------------------------------------------------
+
+            price = None
+
+
+            for value in reversed(
+                values
+            ):
+
+                candidate = extract_price(
+                    value
+                )
+
+
+                if candidate is None:
+                    continue
+
+
+                price = candidate
+
+                break
+
+
+            if price is None:
+                continue
+
+
+            # -------------------------------------------------
+            # DELIVERY
+            # -------------------------------------------------
+
+            delivery = "کارخانه"
+
+
+            if (
+                "تهران" in row_text
+                and "کارخانه" not in row_text
+            ):
+
+                delivery = "تهران"
+
+
+            # -------------------------------------------------
+            # UNIT
+            # -------------------------------------------------
+
+            unit = "کیلوگرم"
+
+
+            if "شاخه" in row_text:
+
+                unit = "شاخه"
+
+            elif "کیلو" in row_text:
+
+                unit = "کیلوگرم"
+
+
+            # -------------------------------------------------
+            # SAVE
+            # -------------------------------------------------
+
+            # اولویت با قیمت کارخانه است.
+            # برای ربات ما فقط قیمت کارخانه مهم است.
+            # -------------------------------------------------
+
+            if delivery != "کارخانه":
+
+                continue
+
+
+            prices[size] = {
+                "size": size,
+                "price": price,
+                "delivery": delivery,
+                "unit": unit,
+            }
+
+
+    # =====================================================
+    # BUILD ORDERED RESULT
+    # =====================================================
+
+    results = []
+
+
+    for size in sorted(
+        ALLOWED_SIZES,
+        key=lambda x: int(x)
+    ):
+
+        item = prices.get(
+            size
+        )
+
+
+        if item is None:
+
+            print(
+                f"SIZE {size}: "
+                "NOT FOUND"
+            )
+
+            continue
+
+
+        results.append(
+            item
+        )
+
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "VALID REBAR SIZES:",
+        len(results)
+    )
+
+    print(
+        "======================================"
+    )
+
+
+    for item in results:
+
+        print(
+            f"Rebar {item['size']} | "
+            f"{item['price']:,} | "
+            f"{item['delivery']} | "
+            f"{item['unit']}"
+        )
+
+
+    return results
+
+
+# =========================================================
+# HISTORY
 # =========================================================
 
 def load_history():
@@ -78,6 +543,7 @@ def load_history():
 
         return {}
 
+
     try:
 
         with open(
@@ -86,26 +552,33 @@ def load_history():
             encoding="utf-8"
         ) as f:
 
-            data = json.load(f)
+            data = json.load(
+                f
+            )
 
-            if isinstance(data, dict):
 
-                return data
+        if isinstance(
+            data,
+            dict
+        ):
 
-            return {}
+            return data
+
 
     except Exception as e:
 
         print(
-            "Steel history load error:",
-            e
+            "History load error:",
+            type(e).__name__,
+            str(e)
         )
 
-        return {}
+
+    return {}
 
 
 # =========================================================
-# SAVE STEEL HISTORY
+# SAVE HISTORY
 # =========================================================
 
 def save_history(history):
@@ -125,7 +598,36 @@ def save_history(history):
 
 
 # =========================================================
-# CALCULATE CHANGE
+# PREVIOUS PRICE
+# =========================================================
+
+def get_previous_price(
+    previous_prices,
+    size
+):
+
+    if not previous_prices:
+
+        return None
+
+
+    value = previous_prices.get(
+        str(size)
+    )
+
+
+    if value is None:
+
+        value = previous_prices.get(
+            size
+        )
+
+
+    return value
+
+
+# =========================================================
+# CHANGE
 # =========================================================
 
 def calculate_change(
@@ -141,83 +643,403 @@ def calculate_change(
 
         return None
 
+
     return (
-        (current - previous)
+        (
+            current - previous
+        )
         / previous
     ) * 100
 
 
 # =========================================================
-# GET PREVIOUS PRICE
+# PRICE FORMAT
 # =========================================================
 
-def get_previous_price(
-    previous_prices,
-    size
-):
-
-    if not previous_prices:
-        return None
-
-    value = previous_prices.get(
-        str(size)
-    )
+def format_price(value):
 
     if value is None:
 
-        value = previous_prices.get(
+        return "نامشخص"
+
+
+    return f"{value:,.0f}"
+
+
+# =========================================================
+# CHANGE FORMAT
+# =========================================================
+
+def format_change(value):
+
+    if value is None:
+
+        return "⚪ بدون سابقه"
+
+
+    if value > 0:
+
+        return (
+            f"🟢 +{value:.2f}%"
+        )
+
+
+    if value < 0:
+
+        return (
+            f"🔴 {value:.2f}%"
+        )
+
+
+    return "⚪ 0.00%"
+
+
+# =========================================================
+# PUBLISH TIME LOCK
+# =========================================================
+
+def check_publish_time(now):
+
+    # -----------------------------------------------------
+    # فقط ساعت 15
+    # -----------------------------------------------------
+
+    if now.hour != PUBLISH_HOUR:
+
+        print(
+            "TIME LOCK:"
+        )
+
+        print(
+            "Current Iran time:",
+            now.strftime(
+                "%H:%M:%S"
+            )
+        )
+
+        print(
+            "Rebar is allowed only at 15:00 Iran time."
+        )
+
+        return False
+
+
+    # -----------------------------------------------------
+    # فقط 15:00 تا 15:09
+    # -----------------------------------------------------
+
+    if (
+        now.minute < PUBLISH_MINUTE
+        or now.minute >= (
+            PUBLISH_MINUTE
+            + PUBLISH_WINDOW_MINUTES
+        )
+    ):
+
+        print(
+            "TIME WINDOW LOCK"
+        )
+
+        return False
+
+
+    return True
+
+
+# =========================================================
+# HOLIDAY LOCK
+# =========================================================
+
+def check_holiday(now):
+
+    # -----------------------------------------------------
+    # FRIDAY
+    # -----------------------------------------------------
+
+    if now.weekday() == 4:
+
+        print(
+            "HOLIDAY LOCK: FRIDAY"
+        )
+
+        print(
+            "No rebar post today."
+        )
+
+        return False
+
+
+    # -----------------------------------------------------
+    # OFFICIAL HOLIDAY
+    # -----------------------------------------------------
+
+    try:
+
+        holiday = is_non_working_day(
+            now.date()
+        )
+
+    except Exception as e:
+
+        print(
+            "HOLIDAY CHECK ERROR:",
+            type(e).__name__,
+            str(e)
+        )
+
+        print(
+            "FAIL SAFE: "
+            "No rebar post."
+        )
+
+        return False
+
+
+    if holiday:
+
+        try:
+
+            holiday_name = (
+                get_holiday_name(
+                    now.date()
+                )
+            )
+
+        except Exception:
+
+            holiday_name = None
+
+
+        print(
+            "HOLIDAY LOCK: "
+            "OFFICIAL HOLIDAY"
+        )
+
+
+        if holiday_name:
+
+            print(
+                "Holiday:",
+                holiday_name
+            )
+
+
+        return False
+
+
+    return True
+
+
+# =========================================================
+# BUILD MESSAGE
+# =========================================================
+
+def build_message(
+    current_prices,
+    previous_prices
+):
+
+    now = datetime.now(
+        TEHRAN
+    )
+
+
+    message_parts = [
+
+        "🏗 <b>گزارش قیمت فولاد</b>",
+
+        "",
+
+        "📍 <b>میلگرد فولاد خراسان نیشابور</b>",
+
+        "💰 قیمت‌ها به تومان",
+
+        "",
+    ]
+
+
+    for size, current in current_prices.items():
+
+        previous = get_previous_price(
+            previous_prices,
             size
         )
 
-    return value
+
+        change = calculate_change(
+            current,
+            previous
+        )
+
+
+        message_parts.append(
+            f"🔩 <b>میلگرد {size}</b>"
+        )
+
+
+        message_parts.append(
+            f"💰 {format_price(current)} تومان"
+        )
+
+
+        message_parts.append(
+            f"📊 تغییر: "
+            f"{format_change(change)}"
+        )
+
+
+        message_parts.append("")
+
+
+    message_parts.append(
+        COMPANY_FOOTER
+    )
+
+
+    return "\n".join(
+        message_parts
+    )
 
 
 # =========================================================
-# TIME
+# GET IMAGE
 # =========================================================
 
-now = datetime.now(
-    TEHRAN
-)
+def get_steel_image(now):
 
-today_key = now.strftime(
-    "%Y-%m-%d"
-)
+    if not PEXELS_KEY:
 
-weekday = now.weekday()
+        raise RuntimeError(
+            "PEXELS_API_KEY is missing"
+        )
+
+
+    response = requests.get(
+
+        PEXELS_URL,
+
+        headers={
+            "Authorization":
+                PEXELS_KEY
+        },
+
+        params={
+            "query":
+                IMAGE_QUERY,
+
+            "orientation":
+                "landscape",
+
+            "per_page":
+                30
+        },
+
+        timeout=30
+    )
+
+
+    response.raise_for_status()
+
+
+    photos = response.json().get(
+        "photos",
+        []
+    )
+
+
+    if not photos:
+
+        raise RuntimeError(
+            "No steel image found"
+        )
+
+
+    photo = photos[
+        now.date().toordinal()
+        % len(photos)
+    ]
+
+
+    return photo[
+        "src"
+    ][
+        "large2x"
+    ]
 
 
 # =========================================================
-# FRIDAY CHECK
-# =========================================================
-#
-# Python:
-# Monday    = 0
-# Tuesday   = 1
-# Wednesday = 2
-# Thursday  = 3
-# Friday    = 4
-# Saturday  = 5
-# Sunday    = 6
-#
+# SEND TELEGRAM
 # =========================================================
 
-if weekday == 4:
+def send_telegram(
+    image_url,
+    message
+):
+
+    print(
+        "Sending rebar post..."
+    )
+
+
+    response = requests.post(
+
+        f"https://api.telegram.org/"
+        f"bot{TOKEN}/sendPhoto",
+
+        data={
+
+            "chat_id":
+                CHANNEL,
+
+            "photo":
+                image_url,
+
+            "caption":
+                message,
+
+            "parse_mode":
+                "HTML"
+        },
+
+        timeout=60
+    )
+
+
+    print(
+        "Telegram status:",
+        response.status_code
+    )
+
+
+    if not response.ok:
+
+        print(
+            response.text
+        )
+
+        return False
+
+
+    return True
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
+def main():
+
+    now = datetime.now(
+        TEHRAN
+    )
+
 
     print(
         "======================================"
     )
 
     print(
-        "STEEL MARKET"
-    )
-
-    print(
-        "Today is Friday."
-    )
-
-    print(
-        "Steel post will NOT be sent."
+        "REBAR / STEEL BOT"
     )
 
     print(
@@ -231,340 +1053,278 @@ if weekday == 4:
         "======================================"
     )
 
-    raise SystemExit(0)
+
+    # =====================================================
+    # 1. TIME LOCK
+    # =====================================================
+
+    if not check_publish_time(
+        now
+    ):
+
+        print(
+            "BOT STOPPED BY TIME LOCK."
+        )
+
+        return
 
 
-# =========================================================
-# START
-# =========================================================
+    # =====================================================
+    # 2. HOLIDAY LOCK
+    # =====================================================
 
-print(
-    "======================================"
-)
+    if not check_holiday(
+        now
+    ):
 
-print(
-    "STEEL MARKET"
-)
+        print(
+            "BOT STOPPED BY HOLIDAY LOCK."
+        )
 
-print(
-    "Iran time:",
-    now.strftime(
-        "%Y-%m-%d %H:%M:%S"
+        return
+
+
+    # =====================================================
+    # 3. ENVIRONMENT
+    # =====================================================
+
+    missing = []
+
+
+    if not TOKEN:
+
+        missing.append(
+            "BOT_TOKEN"
+        )
+
+
+    if not CHANNEL:
+
+        missing.append(
+            "CHANNEL_ID"
+        )
+
+
+    if not PEXELS_KEY:
+
+        missing.append(
+            "PEXELS_API_KEY"
+        )
+
+
+    if missing:
+
+        raise RuntimeError(
+            "Missing environment variables: "
+            + ", ".join(missing)
+        )
+
+
+    # =====================================================
+    # 4. LOAD HISTORY
+    # =====================================================
+
+    history = load_history()
+
+
+    previous_prices = (
+        history.get(
+            "last_steel_prices",
+            {}
+        )
     )
-)
-
-print(
-    "======================================"
-)
 
 
-# =========================================================
-# LOAD HISTORY
-# =========================================================
+    # =====================================================
+    # 5. GET PRICES
+    # =====================================================
 
-history = load_history()
-
-previous_prices = history.get(
-    "last_steel_prices"
-)
+    results = get_steel_prices()
 
 
-# =========================================================
-# GET STEEL PRICES
-# =========================================================
+    if not results:
 
-print(
-    "Getting steel prices from Pivan..."
-)
-
-steel_prices = get_prices()
+        raise RuntimeError(
+            "No rebar prices found."
+        )
 
 
-print(
-    "Steel products found:",
-    len(steel_prices)
-)
+    # =====================================================
+    # 6. VALIDATE
+    # =====================================================
+
+    if len(results) < 1:
+
+        raise RuntimeError(
+            "No valid rebar prices."
+        )
 
 
-if not steel_prices:
+    # =====================================================
+    # 7. CURRENT PRICES
+    # =====================================================
 
-    raise RuntimeError(
-        "No steel prices found"
+    current_prices = {}
+
+
+    for item in results:
+
+        current_prices[
+            str(item["size"])
+        ] = item["price"]
+
+
+    if not current_prices:
+
+        raise RuntimeError(
+            "Current rebar prices are empty."
+        )
+
+
+    # =====================================================
+    # 8. FINAL TIME CHECK
+    # =====================================================
+
+    final_now = datetime.now(
+        TEHRAN
     )
 
 
-# =========================================================
-# CURRENT STEEL PRICES
-# =========================================================
+    if not check_publish_time(
+        final_now
+    ):
 
-current_prices = {}
+        print(
+            "FINAL TIME LOCK."
+        )
+
+        return
 
 
-for steel in steel_prices:
+    # =====================================================
+    # 9. FINAL HOLIDAY CHECK
+    # =====================================================
 
-    size = steel.get(
-        "size"
+    if not check_holiday(
+        final_now
+    ):
+
+        print(
+            "FINAL HOLIDAY LOCK."
+        )
+
+        return
+
+
+    # =====================================================
+    # 10. BUILD MESSAGE
+    # =====================================================
+
+    message = build_message(
+        current_prices,
+        previous_prices
     )
 
-    steel_price = steel.get(
-        "price"
-    )
-
-    if size is None:
-
-        continue
-
-    current_prices[
-        str(size)
-    ] = steel_price
 
     print(
-        f"Steel size {size}: "
-        f"{steel_price}"
+        "======================================"
+    )
+
+    print(
+        message
+    )
+
+    print(
+        "======================================"
     )
 
 
-if not current_prices:
+    # =====================================================
+    # 11. IMAGE
+    # =====================================================
 
-    raise RuntimeError(
-        "No valid steel prices found"
+    image_url = get_steel_image(
+        final_now
     )
 
 
-# =========================================================
-# BUILD MESSAGE
-# =========================================================
+    # =====================================================
+    # 12. SEND
+    # =====================================================
 
-message_parts = [
-
-    "🏗 <b>گزارش قیمت فولاد</b>",
-    "",
-    "📍 <b>میلگرد فولاد خراسان نیشابور</b>",
-    "💰 قیمت‌ها به تومان",
-    ""
-]
-
-
-# =========================================================
-# ADD PRICES + COMPARISON
-# =========================================================
-
-for size, current in current_prices.items():
-
-    previous = get_previous_price(
-        previous_prices,
-        size
-    )
-
-    change = calculate_change(
-        current,
-        previous
-    )
-
-    message_parts.append(
-        f"🔩 <b>میلگرد {size}</b>"
-    )
-
-    message_parts.append(
-        f"💰 {format_price(current)} تومان"
-    )
-
-    message_parts.append(
-        f"📊 تغییر: {format_change(change)}"
-    )
-
-    message_parts.append("")
-
-
-# =========================================================
-# FOOTER
-# =========================================================
-
-message_parts.append(
-    COMPANY_FOOTER
-)
-
-
-message = "\n".join(
-    message_parts
-)
-
-
-# =========================================================
-# PRINT MESSAGE
-# =========================================================
-
-print(
-    "======================================"
-)
-
-print(
-    "STEEL MESSAGE"
-)
-
-print(
-    message
-)
-
-print(
-    "======================================"
-)
-
-
-# =========================================================
-# GET IMAGE
-# =========================================================
-
-print(
-    "Getting steel image..."
-)
-
-
-r = requests.get(
-
-    "https://api.pexels.com/v1/search",
-
-    headers={
-        "Authorization":
-            PEXELS_KEY
-    },
-
-    params={
-
-        "query":
-            "steel rebar construction",
-
-        "orientation":
-            "landscape",
-
-        "per_page":
-            30
-    },
-
-    timeout=30
-)
-
-
-r.raise_for_status()
-
-
-photos = r.json().get(
-    "photos",
-    []
-)
-
-
-if not photos:
-
-    raise RuntimeError(
-        "No steel image found"
+    success = send_telegram(
+        image_url,
+        message
     )
 
 
-photo = photos[
-    now.date().toordinal()
-    % len(photos)
-]
+    if not success:
+
+        raise RuntimeError(
+            "Telegram post failed."
+        )
 
 
-image_url = photo[
-    "src"
-][
-    "large2x"
-]
+    # =====================================================
+    # 13. SAVE HISTORY
+    # =====================================================
+
+    today_key = final_now.strftime(
+        "%Y-%m-%d"
+    )
 
 
-# =========================================================
-# SEND TELEGRAM
-# =========================================================
-
-print(
-    "Sending steel post..."
-)
+    history[
+        "last_steel_post_date"
+    ] = today_key
 
 
-r = requests.post(
-
-    f"https://api.telegram.org/"
-    f"bot{TOKEN}/sendPhoto",
-
-    data={
-
-        "chat_id":
-            CHANNEL,
-
-        "photo":
-            image_url,
-
-        "caption":
-            message,
-
-        "parse_mode":
-            "HTML"
-    },
-
-    timeout=30
-)
+    history[
+        "last_steel_post_time"
+    ] = final_now.strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
-print(
-    "Telegram response:"
-)
-
-print(
-    r.text
-)
+    history[
+        "last_steel_prices"
+    ] = current_prices
 
 
-if not r.ok:
+    save_history(
+        history
+    )
 
-    raise RuntimeError(
-        r.text
+
+    # =====================================================
+    # SUCCESS
+    # =====================================================
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "REBAR POST SENT SUCCESSFULLY"
+    )
+
+    print(
+        "SOURCE: PIVAN"
+    )
+
+    print(
+        "TIME: 15:00 IRAN"
+    )
+
+    print(
+        "======================================"
     )
 
 
 # =========================================================
-# SAVE HISTORY ONLY AFTER SUCCESS
+# RUN
 # =========================================================
 
-history[
-    "last_steel_post_date"
-] = today_key
+if __name__ == "__main__":
 
-
-history[
-    "last_steel_post_time"
-] = now.strftime(
-    "%Y-%m-%d %H:%M:%S"
-)
-
-
-history[
-    "last_steel_prices"
-] = current_prices
-
-
-save_history(
-    history
-)
-
-
-# =========================================================
-# SUCCESS
-# =========================================================
-
-print(
-    "======================================"
-)
-
-print(
-    "STEEL POST SENT SUCCESSFULLY"
-)
-
-print(
-    "Steel prices saved for comparison."
-)
-
-print(
-    "======================================"
-)
+    main()
