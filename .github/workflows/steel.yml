@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 
   schedule:
-
     # 15:00 Iran = 11:30 UTC
     # جمعه اجرا نمی‌شود
 
