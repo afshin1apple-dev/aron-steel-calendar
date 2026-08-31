@@ -1,66 +1,301 @@
 name: IPE Bot
+
 on:
   workflow_dispatch:
+
   schedule:
     # =====================================================
     # IPE PRICE BOT
     #
-    # فقط یک بار در روز
     # 14:00 ایران = 10:30 UTC
     #
-    # روزهای اجرا:
-    # شنبه، یکشنبه، دوشنبه، سه‌شنبه، چهارشنبه، پنجشنبه
-    #
-    # جمعه اجرا نمی‌شود.
+    # شنبه تا پنجشنبه
+    # جمعه اجرا نمی‌شود
     # =====================================================
     - cron: "30 10 * * 0-4,6"
+
+
+# =========================================================
+# PREVENT MULTIPLE IPE RUNS
+# =========================================================
+#
+# اگر GitHub به هر دلیل Workflow را دوباره اجرا کند،
+# اجرای دوم همزمان با اجرای اول انجام نمی‌شود.
+#
+# cancel-in-progress = false
+#
+# یعنی اجرای قبلی قطع نمی‌شود.
+# اجرای بعدی منتظر می‌ماند و بعد قفل روزانه را چک می‌کند.
+# =========================================================
+
+concurrency:
+  group: ipe-price-bot
+  cancel-in-progress: false
+
+
 jobs:
+
   ipe:
+
     runs-on: ubuntu-latest
+
+    # =====================================================
+    # PERMISSIONS
+    # =====================================================
+
+    permissions:
+      contents: read
+      actions: read
+
+
     steps:
-      # =====================================================
+
+      # ===================================================
       # CHECKOUT
-      # =====================================================
+      # ===================================================
+
       - name: Checkout
         uses: actions/checkout@v4
-      # =====================================================
+
+
+      # ===================================================
       # SETUP PYTHON
-      # =====================================================
+      # ===================================================
+
       - name: Setup Python
         uses: actions/setup-python@v5
+
         with:
           python-version: "3.12"
-      # =====================================================
+
+
+      # ===================================================
       # INSTALL DEPENDENCIES
-      # =====================================================
+      # ===================================================
+
       - name: Install dependencies
         run: |
+
           python -m pip install --upgrade pip
+
           pip install -r requirements.txt
-      # =====================================================
+
+
+      # ===================================================
       # CHECK PILLOW
-      # =====================================================
+      # ===================================================
+
       - name: Check Pillow
         run: |
-          python -c "from PIL import Image, ImageDraw, ImageFont; print('Pillow OK')"
-      # =====================================================
-      # RUN IPE BOT
-      # =====================================================
-      - name: Run IPE Bot
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
+          python -c "
+          from PIL import Image, ImageDraw, ImageFont
+          print('Pillow OK')
+          "
+
+
+      # ===================================================
+      # CALCULATE IRAN DATE
+      # ===================================================
+
+      - name: Calculate Iran Date
+        id: iran_date
+        shell: bash
         run: |
+
+          IRAN_DATE=$(TZ=Asia/Tehran date '+%Y-%m-%d')
+
+          echo "Iran date: $IRAN_DATE"
+
+          echo "iran_date=$IRAN_DATE" >> "$GITHUB_OUTPUT"
+
+          echo "IPE_LOCK_NAME=ipe-success-$IRAN_DATE" >> "$GITHUB_ENV"
+
+
+      # ===================================================
+      # DAILY IPE LOCK
+      # ===================================================
+      #
+      # اگر امروز قبلاً IPE با موفقیت ارسال شده باشد،
+      # این مرحله متوجه می‌شود و اجرای جدید را متوقف می‌کند.
+      #
+      # این قفل از Artifact خود GitHub Actions استفاده می‌کند.
+      # =====================================================
+
+      - name: Check Daily IPE Lock
+        id: daily_lock
+        uses: actions/github-script@v7
+
+        env:
+          IPE_LOCK_NAME: ${{ env.IPE_LOCK_NAME }}
+
+        with:
+          script: |
+
+            const artifacts =
+              await github.rest.actions.listArtifactsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+
+            const found =
+              artifacts.data.artifacts.find(
+                artifact =>
+                  artifact.name === process.env.IPE_LOCK_NAME &&
+                  artifact.expired === false
+              );
+
+            if (found) {
+
+              core.setOutput("locked", "true");
+
+              core.info(
+                "========================================"
+              );
+
+              core.info(
+                "IPE DAILY LOCK FOUND"
+              );
+
+              core.info(
+                `Lock: ${process.env.IPE_LOCK_NAME}`
+              );
+
+              core.info(
+                "IPE already published today."
+              );
+
+              core.info(
+                "No second publication will be made."
+              );
+
+              core.info(
+                "========================================"
+              );
+
+            } else {
+
+              core.setOutput("locked", "false");
+
+              core.info(
+                "No IPE daily lock found."
+              );
+
+              core.info(
+                "Publication is allowed."
+              );
+            }
+
+
+      # ===================================================
+      # STOP IF ALREADY PUBLISHED
+      # ===================================================
+
+      - name: Stop Duplicate IPE Run
+        if: steps.daily_lock.outputs.locked == 'true'
+        run: |
+
+          echo "========================================"
+          echo "IPE ALREADY PUBLISHED TODAY"
+          echo "DUPLICATE RUN BLOCKED"
+          echo "========================================"
+
+          exit 0
+
+
+      # ===================================================
+      # RUN IPE BOT
+      # ===================================================
+
+      - name: Run IPE Bot
+        if: steps.daily_lock.outputs.locked != 'true'
+
+        env:
+
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
+        run: |
+
           echo "======================================"
+
           echo "Starting IPE Bot"
+
           echo "======================================"
+
           echo "UTC time:"
+
           date -u
+
           echo "Iran time:"
+
           TZ=Asia/Tehran date
+
           echo "======================================"
+
           python ipe.py
+
+          EXIT_CODE=$?
+
           echo "======================================"
-          echo "IPE Bot finished"
+
+          echo "IPE Bot exit code: $EXIT_CODE"
+
           echo "======================================"
+
+          exit $EXIT_CODE
+
+
+      # ===================================================
+      # CREATE DAILY LOCK
+      # ===================================================
+      #
+      # این مرحله فقط وقتی اجرا می‌شود که python ipe.py
+      # با موفقیت کامل تمام شده باشد.
+      #
+      # بنابراین اگر Telegram ارسال نشود،
+      # قفل ثبت نمی‌شود.
+      # ===================================================
+
+      - name: Create Daily IPE Lock
+        if: success() && steps.daily_lock.outputs.locked != 'true'
+
+        shell: bash
+
+        run: |
+
+          echo "IPE SUCCESS" > ipe-success.txt
+
+          echo "Iran date:" >> ipe-success.txt
+
+          TZ=Asia/Tehran date '+%Y-%m-%d %H:%M:%S' >> ipe-success.txt
+
+          echo "========================================"
+
+          echo "IPE DAILY LOCK WILL BE CREATED"
+
+          echo "Lock name: $IPE_LOCK_NAME"
+
+          echo "========================================"
+
+
+      # ===================================================
+      # SAVE DAILY LOCK
+      # ===================================================
+
+      - name: Upload Daily IPE Lock
+        if: success() && steps.daily_lock.outputs.locked != 'true'
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: ${{ env.IPE_LOCK_NAME }}
+
+          path: ipe-success.txt
+
+          retention-days: 2
