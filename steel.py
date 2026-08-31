@@ -30,18 +30,26 @@ HEADERS = {
 }
 
 TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL = os.environ.get("CHANNEL_ID")
+
+# =========================================================
+# IMPORTANT
+# =========================================================
+# قیمت میلگرد فقط برای چت خصوصی افشین ارسال می‌شود.
+# CHANNEL_ID دیگر در این فایل استفاده نمی‌شود.
+# =========================================================
+
+PRIVATE_CHAT_ID = os.environ.get("PRIVATE_CHAT_ID")
+
 PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 STEEL_HISTORY_FILE = "steel_history.json"
 
+
 # =========================================================
 # DIRECT PRICE SOURCE
 # =========================================================
-#
-# منبع قبلی price.py حذف شد.
 #
 # منبع مستقیم:
 # پیوان - میلگرد فولاد خراسان نیشابور
@@ -376,12 +384,6 @@ def get_steel_prices():
             # فقط نیشابور
             # -------------------------------------------------
 
-            # اگر جدول اختصاصی نیشابور باشد،
-            # ممکن است نام نیشابور داخل هر ردیف نباشد.
-            #
-            # بنابراین ابتدا سایز را پیدا می‌کنیم.
-            # -------------------------------------------------
-
             size = extract_size(
                 row_text
             )
@@ -453,10 +455,6 @@ def get_steel_prices():
 
             # -------------------------------------------------
             # SAVE
-            # -------------------------------------------------
-
-            # اولویت با قیمت کارخانه است.
-            # برای ربات ما فقط قیمت کارخانه مهم است.
             # -------------------------------------------------
 
             if delivery != "کارخانه":
@@ -980,6 +978,10 @@ def send_telegram(
         "Sending rebar post..."
     )
 
+    print(
+        "DESTINATION: PRIVATE CHAT"
+    )
+
 
     response = requests.post(
 
@@ -988,8 +990,13 @@ def send_telegram(
 
         data={
 
+            # =================================================
+            # مهم:
+            # میلگرد فقط به چت خصوصی ارسال می‌شود.
+            # =================================================
+
             "chat_id":
-                CHANNEL,
+                PRIVATE_CHAT_ID,
 
             "photo":
                 image_url,
@@ -1050,6 +1057,10 @@ def main():
     )
 
     print(
+        "DESTINATION: PRIVATE CHAT"
+    )
+
+    print(
         "======================================"
     )
 
@@ -1098,10 +1109,10 @@ def main():
         )
 
 
-    if not CHANNEL:
+    if not PRIVATE_CHAT_ID:
 
         missing.append(
-            "CHANNEL_ID"
+            "PRIVATE_CHAT_ID"
         )
 
 
@@ -1261,7 +1272,7 @@ def main():
     if not success:
 
         raise RuntimeError(
-            "Telegram post failed."
+            "Telegram private message failed."
         )
 
 
@@ -1305,11 +1316,15 @@ def main():
     )
 
     print(
-        "REBAR POST SENT SUCCESSFULLY"
+        "REBAR PRIVATE MESSAGE SENT SUCCESSFULLY"
     )
 
     print(
         "SOURCE: PIVAN"
+    )
+
+    print(
+        "DESTINATION: PRIVATE CHAT"
     )
 
     print(
