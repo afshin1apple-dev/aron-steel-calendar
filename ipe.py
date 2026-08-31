@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import requests
 import pandas as pd
 
@@ -26,7 +27,8 @@ HEADERS = {
         "AppleWebKit/537.36 "
         "(KHTML, like Gecko) "
         "Chrome/125.0 Safari/537.36"
-    )
+    ),
+    "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
 TOKEN = os.environ.get("BOT_TOKEN")
@@ -35,11 +37,25 @@ PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
+
+# =========================================================
+# SOURCE
+# =========================================================
+#
+# AhanOnline
+# قیمت تیرآهن ذوب آهن اصفهان
+# =========================================================
+
 SOURCE_URL = (
-    "https://pivan.co/brands/"
-    "introduction-of-isfahan-steel-factory/"
-    "iron-girder/"
+    "https://ahanonline.com/product-category/"
+    "%D8%AA%DB%8C%D8%B1%D8%A2%D9%87%D9%86-%D9%88-%D9%87%D8%A7%D8%B4/"
+    "%D8%AA%DB%8C%D8%B1%D8%A2%D9%87%D9%86/"
 )
+
+
+# =========================================================
+# IMAGE / FONT
+# =========================================================
 
 IMAGE_FILE = "ipe_price_card.jpg"
 
@@ -148,11 +164,19 @@ def extract_price(value):
 
     text = clean_text(value)
 
+    if not text:
+        return None
+
     if "تماس" in text:
         return None
 
     text = text.replace(
         "٬",
+        ","
+    )
+
+    text = text.replace(
+        "،",
         ","
     )
 
@@ -174,15 +198,22 @@ def extract_price(value):
                 )
             )
 
+            # -------------------------------------------------
+            # قیمت‌های واقعی تیرآهن
+            # -------------------------------------------------
+
             if value_int >= 10000:
+
                 candidates.append(
                     value_int
                 )
 
         except Exception:
+
             continue
 
     if not candidates:
+
         return None
 
     return candidates[-1]
@@ -197,8 +228,13 @@ def extract_size(text):
     text = clean_text(text)
 
     patterns = [
+
         r"IPE\s*(\d{2})",
-        r"تیرآهن\s*(\d{2})",
+
+        r"تیرآهن\s*(?:ذوب\s*آهن\s*)?(\d{2})",
+
+        r"تیر آهن\s*(?:ذوب\s*آهن\s*)?(\d{2})",
+
         r"\b(\d{2})\b",
     ]
 
@@ -216,33 +252,46 @@ def extract_size(text):
         size = match.group(1)
 
         if size in ALLOWED_SIZES:
+
             return size
 
     return None
 
 
 # =========================================================
-# DELIVERY
+# DETECT DELIVERY
 # =========================================================
 
 def detect_delivery(text):
 
     text = clean_text(text)
 
+    # -----------------------------------------------------
+    # کارخانه
+    # -----------------------------------------------------
+
     if "کارخانه" in text:
+
         return "کارخانه"
 
+
+    # -----------------------------------------------------
+    # بنگاه تهران
+    # -----------------------------------------------------
+
     if (
-        "تهران" in text
-        or "انبار" in text
+        "بنگاه تهران" in text
+        or "تهران" in text
     ):
+
         return "تهران"
+
 
     return None
 
 
 # =========================================================
-# UNIT
+# DETECT UNIT
 # =========================================================
 
 def detect_unit(text):
@@ -250,15 +299,33 @@ def detect_unit(text):
     text = clean_text(text)
 
     if "کیلوگرم" in text:
+
         return "کیلوگرم"
 
     if "کیلو" in text:
+
         return "کیلوگرم"
 
     if "شاخه" in text:
+
         return "شاخه"
 
     return None
+
+
+# =========================================================
+# CHECK ZOB AHAN
+# =========================================================
+
+def is_zob_ahan(text):
+
+    text = clean_text(text)
+
+    return (
+        "ذوب آهن" in text
+        or "ذوب‌آهن" in text
+        or "ذوباهن" in text
+    )
 
 
 # =========================================================
@@ -268,8 +335,22 @@ def detect_unit(text):
 def parse_ipe_prices():
 
     print(
-        "Getting IPE prices..."
+        "========================================"
     )
+
+    print(
+        "Getting IPE prices from AhanOnline..."
+    )
+
+    print(
+        "SOURCE:",
+        SOURCE_URL
+    )
+
+    print(
+        "========================================"
+    )
+
 
     try:
 
@@ -291,6 +372,16 @@ def parse_ipe_prices():
 
         return []
 
+
+    print(
+        "HTTP STATUS:",
+        response.status_code
+    )
+
+
+    # =====================================================
+    # READ HTML TABLES
+    # =====================================================
 
     try:
 
@@ -317,8 +408,13 @@ def parse_ipe_prices():
 
 
     factory = {}
+
     tehran = {}
 
+
+    # =====================================================
+    # SCAN TABLES
+    # =====================================================
 
     for table_index, df in enumerate(
         tables
@@ -333,12 +429,16 @@ def parse_ipe_prices():
         for _, row in df.iterrows():
 
             values = [
+
                 clean_text(x)
+
                 for x in row.tolist()
+
             ]
 
 
-            if len(values) < 4:
+            if len(values) < 2:
+
                 continue
 
 
@@ -347,29 +447,62 @@ def parse_ipe_prices():
             )
 
 
+            # =================================================
+            # فقط تیرآهن ذوب آهن
+            # =================================================
+
+            if not is_zob_ahan(
+                row_text
+            ):
+
+                continue
+
+
+            # =================================================
+            # SIZE
+            # =================================================
+
             size = extract_size(
                 row_text
             )
 
+
             if size is None:
+
                 continue
 
+
+            # =================================================
+            # DELIVERY
+            # =================================================
 
             delivery = detect_delivery(
                 row_text
             )
 
+
             if delivery is None:
+
                 continue
 
+
+            # =================================================
+            # UNIT
+            # =================================================
 
             unit = detect_unit(
                 row_text
             )
 
+
             if unit is None:
+
                 continue
 
+
+            # =================================================
+            # PRICE
+            # =================================================
 
             price = None
 
@@ -382,31 +515,69 @@ def parse_ipe_prices():
                     value
                 )
 
+
                 if candidate is None:
+
                     continue
 
+
                 price = candidate
+
                 break
 
 
             if price is None:
+
                 continue
 
 
+            # =================================================
+            # ITEM
+            # =================================================
+
             item = {
-                "size": size,
-                "delivery": delivery,
-                "unit": unit,
-                "price": price,
+
+                "size":
+                    size,
+
+                "delivery":
+                    delivery,
+
+                "unit":
+                    unit,
+
+                "price":
+                    price,
             }
 
 
-            if delivery == "کارخانه":
+            # =================================================
+            # FACTORY
+            # =================================================
+
+            if (
+                delivery == "کارخانه"
+                and unit == "کیلوگرم"
+            ):
+
                 factory[size] = item
 
-            elif delivery == "تهران":
+
+            # =================================================
+            # TEHRAN
+            # =================================================
+
+            elif (
+                delivery == "تهران"
+                and unit == "شاخه"
+            ):
+
                 tehran[size] = item
 
+
+    # =====================================================
+    # BUILD RESULTS
+    # =====================================================
 
     results = []
 
@@ -418,11 +589,75 @@ def parse_ipe_prices():
 
         results.append(
             {
-                "size": size,
-                "factory": factory.get(size),
-                "tehran": tehran.get(size),
+                "size":
+                    size,
+
+                "factory":
+                    factory.get(size),
+
+                "tehran":
+                    tehran.get(size),
             }
         )
+
+
+    # =====================================================
+    # DEBUG OUTPUT
+    # =====================================================
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "FACTORY PRICES"
+    )
+
+    print(
+        "========================================"
+    )
+
+
+    for size in sorted(
+        factory,
+        key=lambda x: int(x)
+    ):
+
+        print(
+            f"IPE {size}: "
+            f"{factory[size]['price']:,} "
+            f"تومان/کیلو"
+        )
+
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "TEHRAN PRICES"
+    )
+
+    print(
+        "========================================"
+    )
+
+
+    for size in sorted(
+        tehran,
+        key=lambda x: int(x)
+    ):
+
+        print(
+            f"IPE {size}: "
+            f"{tehran[size]['price']:,} "
+            f"تومان/شاخه"
+        )
+
+
+    print(
+        "========================================"
+    )
 
 
     return results
@@ -442,10 +677,12 @@ def get_font(size):
             "Downloading Persian font..."
         )
 
+
         response = requests.get(
             FONT_URL,
             timeout=30
         )
+
 
         response.raise_for_status()
 
@@ -571,6 +808,7 @@ def create_price_image(results):
 
     background = get_background()
 
+
     width = 1200
     height = 1600
 
@@ -592,9 +830,9 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # DARK OVERLAY
-    # -----------------------------------------------------
+    # =====================================================
 
     draw.rectangle(
         [
@@ -612,9 +850,9 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # PANEL
-    # -----------------------------------------------------
+    # =====================================================
 
     draw.rounded_rectangle(
         [
@@ -633,21 +871,26 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # FONTS
-    # -----------------------------------------------------
+    # =====================================================
 
     title_font = get_font(52)
+
     subtitle_font = get_font(31)
+
     header_font = get_font(29)
+
     row_font = get_font(27)
+
     watermark_font = get_font(29)
+
     footer_font = get_font(25)
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # TITLE
-    # -----------------------------------------------------
+    # =====================================================
 
     title = (
         "🏗 تیرآهن ذوب‌آهن اصفهان"
@@ -683,9 +926,9 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # SUBTITLE
-    # -----------------------------------------------------
+    # =====================================================
 
     subtitle = (
         "قیمت روز تیرآهن IPE"
@@ -721,9 +964,9 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # TABLE HEADER
-    # -----------------------------------------------------
+    # =====================================================
 
     y = 270
 
@@ -787,9 +1030,9 @@ def create_price_image(results):
     y += 85
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # ROWS
-    # -----------------------------------------------------
+    # =====================================================
 
     for result in results:
 
@@ -801,16 +1044,24 @@ def create_price_image(results):
 
 
         factory_price = (
+
             f"{factory['price']:,}"
+
             if factory
+
             else "نامشخص"
+
         )
 
 
         tehran_price = (
+
             f"{tehran['price']:,}"
+
             if tehran
+
             else "نامشخص"
+
         )
 
 
@@ -873,9 +1124,9 @@ def create_price_image(results):
         y += 105
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # FOOTER
-    # -----------------------------------------------------
+    # =====================================================
 
     draw.text(
         (150, y + 10),
@@ -903,9 +1154,9 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # WATERMARK
-    # -----------------------------------------------------
+    # =====================================================
 
     watermark = (
         "@arvand_aron_steel"
@@ -958,9 +1209,9 @@ def create_price_image(results):
     )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # SAVE
-    # -----------------------------------------------------
+    # =====================================================
 
     image.save(
         IMAGE_FILE,
@@ -1008,16 +1259,24 @@ def build_caption(results):
 
 
         factory_price = (
+
             f"{factory['price']:,}"
+
             if factory
+
             else "نامشخص"
+
         )
 
 
         tehran_price = (
+
             f"{tehran['price']:,}"
+
             if tehran
+
             else "نامشخص"
+
         )
 
 
@@ -1104,6 +1363,7 @@ def send_photo(
                 f"bot{TOKEN}/sendPhoto",
 
                 data={
+
                     "chat_id":
                         CHANNEL,
 
@@ -1115,6 +1375,7 @@ def send_photo(
                 },
 
                 files={
+
                     "photo":
                         photo
                 },
@@ -1154,14 +1415,15 @@ def send_photo(
 def check_publish_time(now):
 
     # -----------------------------------------------------
-    # فقط ساعت 14:00
+    # فقط ساعت 14
     # -----------------------------------------------------
 
     if now.hour != PUBLISH_HOUR:
 
         print(
             f"TIME LOCK: "
-            f"Current hour is {now.hour:02d}:"
+            f"Current hour is "
+            f"{now.hour:02d}:"
             f"{now.minute:02d}"
         )
 
@@ -1173,9 +1435,7 @@ def check_publish_time(now):
 
 
     # -----------------------------------------------------
-    # جلوگیری از اجرای دستی در ساعت 14:01 به بعد
-    #
-    # فقط بازه 14:00 تا 14:09 پذیرفته می‌شود.
+    # بازه 14:00 تا 14:09
     # -----------------------------------------------------
 
     if now.minute > 9:
@@ -1202,9 +1462,9 @@ def check_publish_time(now):
 
 def check_holiday(now):
 
-    # -----------------------------------------------------
+    # =====================================================
     # FRIDAY
-    # -----------------------------------------------------
+    # =====================================================
 
     if now.weekday() == 4:
 
@@ -1219,9 +1479,9 @@ def check_holiday(now):
         return False
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # OFFICIAL HOLIDAY
-    # -----------------------------------------------------
+    # =====================================================
 
     try:
 
@@ -1230,12 +1490,6 @@ def check_holiday(now):
         )
 
     except Exception as e:
-
-        # -------------------------------------------------
-        # FAIL SAFE
-        #
-        # اگر سیستم تعطیلات خراب شد، اجازه انتشار نمی‌دهیم.
-        # -------------------------------------------------
 
         print(
             "HOLIDAY CHECK ERROR:",
@@ -1293,45 +1547,39 @@ def check_holiday(now):
 
 def validate_results(results):
 
-    valid = [
-
-        item
-
-        for item in results
-
-        if item["factory"]
-        or item["tehran"]
-
-    ]
-
-
-    print(
-        f"VALID SIZES: {len(valid)}"
-    )
-
-
-    # -----------------------------------------------------
-    # باید دقیقاً 9 سایز داشته باشیم
-    # -----------------------------------------------------
-
-    if len(valid) != EXPECTED_SIZES:
+    if not results:
 
         print(
-            "ERROR: Expected "
-            f"{EXPECTED_SIZES} IPE sizes."
+            "ERROR: No IPE results."
         )
 
         return None
 
 
-    # -----------------------------------------------------
-    # کنترل نهایی سایزها
-    # -----------------------------------------------------
+    # =====================================================
+    # ALL EXPECTED SIZES MUST EXIST
+    # =====================================================
 
     actual_sizes = {
+
         item["size"]
-        for item in valid
+
+        for item in results
+
+        if (
+            item["factory"]
+            or item["tehran"]
+        )
     }
+
+
+    print(
+        "AVAILABLE SIZES:",
+        sorted(
+            actual_sizes,
+            key=lambda x: int(x)
+        )
+    )
 
 
     if actual_sizes != ALLOWED_SIZES:
@@ -1359,7 +1607,78 @@ def validate_results(results):
         return None
 
 
-    return valid
+    # =====================================================
+    # TEHRAN
+    # =====================================================
+
+    tehran_count = sum(
+
+        1
+
+        for item in results
+
+        if item["tehran"]
+
+    )
+
+
+    print(
+        f"TEHRAN COUNT: {tehran_count}"
+    )
+
+
+    if tehran_count < EXPECTED_SIZES:
+
+        print(
+            "ERROR: Tehran prices are incomplete."
+        )
+
+        return None
+
+
+    # =====================================================
+    # FACTORY
+    # =====================================================
+    #
+    # سایز 12 ممکن است قیمت کارخانه نداشته باشد.
+    # بنابراین حداقل 8 قیمت کارخانه لازم است.
+    # =====================================================
+
+    factory_count = sum(
+
+        1
+
+        for item in results
+
+        if item["factory"]
+
+    )
+
+
+    print(
+        f"FACTORY COUNT: {factory_count}"
+    )
+
+
+    if factory_count < 8:
+
+        print(
+            "ERROR: Factory prices are incomplete."
+        )
+
+        return None
+
+
+    # =====================================================
+    # FINAL VALIDATION
+    # =====================================================
+
+    print(
+        "PRICE VALIDATION: OK"
+    )
+
+
+    return results
 
 
 # =========================================================
@@ -1382,6 +1701,10 @@ def main():
     )
 
     print(
+        "SOURCE: AHANONLINE"
+    )
+
+    print(
         "Iran time:",
         now.strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -1397,26 +1720,30 @@ def main():
     # 1. TIME LOCK
     # =====================================================
 
-    if not check_publish_time(now):
+    if not check_publish_time(
+        now
+    ):
 
         print(
             "IPE BOT STOPPED BY TIME LOCK."
         )
 
-        return
+        sys.exit(0)
 
 
     # =====================================================
     # 2. HOLIDAY LOCK
     # =====================================================
 
-    if not check_holiday(now):
+    if not check_holiday(
+        now
+    ):
 
         print(
             "IPE BOT STOPPED BY HOLIDAY LOCK."
         )
 
-        return
+        sys.exit(0)
 
 
     # =====================================================
@@ -1427,18 +1754,21 @@ def main():
 
 
     if not TOKEN:
+
         missing.append(
             "BOT_TOKEN"
         )
 
 
     if not CHANNEL:
+
         missing.append(
             "CHANNEL_ID"
         )
 
 
     if not PEXELS_KEY:
+
         missing.append(
             "PEXELS_API_KEY"
         )
@@ -1451,7 +1781,7 @@ def main():
             ", ".join(missing)
         )
 
-        return
+        sys.exit(1)
 
 
     # =====================================================
@@ -1467,7 +1797,7 @@ def main():
             "ERROR: No IPE prices received."
         )
 
-        return
+        sys.exit(1)
 
 
     # =====================================================
@@ -1486,7 +1816,7 @@ def main():
             "PRICE VALIDATION FAILED."
         )
 
-        return
+        sys.exit(1)
 
 
     # =====================================================
@@ -1534,7 +1864,7 @@ def main():
             str(e)
         )
 
-        return
+        sys.exit(1)
 
 
     # =====================================================
@@ -1548,8 +1878,6 @@ def main():
 
     # =====================================================
     # 9. FINAL TIME CHECK
-    #
-    # یک بار دیگر درست قبل از ارسال چک می‌کنیم.
     # =====================================================
 
     final_now = datetime.now(
@@ -1566,13 +1894,11 @@ def main():
             "Publication cancelled."
         )
 
-        return
+        sys.exit(0)
 
 
     # =====================================================
     # 10. FINAL HOLIDAY CHECK
-    #
-    # اگر بین دریافت قیمت و ارسال، وضعیت عوض شده باشد.
     # =====================================================
 
     if not check_holiday(
@@ -1584,7 +1910,7 @@ def main():
             "Publication cancelled."
         )
 
-        return
+        sys.exit(0)
 
 
     # =====================================================
@@ -1617,16 +1943,32 @@ def main():
             "CHANNEL: SUCCESS"
         )
 
+        print(
+            "IPE DAILY PUBLICATION COMPLETED."
+        )
+
+        print(
+            "========================================"
+        )
+
+        sys.exit(0)
+
+
     else:
 
         print(
             "CHANNEL: FAILED"
         )
 
+        print(
+            "IPE DAILY PUBLICATION FAILED."
+        )
 
-    print(
-        "========================================"
-    )
+        print(
+            "========================================"
+        )
+
+        sys.exit(1)
 
 
 # =========================================================
@@ -1634,4 +1976,5 @@ def main():
 # =========================================================
 
 if __name__ == "__main__":
+
     main()
