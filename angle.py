@@ -2,9 +2,11 @@ import os
 import re
 import requests
 import pandas as pd
+
 from io import StringIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -20,7 +22,8 @@ HEADERS = {
         "AppleWebKit/537.36 "
         "(KHTML, like Gecko) "
         "Chrome/125.0 Safari/537.36"
-    )
+    ),
+    "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
 TOKEN = os.environ.get("BOT_TOKEN")
@@ -29,10 +32,22 @@ PEXELS_KEY = os.environ.get("PEXELS_API_KEY")
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
+
+# =========================================================
+# SOURCE
+# =========================================================
+#
+# آهن ملل
+# صفحه اختصاصی قیمت نبشی ناب تبریز
+# =========================================================
+
 SOURCE_URL = (
-    "https://pivan.co/brands/"
-    "tabriz-pure-steel/angel/"
+    "https://ahanmelal.com/"
+    "steel-t-bars-studs-angles/"
+    "steel-angle-price/"
+    "nab-tabriz-angle"
 )
+
 
 IMAGE_FILE = "angle_price_card.jpg"
 
@@ -48,14 +63,14 @@ PEXELS_URL = "https://api.pexels.com/v1/search"
 
 
 # =========================================================
-# تعطیلات رسمی ایران - سال ۱۴۰۵
+# PUBLISH SETTINGS
 # =========================================================
-#
-# فرمت:
-# YYYY/MM/DD
-#
-# جمعه جداگانه در main کنترل می‌شود.
-#
+
+PUBLISH_HOUR = 14
+
+
+# =========================================================
+# OFFICIAL HOLIDAYS 1405
 # =========================================================
 
 OFFICIAL_HOLIDAYS_1405 = {
@@ -105,7 +120,7 @@ OFFICIAL_HOLIDAYS_1405 = {
 
 
 # =========================================================
-# CHECK HOLIDAY
+# HOLIDAY CHECK
 # =========================================================
 
 def is_official_holiday(now):
@@ -115,17 +130,25 @@ def is_official_holiday(now):
     # -----------------------------------------------------
 
     if now.weekday() == 4:
+
+        print(
+            "HOLIDAY: FRIDAY"
+        )
+
         return True
 
+
     # -----------------------------------------------------
-    # OFFICIAL HOLIDAYS
+    # OFFICIAL HOLIDAY
     # -----------------------------------------------------
 
     try:
 
         from persiantools.jdatetime import JalaliDate
 
-        jalali = JalaliDate(now.date())
+        jalali = JalaliDate(
+            now.date()
+        )
 
         date_string = (
             f"{jalali.year:04d}/"
@@ -134,6 +157,16 @@ def is_official_holiday(now):
         )
 
         if date_string in OFFICIAL_HOLIDAYS_1405:
+
+            print(
+                "HOLIDAY: OFFICIAL"
+            )
+
+            print(
+                "DATE:",
+                date_string
+            )
+
             return True
 
     except Exception as e:
@@ -144,42 +177,73 @@ def is_official_holiday(now):
             str(e)
         )
 
+        # -------------------------------------------------
+        # FAIL SAFE
+        # -------------------------------------------------
+
+        return True
+
+
     return False
 
 
 # =========================================================
-# NUMBER
+# NUMBER NORMALIZATION
 # =========================================================
 
 def normalize_number(value):
 
     if value is None:
+
         return ""
 
     text = str(value)
 
     persian = "۰۱۲۳۴۵۶۷۸۹"
+
     arabic = "٠١٢٣٤٥٦٧٨٩"
 
     for i, ch in enumerate(persian):
-        text = text.replace(ch, str(i))
+
+        text = text.replace(
+            ch,
+            str(i)
+        )
 
     for i, ch in enumerate(arabic):
-        text = text.replace(ch, str(i))
+
+        text = text.replace(
+            ch,
+            str(i)
+        )
 
     return text
 
 
 # =========================================================
-# CLEAN
+# CLEAN TEXT
 # =========================================================
 
 def clean_text(value):
 
-    text = normalize_number(value)
+    text = normalize_number(
+        value
+    )
 
-    text = text.replace("\u200c", " ")
-    text = text.replace("\n", " ")
+    text = text.replace(
+        "\u200c",
+        " "
+    )
+
+    text = text.replace(
+        "\n",
+        " "
+    )
+
+    text = text.replace(
+        "\xa0",
+        " "
+    )
 
     text = re.sub(
         r"\s+",
@@ -197,41 +261,87 @@ def clean_text(value):
 def extract_price(value):
 
     if value is None:
+
         return None
 
-    text = clean_text(value)
+    text = clean_text(
+        value
+    )
 
-    if "تماس" in text:
+    if not text:
+
         return None
 
-    text = text.replace("٬", ",")
+    # -----------------------------------------------------
+    # CONTACT PRICE
+    # -----------------------------------------------------
+
+    if (
+        "تماس" in text
+        or "استعلام" in text
+    ):
+
+        return None
+
+
+    # -----------------------------------------------------
+    # SEPARATORS
+    # -----------------------------------------------------
+
+    text = text.replace(
+        "٬",
+        ","
+    )
+
+    text = text.replace(
+        "،",
+        ","
+    )
+
 
     numbers = re.findall(
         r"\d[\d,]*",
         text
     )
 
+
     candidates = []
+
 
     for number in numbers:
 
         try:
 
             number_int = int(
-                number.replace(",", "")
+                number.replace(
+                    ",",
+                    ""
+                )
             )
 
-            if number_int >= 10000:
+            # -------------------------------------------------
+            # قیمت نبشی به تومان / کیلو
+            # -------------------------------------------------
+
+            if (
+                10000
+                <= number_int
+                <= 1000000
+            ):
 
                 candidates.append(
                     number_int
                 )
 
         except Exception:
+
             continue
 
+
     if not candidates:
+
         return None
+
 
     return candidates[-1]
 
@@ -242,22 +352,34 @@ def extract_price(value):
 
 def extract_size(value):
 
-    text = clean_text(value)
-
-    match = re.search(
-        r"(\d{2,3}\s*[x×]\s*\d{2,3})",
-        text,
-        re.IGNORECASE
+    text = clean_text(
+        value
     )
 
-    if match:
 
-        return match.group(1).replace(
-            " ",
-            ""
-        )
+    # -----------------------------------------------------
+    # 40*40
+    # 40×40
+    # 40 x 40
+    # -----------------------------------------------------
 
-    return None
+    match = re.search(
+        r"(\d{2,3})\s*"
+        r"[*×xX]\s*"
+        r"(\d{2,3})",
+        text
+    )
+
+
+    if not match:
+
+        return None
+
+
+    return (
+        f"{match.group(1)}x"
+        f"{match.group(2)}"
+    )
 
 
 # =========================================================
@@ -266,28 +388,51 @@ def extract_size(value):
 
 def extract_thickness(value):
 
-    text = clean_text(value)
+    text = clean_text(
+        value
+    )
+
 
     match = re.search(
         r"(\d+(?:[./]\d+)?)",
         text
     )
 
-    if match:
 
-        return match.group(1)
+    if not match:
 
-    return None
+        return None
+
+
+    return match.group(1)
 
 
 # =========================================================
-# PARSE
+# PARSE ANGLE PRICES
 # =========================================================
 
 def parse_angle_prices():
 
-    print("Getting ANGLE prices...")
-    print("SOURCE:", SOURCE_URL)
+    print(
+        "========================================"
+    )
+
+    print(
+        "Getting ANGLE prices..."
+    )
+
+    print(
+        "SOURCE: AHANMELAL"
+    )
+
+    print(
+        SOURCE_URL
+    )
+
+    print(
+        "========================================"
+    )
+
 
     try:
 
@@ -309,10 +454,23 @@ def parse_angle_prices():
 
         return []
 
+
+    print(
+        "HTTP STATUS:",
+        response.status_code
+    )
+
+
+    # =====================================================
+    # READ TABLES
+    # =====================================================
+
     try:
 
         tables = pd.read_html(
-            StringIO(response.text)
+            StringIO(
+                response.text
+            )
         )
 
     except Exception as e:
@@ -325,18 +483,44 @@ def parse_angle_prices():
 
         return []
 
+
     print(
         f"Tables found: {len(tables)}"
     )
 
+
     results = []
 
-    for table_index, df in enumerate(tables):
+
+    # =====================================================
+    # TABLE SCAN
+    # =====================================================
+
+    for table_index, df in enumerate(
+        tables
+    ):
 
         print(
             f"Checking table {table_index + 1}: "
             f"{df.shape}"
         )
+
+
+        # -------------------------------------------------
+        # COLUMN DETECTION
+        # -------------------------------------------------
+
+        columns = [
+            clean_text(col)
+            for col in df.columns
+        ]
+
+
+        print(
+            "Columns:",
+            columns
+        )
+
 
         for _, row in df.iterrows():
 
@@ -345,160 +529,381 @@ def parse_angle_prices():
                 for x in row.tolist()
             ]
 
+
             if len(values) < 5:
+
                 continue
 
-            row_text = " | ".join(values)
+
+            row_text = " | ".join(
+                values
+            )
+
+
+            # =================================================
+            # ONLY NAB TABRIZ
+            # =================================================
+
+            if "ناب تبریز" not in row_text:
+
+                continue
+
+
+            if "نبشی" not in row_text:
+
+                continue
+
+
+            # =================================================
+            # SIZE
+            # =================================================
 
             size = extract_size(
                 row_text
             )
 
+
             if size is None:
+
                 continue
 
-            # -------------------------------------------------
+
+            # =================================================
             # THICKNESS
-            # -------------------------------------------------
+            # =================================================
 
             thickness = None
 
+
+            # از ستون دوم/مقادیر عددی کوچک استفاده می‌کنیم
             for value in values:
 
-                clean = clean_text(value)
+                clean = clean_text(
+                    value
+                )
 
-                if re.fullmatch(
+
+                if not re.fullmatch(
                     r"\d+(?:[./]\d+)?",
                     clean
                 ):
 
-                    try:
+                    continue
 
-                        number = float(
-                            clean.replace(
-                                "/",
-                                "."
-                            )
-                        )
-
-                        if 1 <= number <= 20:
-
-                            thickness = clean
-
-                            break
-
-                    except Exception:
-                        pass
-
-            if thickness is None:
-                continue
-
-            # -------------------------------------------------
-            # DELIVERY
-            # -------------------------------------------------
-
-            delivery = None
-
-            for value in values:
-
-                if "کارخانه" in value:
-
-                    delivery = "کارخانه"
-
-                    break
-
-                if "تهران" in value:
-
-                    delivery = "تهران"
-
-                    break
-
-                if "انبار" in value:
-
-                    delivery = "تهران"
-
-                    break
-
-            if delivery is None:
-                continue
-
-            # -------------------------------------------------
-            # WEIGHT
-            # -------------------------------------------------
-
-            weight = None
-
-            for value in values:
-
-                clean = clean_text(value)
 
                 try:
 
                     number = float(
-                        clean.replace(",", "")
+                        clean.replace(
+                            "/",
+                            "."
+                        )
                     )
 
-                    if 1 <= number <= 500:
 
-                        weight = number
+                    if (
+                        1
+                        <= number
+                        <= 20
+                    ):
+
+                        thickness = clean
 
                         break
 
                 except Exception:
+
                     continue
 
-            # -------------------------------------------------
+
+            if thickness is None:
+
+                continue
+
+
+            # =================================================
+            # LENGTH
+            # =================================================
+
+            length = None
+
+
+            for value in values:
+
+                clean = clean_text(
+                    value
+                )
+
+
+                if clean in {
+                    "6",
+                    "12",
+                    "6.0",
+                    "12.0",
+                }:
+
+                    length = clean
+
+                    break
+
+
+            # =================================================
+            # DELIVERY
+            # =================================================
+
+            delivery = "کارخانه"
+
+
+            if (
+                "کارخانه تبریز" in row_text
+                or "کارخانه" in row_text
+            ):
+
+                delivery = "کارخانه"
+
+
+            # =================================================
+            # UNIT
+            # =================================================
+
+            unit = "کیلوگرم"
+
+
+            if "کیلوگرم" not in row_text:
+
+                # صفحه اختصاصی آهن ملل
+                # برای این جدول واحد کیلوگرم است.
+                unit = "کیلوگرم"
+
+
+            # =================================================
+            # WEIGHT
+            # =================================================
+
+            weight = None
+
+
+            for value in values:
+
+                clean = clean_text(
+                    value
+                )
+
+
+                # وزن واحد نبشی
+                # معمولاً بین 5 تا 300 کیلو
+                try:
+
+                    number = float(
+                        clean.replace(
+                            ",",
+                            ""
+                        )
+                    )
+
+
+                    if (
+                        5
+                        <= number
+                        <= 300
+                    ):
+
+                        # سایز/ضخامت/طول
+                        # نباید به عنوان وزن برداشته شود.
+                        if clean not in {
+                            "6",
+                            "12",
+                            thickness,
+                            "3",
+                            "4",
+                            "5",
+                            "6",
+                            "7",
+                            "8",
+                            "9",
+                            "10",
+                            "11",
+                            "12",
+                        }:
+
+                            weight = number
+
+                            break
+
+                except Exception:
+
+                    continue
+
+
+            # =================================================
             # PRICE
-            # -------------------------------------------------
+            # =================================================
 
             price = None
 
-            for value in reversed(values):
+
+            for value in reversed(
+                values
+            ):
 
                 candidate = extract_price(
                     value
                 )
 
+
                 if candidate is None:
+
                     continue
+
 
                 price = candidate
 
                 break
 
+
             if price is None:
+
                 continue
 
+
+            # =================================================
+            # ITEM
+            # =================================================
+
+            item = {
+
+                "size":
+                    size,
+
+                "thickness":
+                    thickness,
+
+                "length":
+                    length,
+
+                "delivery":
+                    delivery,
+
+                "weight":
+                    weight,
+
+                "unit":
+                    unit,
+
+                "price":
+                    price,
+            }
+
+
             results.append(
-                {
-                    "size": size,
-                    "thickness": thickness,
-                    "delivery": delivery,
-                    "weight": weight,
-                    "price": price,
-                }
+                item
             )
 
-    # ---------------------------------------------------------
+
+    # =====================================================
     # REMOVE DUPLICATES
-    # ---------------------------------------------------------
+    # =====================================================
 
     unique = {}
+
 
     for item in results:
 
         key = (
+
             item["size"],
+
             item["thickness"],
+
+            item["length"],
+
             item["delivery"],
-            item["weight"],
+
         )
 
+
         unique[key] = item
+
 
     results = list(
         unique.values()
     )
+
+
+    # =====================================================
+    # SORT
+    # =====================================================
+
+    def sort_key(item):
+
+        size = item["size"]
+
+        match = re.match(
+            r"(\d+)x(\d+)",
+            size
+        )
+
+
+        if match:
+
+            return (
+                int(match.group(1)),
+                int(match.group(2)),
+                float(
+                    item["thickness"]
+                    .replace(
+                        "/",
+                        "."
+                    )
+                )
+            )
+
+
+        return (
+            999,
+            999,
+            999
+        )
+
+
+    results.sort(
+        key=sort_key
+    )
+
+
+    # =====================================================
+    # DEBUG
+    # =====================================================
+
+    print(
+        "========================================"
+    )
+
+    print(
+        f"VALID ANGLE PRODUCTS: {len(results)}"
+    )
+
+    print(
+        "========================================"
+    )
+
+
+    for item in results:
+
+        print(
+            f"{item['size']} | "
+            f"Thickness: {item['thickness']} | "
+            f"Length: {item['length']} | "
+            f"Delivery: {item['delivery']} | "
+            f"Weight: {item['weight']} | "
+            f"Price: {item['price']:,}"
+        )
+
+
+    print(
+        "========================================"
+    )
+
 
     return results
 
@@ -509,14 +914,23 @@ def parse_angle_prices():
 
 def get_font(size):
 
-    if not os.path.exists(FONT_FILE):
+    if not os.path.exists(
+        FONT_FILE
+    ):
+
+        print(
+            "Downloading Persian font..."
+        )
+
 
         response = requests.get(
             FONT_URL,
             timeout=30
         )
 
+
         response.raise_for_status()
+
 
         with open(
             FONT_FILE,
@@ -526,6 +940,7 @@ def get_font(size):
             f.write(
                 response.content
             )
+
 
     return ImageFont.truetype(
         FONT_FILE,
@@ -545,28 +960,40 @@ def get_background():
             "PEXELS_API_KEY is missing"
         )
 
+
     response = requests.get(
+
         PEXELS_URL,
+
         headers={
-            "Authorization": PEXELS_KEY
+            "Authorization":
+                PEXELS_KEY
         },
+
         params={
+
             "query":
                 "steel angle construction",
+
             "orientation":
                 "landscape",
+
             "per_page":
                 20,
         },
+
         timeout=30
     )
 
+
     response.raise_for_status()
+
 
     photos = response.json().get(
         "photos",
         []
     )
+
 
     if not photos:
 
@@ -574,14 +1001,17 @@ def get_background():
             "No Pexels image found"
         )
 
+
     now = datetime.now(
         TEHRAN
     )
+
 
     photo = photos[
         now.date().toordinal()
         % len(photos)
     ]
+
 
     image_url = photo[
         "src"
@@ -589,12 +1019,15 @@ def get_background():
         "large2x"
     ]
 
+
     image_response = requests.get(
         image_url,
         timeout=30
     )
 
+
     image_response.raise_for_status()
+
 
     with open(
         IMAGE_FILE,
@@ -605,21 +1038,26 @@ def get_background():
             image_response.content
         )
 
+
     return Image.open(
         IMAGE_FILE
-    ).convert("RGB")
+    ).convert(
+        "RGB"
+    )
 
 
 # =========================================================
-# IMAGE
+# CREATE PRICE IMAGE
 # =========================================================
 
 def create_price_image(results):
 
     background = get_background()
 
+
     width = 1200
     height = 1600
+
 
     background = background.resize(
         (
@@ -628,12 +1066,19 @@ def create_price_image(results):
         )
     )
 
+
     image = background.copy()
+
 
     draw = ImageDraw.Draw(
         image,
         "RGBA"
     )
+
+
+    # =====================================================
+    # DARK OVERLAY
+    # =====================================================
 
     draw.rectangle(
         [
@@ -649,6 +1094,11 @@ def create_price_image(results):
             130
         )
     )
+
+
+    # =====================================================
+    # PANEL
+    # =====================================================
 
     draw.rounded_rectangle(
         [
@@ -666,18 +1116,30 @@ def create_price_image(results):
         )
     )
 
+
+    # =====================================================
+    # FONTS
+    # =====================================================
+
     title_font = get_font(52)
+
     subtitle_font = get_font(32)
+
     header_font = get_font(27)
+
     row_font = get_font(26)
+
     footer_font = get_font(25)
+
     watermark_font = get_font(29)
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # TITLE
-    # -----------------------------------------------------
+    # =====================================================
 
     title = "📐 نبشی ناب تبریز"
+
 
     bbox = draw.textbbox(
         (0, 0),
@@ -685,9 +1147,13 @@ def create_price_image(results):
         font=title_font
     )
 
+
     title_width = (
-        bbox[2] - bbox[0]
+        bbox[2]
+        -
+        bbox[0]
     )
+
 
     draw.text(
         (
@@ -704,7 +1170,13 @@ def create_price_image(results):
         )
     )
 
+
+    # =====================================================
+    # SUBTITLE
+    # =====================================================
+
     subtitle = "قیمت روز نبشی"
+
 
     bbox = draw.textbbox(
         (0, 0),
@@ -712,9 +1184,13 @@ def create_price_image(results):
         font=subtitle_font
     )
 
+
     subtitle_width = (
-        bbox[2] - bbox[0]
+        bbox[2]
+        -
+        bbox[0]
     )
+
 
     draw.text(
         (
@@ -731,11 +1207,13 @@ def create_price_image(results):
         )
     )
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # HEADER
-    # -----------------------------------------------------
+    # =====================================================
 
     y = 270
+
 
     draw.rounded_rectangle(
         [
@@ -753,6 +1231,7 @@ def create_price_image(results):
         )
     )
 
+
     draw.text(
         (145, y + 18),
         "سایز",
@@ -765,8 +1244,9 @@ def create_price_image(results):
         )
     )
 
+
     draw.text(
-        (400, y + 18),
+        (390, y + 18),
         "ضخامت",
         font=header_font,
         fill=(
@@ -777,8 +1257,9 @@ def create_price_image(results):
         )
     )
 
+
     draw.text(
-        (620, y + 18),
+        (600, y + 18),
         "تحویل",
         font=header_font,
         fill=(
@@ -788,6 +1269,7 @@ def create_price_image(results):
             255
         )
     )
+
 
     draw.text(
         (850, y + 18),
@@ -801,11 +1283,13 @@ def create_price_image(results):
         )
     )
 
+
     y += 90
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # ROWS
-    # -----------------------------------------------------
+    # =====================================================
 
     for item in results:
 
@@ -821,8 +1305,9 @@ def create_price_image(results):
             )
         )
 
+
         draw.text(
-            (400, y),
+            (390, y),
             item["thickness"],
             font=row_font,
             fill=(
@@ -833,8 +1318,9 @@ def create_price_image(results):
             )
         )
 
+
         draw.text(
-            (620, y),
+            (600, y),
             item["delivery"],
             font=row_font,
             fill=(
@@ -844,6 +1330,7 @@ def create_price_image(results):
                 255
             )
         )
+
 
         draw.text(
             (850, y),
@@ -856,6 +1343,7 @@ def create_price_image(results):
                 255
             )
         )
+
 
         draw.line(
             [
@@ -873,14 +1361,18 @@ def create_price_image(results):
             width=2
         )
 
+
         y += 90
 
+
         if y > height - 250:
+
             break
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # FOOTER
-    # -----------------------------------------------------
+    # =====================================================
 
     draw.text(
         (
@@ -897,11 +1389,15 @@ def create_price_image(results):
         )
     )
 
-    # -----------------------------------------------------
-    # WATERMARK
-    # -----------------------------------------------------
 
-    watermark = "@arvand_aron_steel"
+    # =====================================================
+    # WATERMARK
+    # =====================================================
+
+    watermark = (
+        "@arvand_aron_steel"
+    )
+
 
     bbox = draw.textbbox(
         (0, 0),
@@ -909,9 +1405,13 @@ def create_price_image(results):
         font=watermark_font
     )
 
+
     watermark_width = (
-        bbox[2] - bbox[0]
+        bbox[2]
+        -
+        bbox[0]
     )
+
 
     draw.rounded_rectangle(
         [
@@ -929,6 +1429,7 @@ def create_price_image(results):
         )
     )
 
+
     draw.text(
         (
             width - watermark_width - 78,
@@ -944,11 +1445,17 @@ def create_price_image(results):
         )
     )
 
+
+    # =====================================================
+    # SAVE
+    # =====================================================
+
     image.save(
         IMAGE_FILE,
         "JPEG",
         quality=95
     )
+
 
     return IMAGE_FILE
 
@@ -963,16 +1470,23 @@ def build_caption(results):
         TEHRAN
     )
 
+
     parts = [
+
         "📐 <b>نبشی ناب تبریز</b>",
+
         "📌 <b>قیمت روز نبشی</b>",
+
         (
             f"📅 {now.strftime('%Y/%m/%d')} "
             f"⏰ {now.strftime('%H:%M')}"
         ),
+
         "💰 واحد قیمت: تومان / کیلوگرم",
+
         "",
     ]
+
 
     for item in results:
 
@@ -981,37 +1495,69 @@ def build_caption(results):
             f"ضخامت {item['thickness']}"
         )
 
+
         parts.append(
             f"🏭 {item['delivery']}: "
             f"<b>{item['price']:,}</b> تومان/کیلو"
         )
 
+
         parts.append("")
+
 
     parts.extend(
         [
+
             "📞 جهت اطلاع از قیمت سایر محصولات "
             "با واحد فروش تماس حاصل نمایید.",
+
             "",
+
             "━━━━━━━━━━━━━━",
+
             "🏭 آروند آرون استیل",
+
             "👤 مدیریت: افشین آورزمانی",
+
             "📞 021-22122239",
+
             "🆔 @arvand_aron_steel",
+
         ]
     )
 
-    return "\n".join(parts)
+
+    return "\n".join(
+        parts
+    )
 
 
 # =========================================================
-# TELEGRAM
+# SEND PHOTO
 # =========================================================
 
 def send_photo(
     image_file,
     caption
 ):
+
+    if not TOKEN:
+
+        print(
+            "ERROR: BOT_TOKEN missing"
+        )
+
+        return False
+
+
+    if not CHANNEL:
+
+        print(
+            "ERROR: CHANNEL_ID missing"
+        )
+
+        return False
+
 
     try:
 
@@ -1021,35 +1567,50 @@ def send_photo(
         ) as photo:
 
             response = requests.post(
+
                 f"https://api.telegram.org/"
                 f"bot{TOKEN}/sendPhoto",
+
                 data={
+
                     "chat_id":
                         CHANNEL,
+
                     "caption":
                         caption,
+
                     "parse_mode":
                         "HTML",
+
                 },
+
                 files={
+
                     "photo":
                         photo
+
                 },
+
                 timeout=60
             )
+
 
         print(
             "Telegram status:",
             response.status_code
         )
 
+
         if not response.ok:
 
             print(
+                "TELEGRAM ERROR:",
                 response.text
             )
 
+
         return response.ok
+
 
     except Exception as e:
 
@@ -1072,12 +1633,17 @@ def main():
         TEHRAN
     )
 
+
     print(
         "========================================"
     )
 
     print(
         "ANGLE PRICE BOT"
+    )
+
+    print(
+        "SOURCE: AHANMELAL"
     )
 
     print(
@@ -1091,59 +1657,86 @@ def main():
         "========================================"
     )
 
+
     # =====================================================
-    # HOLIDAY LOCK
+    # TIME LOCK
+    # =====================================================
+    #
+    # فقط ساعت 14
     # =====================================================
 
-    if is_official_holiday(now):
-
-        if now.weekday() == 4:
-
-            print(
-                "FRIDAY - NO ANGLE PRICE POST"
-            )
-
-        else:
-
-            print(
-                "OFFICIAL HOLIDAY - "
-                "NO ANGLE PRICE POST"
-            )
+    if now.hour != PUBLISH_HOUR:
 
         print(
-            "No price will be fetched."
+            "TIME LOCK:"
         )
 
         print(
-            "No Telegram post will be sent."
-        )
-
-        print(
-            "========================================"
+            "ANGLE is allowed only at 14:00 Iran time."
         )
 
         return
 
+
     # =====================================================
-    # ENV
+    # MINUTE LOCK
+    # =====================================================
+
+    if now.minute > 9:
+
+        print(
+            "TIME LOCK:"
+        )
+
+        print(
+            "ANGLE publication window has passed."
+        )
+
+        return
+
+
+    # =====================================================
+    # HOLIDAY LOCK
+    # =====================================================
+
+    if is_official_holiday(
+        now
+    ):
+
+        print(
+            "ANGLE BOT STOPPED BY HOLIDAY LOCK."
+        )
+
+        return
+
+
+    # =====================================================
+    # ENVIRONMENT
     # =====================================================
 
     missing = []
 
+
     if not TOKEN:
+
         missing.append(
             "BOT_TOKEN"
         )
 
+
     if not CHANNEL:
+
         missing.append(
             "CHANNEL_ID"
         )
 
+
     if not PEXELS_KEY:
+
         missing.append(
             "PEXELS_API_KEY"
         )
+
 
     if missing:
 
@@ -1154,23 +1747,13 @@ def main():
 
         return
 
+
     # =====================================================
-    # PRICE
+    # GET PRICES
     # =====================================================
 
     results = parse_angle_prices()
 
-    print(
-        "========================================"
-    )
-
-    print(
-        f"VALID ANGLE PRODUCTS: {len(results)}"
-    )
-
-    print(
-        "========================================"
-    )
 
     if not results:
 
@@ -1180,27 +1763,15 @@ def main():
 
         return
 
-    # =====================================================
-    # PRINT
-    # =====================================================
-
-    for item in results:
-
-        print(
-            f"{item['size']} | "
-            f"Thickness: {item['thickness']} | "
-            f"Delivery: {item['delivery']} | "
-            f"Weight: {item['weight']} | "
-            f"Price: {item['price']:,}"
-        )
 
     # =====================================================
-    # IMAGE
+    # CREATE IMAGE
     # =====================================================
 
     print(
         "Creating price image..."
     )
+
 
     try:
 
@@ -1218,6 +1789,7 @@ def main():
 
         return
 
+
     # =====================================================
     # CAPTION
     # =====================================================
@@ -1225,6 +1797,49 @@ def main():
     caption = build_caption(
         results
     )
+
+
+    # =====================================================
+    # FINAL TIME CHECK
+    # =====================================================
+
+    final_now = datetime.now(
+        TEHRAN
+    )
+
+
+    if final_now.hour != PUBLISH_HOUR:
+
+        print(
+            "FINAL TIME LOCK."
+        )
+
+        return
+
+
+    if final_now.minute > 9:
+
+        print(
+            "FINAL TIME LOCK: window passed."
+        )
+
+        return
+
+
+    # =====================================================
+    # FINAL HOLIDAY CHECK
+    # =====================================================
+
+    if is_official_holiday(
+        final_now
+    ):
+
+        print(
+            "FINAL HOLIDAY LOCK."
+        )
+
+        return
+
 
     # =====================================================
     # SEND
@@ -1234,10 +1849,12 @@ def main():
         "Sending to channel..."
     )
 
+
     success = send_photo(
         image_file,
         caption
     )
+
 
     # =====================================================
     # FINAL
@@ -1246,6 +1863,7 @@ def main():
     print(
         "========================================"
     )
+
 
     if success:
 
@@ -1258,6 +1876,7 @@ def main():
         print(
             "ANGLE CHANNEL: FAILED"
         )
+
 
     print(
         "========================================"
