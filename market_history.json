@@ -9,14 +9,14 @@
     "bitcoin": 79848,
     "tether": 1989990.0
   },
-  "last_market_post_date": "2026-09-06",
-  "last_market_post_time": "2026-09-06 08:08:58",
+  "last_market_post_date": "2026-09-07",
+  "last_market_post_time": "2026-09-07 08:11:24",
   "last_market_post_prices": {
-    "gold_world": 4432.56,
-    "gold18": 236744000.0,
-    "coin": 2374950000.0,
-    "bitcoin": 79907,
-    "tether": 2288020.0
+    "gold_world": 4407.48,
+    "gold18": 233536000.0,
+    "coin": 2339900000.0,
+    "bitcoin": 79611,
+    "tether": 2276960.0
   },
-  "market_tether": 2288020.0
+  "market_tether": 2276960.0
 }
